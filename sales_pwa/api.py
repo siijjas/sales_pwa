@@ -72,7 +72,7 @@ def get_outstanding_invoices(customer: str):
 
 @frappe.whitelist()
 def get_payment_modes():
-	modes = frappe.get_all("Mode of Payment", filters={"enabled": 1}, fields=["name", "type"])
+	modes = frappe.get_list("Mode of Payment", filters={"enabled": 1}, fields=["name", "type"])
 	# Sort: Cash first, then alphabetically
 	return sorted(modes, key=lambda x: (x["name"] != "Cash", x["name"]))
 

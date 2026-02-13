@@ -10,10 +10,29 @@
           <button class="bg-gray-100 text-gray-800 text-sm px-3 py-2 rounded-lg" @click="logout">
             Logout
           </button>
-          <button class="bg-blue-600 text-white text-sm px-3 py-2 rounded-lg" @click="$router.push({ name: 'customers' })">
-            New Order
-          </button>
         </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3 mb-6">
+        <button 
+          class="bg-blue-600 text-white text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
+          @click="$router.push({ name: 'customers', query: { redirect: 'order' } })"
+        >
+          <span>+ New Order</span>
+        </button>
+        <button 
+          class="bg-emerald-600 text-white text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
+          @click="$router.push({ name: 'customers', query: { redirect: 'payment' } })"
+        >
+          <span>+ New Payment</span>
+        </button>
+        <button 
+          class="bg-white border border-gray-200 text-gray-700 text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
+          @click="$router.push({ name: 'ledger' })"
+        >
+          <span>Customer Ledger</span>
+        </button>
+
       </div>
 
       <div class="mb-4">

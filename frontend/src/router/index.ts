@@ -18,6 +18,8 @@ const router = createRouter({
     { path: '/cart', name: 'cart', component: CartView },
     { path: '/history', name: 'history', component: HistoryView },
     { path: '/orders/:name', name: 'order-detail', component: OrderDetailView },
+    { path: '/payment', name: 'payment', component: () => import('../views/PaymentEntryView.vue') },
+    { path: '/ledger', name: 'ledger', component: () => import('../views/CustomerLedgerView.vue') },
   ],
 });
 

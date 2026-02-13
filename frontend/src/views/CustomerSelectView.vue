@@ -18,7 +18,7 @@
           v-for="customer in customers"
           :key="customer.name"
           class="w-full text-left py-3 flex justify-between items-center"
-          @click="select(customer)"
+          @click="selectCustomer(customer)"
         >
           <div>
             <p class="font-medium text-gray-900">{{ customer.customer_name }}</p>
@@ -34,12 +34,13 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import * as api from '../api/frappe';
 import type { Customer } from '../types';
 import { useSessionStore } from '../stores/session';
 
 const router = useRouter();
+const route = useRoute();
 const store = useSessionStore();
 const txt = ref('');
 const customers = ref<Customer[]>([]);
@@ -59,10 +60,17 @@ watch(txt, () => {
 
 let timer = window.setTimeout(load, 0);
 
-function select(customer: Customer) {
+const selectCustomer = (customer: Customer) => {
   store.setCustomer(customer);
-  checkExisting(customer);
-}
+  const redirect = route.query.redirect as string;
+  if (redirect === 'payment') {
+    router.push({ name: 'payment' });
+  } else if (redirect === 'ledger') {
+    router.push({ name: 'ledger' });
+  } else {
+    router.push({ name: 'items' });
+  }
+};
 
 const checkExisting = async (customer: Customer) => {
   checking.value = true;

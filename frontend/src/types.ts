@@ -27,6 +27,7 @@ export interface Item {
 export interface CartLine {
   item: Item;
   qty: number;
+  rate?: number;
 }
 
 export interface SalesOrderItem {
@@ -55,4 +56,54 @@ export interface SalesOrder {
   selling_price_list?: string;
   company?: string;
   delivery_date?: string;
+}
+export interface OutstandingInvoice {
+  name: string;
+  posting_date: string;
+  grand_total: number;
+  outstanding_amount: number;
+  allocated_amount?: number; // UI state
+  checked?: boolean; // UI state
+}
+
+export interface PaymentReference {
+  name: string;
+  grand_total: number;
+  outstanding_amount: number;
+  allocated_amount: number;
+}
+
+export interface LedgerEntry {
+  posting_date: string;
+  voucher_type: string;
+  voucher_no: string;
+  debit: number;
+  credit: number;
+  account: string;
+}
+
+export interface PaymentMode {
+  name: string;
+  type: string;
+}
+
+export interface SalesOrderSummary {
+  name: string;
+  transaction_date: string;
+  grand_total: number;
+  advance_paid: number;
+}
+
+export interface CustomerSummary {
+  outstanding_balance: number;
+  last_invoice?: {
+    name: string;
+    posting_date: string;
+    grand_total: number;
+  };
+  last_payment?: {
+    name: string;
+    posting_date: string;
+    paid_amount: number;
+  };
 }

@@ -1,4 +1,4 @@
-import type { UserSession, Customer, Item, SalesOrder, SalesOrderItem } from '../types';
+import type { UserSession, Customer, Item, SalesOrder, SalesOrderItem, OutstandingInvoice, PaymentReference, LedgerEntry, PaymentMode, SalesOrderSummary, CustomerSummary } from '../types';
 
 let csrfTokenCache: string | undefined;
 
@@ -254,14 +254,14 @@ const buildPaymentSchedule = (amount: number, date: string) => [
 ];
 
 export async function listItems(search?: string, customer?: string): Promise<Item[]> {
-  const filters = [['is_sales_item', '=', 1]];
+  const filters = [['is_sales_item', '=', 1], ['disabled', '=', 0]];
   const or_filters = search
     ? [
-        ['item_name', 'like', `%${search}%`],
-        ['item_code', 'like', `%${search}%`],
-        ['name', 'like', `%${search}%`],
-        ['description', 'like', `%${search}%`],
-      ]
+      ['item_name', 'like', `%${search}%`],
+      ['item_code', 'like', `%${search}%`],
+      ['name', 'like', `%${search}%`],
+      ['description', 'like', `%${search}%`],
+    ]
     : undefined;
 
   const params = new URLSearchParams({
@@ -398,7 +398,6 @@ export async function createSalesOrder(payload: {
         ...(currency ? { currency, price_list_currency: currency, company_currency: currency } : {}),
         conversion_rate: 1,
         plc_conversion_rate: 1,
-        naming_series: DEFAULT_NAMING_SERIES,
         order_type: DEFAULT_ORDER_TYPE,
         payment_terms_template: null,
         payment_schedule: paySchedule,
@@ -459,7 +458,7 @@ export async function updateSalesOrder(name: string, payload: { items: SalesOrde
     body: JSON.stringify({
       selling_price_list: existing?.selling_price_list,
       company: existing?.company,
-      naming_series: existing?.naming_series || DEFAULT_NAMING_SERIES,
+      naming_series: existing?.naming_series,
       order_type: existing?.order_type || DEFAULT_ORDER_TYPE,
       ...(currency ? { currency, price_list_currency: currency, company_currency: currency } : {}),
       conversion_rate: 1,
@@ -558,4 +557,88 @@ export async function findDraftOrder(customer: string, owner?: string): Promise<
   const list = (data.data || data.message || []) as { name: string }[];
   if (!list.length) return null;
   return getSalesOrder(list[0].name);
+}
+
+export async function getOutstandingInvoices(customer: string): Promise<OutstandingInvoice[]> {
+  const res = await fetch(`/api/method/sales_pwa.api.get_outstanding_invoices?customer=${encodeURIComponent(customer)}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as OutstandingInvoice[];
+}
+
+export async function getPaymentModes(): Promise<PaymentMode[]> {
+  const res = await fetch('/api/method/sales_pwa.api.get_payment_modes', {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as PaymentMode[];
+}
+
+export async function getSalesOrders(customer: string): Promise<SalesOrderSummary[]> {
+  const params = new URLSearchParams({ customer });
+  const res = await fetch(`/api/method/sales_pwa.api.get_sales_orders?${params.toString()}`, {
+    headers: defaultHeaders(),
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as SalesOrderSummary[];
+}
+
+export async function getCustomerSummary(customer: string): Promise<CustomerSummary> {
+  const params = new URLSearchParams({ customer });
+  const res = await fetch(`/api/method/sales_pwa.api.get_customer_summary?${params.toString()}`, {
+    headers: defaultHeaders(),
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.message as CustomerSummary;
+}
+
+export async function createPaymentEntry(
+  customer: string,
+  modeOfPayment: string,
+  paidAmount: number,
+  references: PaymentReference[],
+  salesOrder?: string,
+): Promise<string> {
+  const payload: any = {
+    customer,
+    mode_of_payment: modeOfPayment,
+    paid_amount: paidAmount,
+    references: JSON.stringify(references),
+  };
+
+  if (salesOrder) {
+    payload.sales_order = salesOrder;
+  }
+
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.api.create_payment_entry', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify(payload),
+  });
+  const data = await handleResponse(res);
+  return data.message;
+}
+
+export async function getCustomerLedger(
+  customer: string,
+  fromDate?: string,
+  toDate?: string,
+): Promise<LedgerEntry[]> {
+  const params = new URLSearchParams({ customer });
+  if (fromDate) params.append('from_date', fromDate);
+  if (toDate) params.append('to_date', toDate);
+
+  const res = await fetch(`/api/method/sales_pwa.api.get_customer_ledger?${params.toString()}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as LedgerEntry[];
 }

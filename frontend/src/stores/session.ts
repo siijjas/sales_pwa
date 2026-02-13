@@ -26,7 +26,7 @@ export const useSessionStore = defineStore('session', {
     cartCount: (state) => state.cart.reduce((sum, line) => sum + line.qty, 0),
     cartTotal: (state) =>
       state.cart.reduce(
-        (sum, line) => sum + line.qty * (line.item.price_list_rate ?? line.item.standard_rate ?? 0),
+        (sum, line) => sum + line.qty * (line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0),
         0,
       ),
     currencyDisplay: (state) => state.currencySymbol || state.currencyCode || '₹',
@@ -76,6 +76,7 @@ export const useSessionStore = defineStore('session', {
           standard_rate: line.rate,
         },
         qty: line.qty,
+        rate: line.rate
       }));
     },
     async fetchCurrency() {
@@ -92,7 +93,11 @@ export const useSessionStore = defineStore('session', {
       if (idx > -1) {
         this.cart[idx].qty += 1;
       } else {
-        this.cart.push({ item, qty: 1 });
+        this.cart.push({
+          item,
+          qty: 1,
+          rate: item.price_list_rate ?? item.standard_rate
+        });
       }
     },
     updateQty(itemCode: string, delta: number) {
@@ -103,6 +108,12 @@ export const useSessionStore = defineStore('session', {
         this.cart.splice(idx, 1);
       } else {
         this.cart[idx].qty = newQty;
+      }
+    },
+    updateRate(itemCode: string, newRate: number) {
+      const idx = this.cart.findIndex((line) => line.item.item_code === itemCode);
+      if (idx > -1) {
+        this.cart[idx].rate = newRate;
       }
     },
     clearCart() {

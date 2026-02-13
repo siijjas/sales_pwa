@@ -229,7 +229,7 @@ def create_payment_entry(customer: str, mode_of_payment: str, paid_amount: float
 			},
 		)
 	
-	pe.insert()
+	pe.insert(ignore_permissions=True)
 	pe.submit()
 	return pe.name
 

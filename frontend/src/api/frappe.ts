@@ -630,7 +630,7 @@ export async function getCustomerLedger(
   customer: string,
   fromDate?: string,
   toDate?: string,
-): Promise<LedgerEntry[]> {
+): Promise<{ opening_balance: number; entries: LedgerEntry[] }> {
   const params = new URLSearchParams({ customer });
   if (fromDate) params.append('from_date', fromDate);
   if (toDate) params.append('to_date', toDate);
@@ -640,5 +640,35 @@ export async function getCustomerLedger(
     credentials: 'include',
   });
   const data = await handleResponse(res);
-  return (data.message || []) as LedgerEntry[];
+  return data.message;
+}
+
+export async function getDailySummary(): Promise<{ sales_orders: { count: number; total: number }; payments: { count: number; total: number } }> {
+  const res = await fetch('/api/method/sales_pwa.api.get_daily_summary', {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.message;
+}
+export async function getDailyLog(doctype: 'Sales Order' | 'Payment Entry') {
+  const params = new URLSearchParams({
+    doctype,
+    _: Date.now().toString()
+  });
+  const res = await fetch(`/api/method/sales_pwa.api.get_daily_log?${params.toString()}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.message || [];
+}
+
+export async function getPaymentEntry(name: string) {
+  const res = await fetch(`/api/resource/Payment Entry/${name}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.data;
 }

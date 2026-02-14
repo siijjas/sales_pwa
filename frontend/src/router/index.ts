@@ -20,6 +20,8 @@ const router = createRouter({
     { path: '/orders/:name', name: 'order-detail', component: OrderDetailView },
     { path: '/payment', name: 'payment', component: () => import('../views/PaymentEntryView.vue') },
     { path: '/ledger', name: 'ledger', component: () => import('../views/CustomerLedgerView.vue') },
+    { path: '/daily-log/:type', name: 'daily-log', component: () => import('../views/DailyLogView.vue') },
+    { path: '/payment-detail/:name', name: 'payment-detail', component: () => import('../views/PaymentDetailView.vue') },
   ],
 });
 

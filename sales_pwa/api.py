@@ -47,6 +47,9 @@ def _ensure_payment_schedule(doc):
 @frappe.whitelist()
 def submit_sales_order(name: str):
 	doc = frappe.get_doc("Sales Order", name)
+	if not doc.has_permission("read"):
+		frappe.throw("Not permitted", frappe.PermissionError)
+		
 	_apply_defaults(doc)
 	doc.run_method("set_missing_values")
 	doc.run_method("calculate_taxes_and_totals")
@@ -58,15 +61,17 @@ def submit_sales_order(name: str):
 
 @frappe.whitelist()
 def get_outstanding_invoices(customer: str):
-	return frappe.db.sql(
-		"""
-		select name, posting_date, grand_total, outstanding_amount
-		from `tabSales Invoice`
-		where customer = %s and docstatus = 1 and outstanding_amount > 0
-		order by posting_date
-	""",
-		customer,
-		as_dict=1,
+	if not frappe.has_permission("Customer", doc=customer):
+		frappe.throw("Not permitted", frappe.PermissionError)
+	return frappe.get_list(
+		"Sales Invoice",
+		filters={
+			"customer": customer,
+			"docstatus": 1,
+			"outstanding_amount": [">", 0]
+		},
+		fields=["name", "posting_date", "grand_total", "outstanding_amount"],
+		order_by="posting_date asc"
 	)
 
 
@@ -79,6 +84,8 @@ def get_payment_modes():
 
 @frappe.whitelist()
 def get_sales_orders(customer: str):
+	if not frappe.has_permission("Customer", doc=customer):
+		frappe.throw("Not permitted", frappe.PermissionError)
 	company = _default_company()
 	
 	return frappe.db.sql(
@@ -106,6 +113,8 @@ def get_sales_orders(customer: str):
 
 @frappe.whitelist()
 def get_customer_summary(customer: str):
+	if not frappe.has_permission("Customer", doc=customer):
+		frappe.throw("Not permitted", frappe.PermissionError)
 	company = _default_company()
 	
 	# Get outstanding balance
@@ -120,7 +129,7 @@ def get_customer_summary(customer: str):
 		(customer, company),
 		as_dict=1
 	)
-	outstanding_balance = outstanding[0].outstanding if outstanding else 0
+	outstanding_balance = (outstanding and outstanding[0].outstanding) or 0.0
 	
 	# Get last invoice
 	last_invoice = frappe.db.sql(
@@ -167,6 +176,10 @@ def get_customer_summary(customer: str):
 
 @frappe.whitelist()
 def create_payment_entry(customer: str, mode_of_payment: str, paid_amount: float, references: str, sales_order: str = None):
+	if not frappe.has_permission("Customer", doc=customer):
+		frappe.throw("Not permitted", frappe.PermissionError)
+	if not frappe.has_permission("Mode of Payment", doc=mode_of_payment):
+		frappe.throw("Not permitted", frappe.PermissionError)
 	import json
 
 	refs = json.loads(references)
@@ -236,6 +249,8 @@ def create_payment_entry(customer: str, mode_of_payment: str, paid_amount: float
 
 @frappe.whitelist()
 def get_customer_ledger(customer: str, from_date: str = None, to_date: str = None):
+	if not frappe.has_permission("Customer", doc=customer):
+		frappe.throw("Not permitted", frappe.PermissionError)
 	company = _default_company()
 	
 	filters = {
@@ -254,9 +269,99 @@ def get_customer_ledger(customer: str, from_date: str = None, to_date: str = Non
 		else:
 			filters["posting_date"] = ["<=", to_date]
 			
-	return frappe.get_all(
+	opening_balance = 0.0
+	if from_date:
+		before_filters = {
+			"party_type": "Customer",
+			"party": customer,
+			"company": company,
+			"is_cancelled": 0,
+			"posting_date": ["<", from_date]
+		}
+		result = frappe.get_all(
+			"GL Entry",
+			filters=before_filters,
+			fields=["sum(debit) as debit", "sum(credit) as credit"]
+		)
+		if result:
+			opening_balance = (result[0].debit or 0.0) - (result[0].credit or 0.0)
+
+	entries = frappe.get_all(
 		"GL Entry",
 		filters=filters,
 		fields=["posting_date", "voucher_type", "voucher_no", "debit", "credit", "account"],
 		order_by="posting_date asc, creation asc"
 	)
+	
+	return {
+		"opening_balance": opening_balance,
+		"entries": entries
+	}
+
+
+@frappe.whitelist()
+def get_daily_summary():
+	user = frappe.session.user
+	today = nowdate()
+	
+	# Sales Orders
+	sos = frappe.get_list(
+		"Sales Order",
+		filters={
+			"docstatus": ["!=", 2],
+			"transaction_date": today
+		},
+		fields=["grand_total"]
+	)
+	
+	# Payment Entries
+	pes = frappe.get_list(
+		"Payment Entry",
+		filters={
+			"docstatus": 1,
+			"posting_date": today,
+			"payment_type": "Receive"
+		},
+		fields=["paid_amount"]
+	)
+	
+	return {
+		"sales_orders": {
+			"count": len(sos),
+			"total": sum(d.grand_total for d in sos)
+		},
+		"payments": {
+			"count": len(pes),
+			"total": sum(d.paid_amount for d in pes)
+		}
+	}
+
+
+@frappe.whitelist()
+def get_daily_log(doctype: str):
+	user = frappe.session.user
+	today = nowdate()
+	
+	if doctype == "Sales Order":
+		return frappe.get_list(
+			"Sales Order",
+			filters={
+				"docstatus": ["!=", 2],
+				"transaction_date": today
+			},
+			fields=["name", "customer_name", "grand_total", "status", "transaction_date"],
+			order_by="creation desc"
+		)
+	elif doctype == "Payment Entry":
+		return frappe.get_list(
+			"Payment Entry",
+			filters={
+				"docstatus": 1,
+				"posting_date": today,
+				"payment_type": "Receive"
+			},
+			fields=["name", "party_name", "paid_amount", "status", "posting_date", "mode_of_payment"],
+			order_by="creation desc"
+		)
+	
+	return []

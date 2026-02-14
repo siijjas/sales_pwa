@@ -143,6 +143,7 @@ const currency = computed(() => store.currencyDisplay);
 
 const selectedPeriod = ref('week');
 const entries = ref<LedgerEntry[]>([]);
+const openingBalance = ref(0);
 const loading = ref(false);
 
 const dateRange = computed(() => {
@@ -178,7 +179,7 @@ interface EntryWithBalance extends LedgerEntry {
 }
 
 const entriesWithBalance = computed(() => {
-  let running = 0;
+  let running = openingBalance.value;
   return entries.value.map(entry => {
     running += (entry.debit - entry.credit);
     return { ...entry, balance: running };
@@ -186,17 +187,10 @@ const entriesWithBalance = computed(() => {
 }); 
 
 const currentBalance = computed(() => {
-  if (entries.value.length === 0) return 0;
-  return entries.value.reduce((sum, e) => sum + e.debit - e.credit, 0);
+  return openingBalance.value + entries.value.reduce((sum, e) => sum + e.debit - e.credit, 0);
 });
 
-const openingBalance = computed(() => {
-  if (entriesWithBalance.value.length === 0) return 0;
-  // Opening balance is the balance before the first transaction in the period
-  // which is 0 if we're showing from the beginning, or we'd need to fetch it from API
-  // For now, we'll assume opening is 0 and calculate from there
-  return 0;
-});
+// Removed computed openingBalance since it's now a ref from API
 
 const closingBalance = computed(() => {
   if (entriesWithBalance.value.length === 0) return 0;
@@ -246,7 +240,20 @@ const loadLedger = async () => {
   if (!customer.value) return;
   loading.value = true;
   try {
-    entries.value = await api.getCustomerLedger(customer.value.name, dateRange.value.from, dateRange.value.to);
+    const result = await api.getCustomerLedger(customer.value.name, dateRange.value.from, dateRange.value.to);
+    // API now returns { opening_balance, entries } but we need to update api/frappe.ts to reflect type change
+    // For now assuming result is correct shape if type definition allows
+    // But wait, api/frappe.ts returns (data.message || []) as LedgerEntry[]
+    // I need to update api/frappe.ts first to handle the new return type!
+    // Let's assume I'll update api/frappe.ts next.
+    if (Array.isArray(result)) {
+       // Handle legacy or error case where it returns array directly
+       entries.value = result;
+       openingBalance.value = 0;
+    } else {
+       entries.value = (result as any).entries || [];
+       openingBalance.value = (result as any).opening_balance || 0;
+    }
   } catch (e) {
     console.error('Failed to load ledger', e);
   } finally {

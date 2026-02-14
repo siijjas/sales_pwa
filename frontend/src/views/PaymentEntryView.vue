@@ -37,21 +37,21 @@
         <div v-if="customerSummary" class="bg-blue-50 border border-blue-100 rounded-xl p-3 text-sm space-y-2">
            <div class="flex justify-between items-center">
              <span class="text-blue-800 font-medium">Outstanding Balance</span>
-             <span class="font-bold text-blue-900">{{ currency }} {{ customerSummary.outstanding_balance.toFixed(2) }}</span>
+             <span class="font-bold text-blue-900">{{ currency }} {{ (customerSummary.outstanding_balance || 0).toFixed(2) }}</span>
            </div>
            
            <div v-if="customerSummary.last_invoice" class="flex justify-between items-center border-t border-blue-100 pt-2">
              <span class="text-blue-700">Last Invoice</span>
              <div class="text-right">
                <span class="font-medium text-blue-900 block">{{ customerSummary.last_invoice.name }}</span>
-               <span class="text-xs text-blue-600 block">{{ customerSummary.last_invoice.posting_date }} • {{ currency }} {{ customerSummary.last_invoice.grand_total.toFixed(2) }}</span>
+               <span class="text-xs text-blue-600 block">{{ customerSummary.last_invoice.posting_date }} • {{ currency }} {{ (customerSummary.last_invoice.grand_total || 0).toFixed(2) }}</span>
              </div>
            </div>
            
            <div v-if="customerSummary.last_payment" class="flex justify-between items-center border-t border-blue-100 pt-2">
              <span class="text-blue-700">Last Payment</span>
              <div class="text-right">
-               <span class="font-medium text-blue-900 block">{{ currency }} {{ customerSummary.last_payment.paid_amount.toFixed(2) }}</span>
+               <span class="font-medium text-blue-900 block">{{ currency }} {{ (customerSummary.last_payment.paid_amount || 0).toFixed(2) }}</span>
                <span class="text-xs text-blue-600 block">{{ customerSummary.last_payment.posting_date }}</span>
              </div>
            </div>

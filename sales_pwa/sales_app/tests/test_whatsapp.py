@@ -10,7 +10,7 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from sales_pwa.sales_app import whatsapp
-from sales_pwa.sales_app.whatsapp import SETTINGS, build_message, on_document_event
+from sales_pwa.sales_app.whatsapp import SETTINGS, apply_health, build_message, check_gateway_health, on_document_event
 
 APP_PATH = "/api/method/sales_pwa.sales_app.sales.create_sales_order"
 
@@ -29,6 +29,7 @@ class TestWhatsApp(FrappeTestCase):
 		_set_settings(
 			enabled=1, gateway_url="http://127.0.0.1:1", group_id="1203630000@g.us",
 			notify_orders=1, notify_payments=1, only_sales_app=1, include_items=1, max_items=2,
+			status="", linked_number="", last_error="", failed_checks=0,
 		)
 
 	def tearDown(self):
@@ -187,3 +188,50 @@ class TestWhatsApp(FrappeTestCase):
 
 	def test_gateway_unreachable_is_a_gateway_error(self):
 		self.assertRaises(whatsapp.GatewayError, whatsapp.send_group_message, "hi")
+
+	# -------------------------------------------------------------- health
+
+	def _settings(self):
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		return frappe.get_doc(SETTINGS)
+
+	def test_health_records_the_link_and_only_alerts_on_a_change_for_the_worse(self):
+		with patch.object(frappe, "log_error") as log_error:
+			self.assertEqual(apply_health(self._settings(), "qr"), "Not linked")
+			log_error.assert_not_called()  # linking for the first time is expected
+			self.assertEqual(apply_health(self._settings(), "connected", number="97312345678"), "Connected")
+			self.assertEqual(self._settings().linked_number, "97312345678")
+			self.assertIsNone(apply_health(self._settings(), "connected", number="97312345678"))
+			log_error.assert_not_called()
+			# One failed check keeps the last good status; the second is Down, alerted once.
+			self.assertIsNone(apply_health(self._settings(), "connecting"))
+			self.assertEqual(self._settings().status, "Connected")
+			self.assertEqual(apply_health(self._settings(), None, "connection refused"), "Down")
+			self.assertEqual(self._settings().last_error, "connection refused")
+			self.assertEqual(log_error.call_count, 1)
+			self.assertIsNone(apply_health(self._settings(), None, "connection refused"))
+			self.assertEqual(log_error.call_count, 1)
+			# Back up: no alert, the error clears, the number stays.
+			self.assertEqual(apply_health(self._settings(), "connected", number="97312345678"), "Connected")
+			self.assertEqual(self._settings().last_error, "")
+			self.assertEqual(log_error.call_count, 1)
+			# Unlinked after being connected: alerted.
+			self.assertEqual(apply_health(self._settings(), "logged_out", "closed (401)"), "Not linked")
+			self.assertEqual(log_error.call_count, 2)
+			self.assertEqual(self._settings().linked_number, "97312345678")
+
+	def test_health_check_skips_without_a_gateway_and_treats_an_unreachable_one_as_failed(self):
+		with patch.object(whatsapp, "gateway_request") as request:
+			_set_settings(gateway_url="")
+			check_gateway_health()
+			request.assert_not_called()
+			_set_settings(gateway_url="http://127.0.0.1:1")
+			request.side_effect = whatsapp.GatewayError("Could not reach the WhatsApp gateway")
+			check_gateway_health()
+			self.assertEqual(self._settings().failed_checks, 1)
+			self.assertEqual(self._settings().status, "Connecting")
+			request.side_effect = None
+			request.return_value = {"state": "connected", "number": "97312345678", "last_error": None}
+			check_gateway_health()
+			self.assertEqual(self._settings().status, "Connected")
+			self.assertEqual(self._settings().failed_checks, 0)

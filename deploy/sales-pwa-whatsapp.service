@@ -1,0 +1,39 @@
+# The Sales App WhatsApp gateway as a user unit of the bench's own account, no root needed:
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp apps/sales_pwa/deploy/sales-pwa-whatsapp.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now sales-pwa-whatsapp
+#   journalctl --user -u sales-pwa-whatsapp -f
+#
+# (`loginctl enable-linger <user>` once, so it runs while nobody is logged in.)
+#
+# Settings come from whatsapp-gateway/.env (WA_API_KEY and friends; see .env.example), reached
+# through the environment, never the command line, so `ps` never shows the key. WA_NODE may name
+# a node binary (20+) when the one on PATH is older. %h is the home directory; the paths below
+# assume the bench is ~/frappe-bench.
+
+[Unit]
+Description=Sales App WhatsApp gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/frappe-bench/apps/sales_pwa/whatsapp-gateway/.env
+Environment=NODE_ENV=production
+WorkingDirectory=%h/frappe-bench/apps/sales_pwa/whatsapp-gateway
+ExecStart=/bin/sh -c 'exec "${WA_NODE:-node}" server.js'
+Restart=on-failure
+RestartSec=10
+
+MemoryHigh=250M
+MemoryMax=300M
+
+# What a user unit may still take from the process without root. (PrivateTmp, ProtectKernel*
+# and ProtectControlGroups fail under a user manager with "Failed to drop capabilities".)
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

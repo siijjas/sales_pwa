@@ -15,6 +15,13 @@
 // Every route except /health needs the API key: header `x-api-key`, a bearer
 // token, or `?key=` for the browser routes.
 //
+// `state` in /status is one of:
+//   connecting   starting, or reconnecting after a drop
+//   qr           not paired: a QR (or pairing code) is waiting to be used
+//   connected    paired and online; /send works
+//   logged_out   the phone unlinked this device; credentials were wiped, pair again
+//   restricted   WhatsApp refused the number (403); retried every five minutes
+//
 // Configuration comes from the environment (or a .env file next to this script):
 //   WA_API_KEY   required, shared secret with WhatsApp Settings in Frappe
 //   WA_PORT      default 3010
@@ -22,20 +29,25 @@
 //   WA_AUTH_DIR  default ./auth, the linked-device credentials (keep private)
 //   WA_PHONE     optional, pair with a code instead of a QR (digits with country code)
 //   WA_LOG_LEVEL default info; WA_BAILEYS_LOG_LEVEL default warn
+//
+// The reconnect rules (reconnect.mjs) and the console scrubbing (quiet.mjs) are
+// ported from the restaurant app's bridge, which learned them on a live pairing.
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import pino from 'pino';
-import QRCode from 'qrcode';
-import makeWASocket, {
-  Browsers,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-  useMultiFileAuthState,
-} from '@whiskeysockets/baileys';
+import { quietConsole } from './quiet.mjs';
+import { RECONNECT_BASE_MS, RECONNECT_MAX_MS, reconnectPlan } from './reconnect.mjs';
+
+// Before anything from Baileys loads: libsignal prints Signal session objects (private keys)
+// with the bare console, which no pino level governs. quiet.mjs keeps only plain values.
+quietConsole();
+
+const { default: makeWASocket, Browsers, fetchLatestBaileysVersion, useMultiFileAuthState } = await import('@whiskeysockets/baileys');
+const { default: pino } = await import('pino');
+const { default: QRCode } = await import('qrcode');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 loadDotEnv(path.join(here, '.env'));
@@ -52,12 +64,12 @@ const baileysLogger = pino({ level: process.env.WA_BAILEYS_LOG_LEVEL || 'warn' }
 
 if (!API_KEY) {
   logger.error('WA_API_KEY is not set. Put it in the environment or in whatsapp-gateway/.env');
-  process.exit(1);
+  process.exit(2);
 }
 
 const state = {
   sock: null,
-  connection: 'closed', // closed | connecting | open
+  state: 'connecting', // connecting | qr | connected | logged_out | restricted
   qr: null,
   qrAt: 0,
   pairingCode: null,
@@ -71,16 +83,31 @@ const state = {
 };
 const groupCache = new Map();
 let reconnectTimer = null;
-let reconnectDelay = 2000;
+let reconnectDelay = RECONNECT_BASE_MS;
 let stopping = false;
 
 // ---------------------------------------------------------------- WhatsApp
+
+/**
+ * Forget the login: the directory's CONTENTS, never the directory, which a service
+ * manager may have created and which a gateway that removed it cannot always recreate.
+ */
+function forgetLogin() {
+  let entries = [];
+  try {
+    entries = fs.readdirSync(AUTH_DIR);
+  } catch {
+    return;
+  }
+  for (const entry of entries) fs.rmSync(path.join(AUTH_DIR, entry), { recursive: true, force: true });
+}
 
 async function connect() {
   clearTimeout(reconnectTimer);
   reconnectTimer = null;
   if (stopping) return;
 
+  fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o700 });
   const { state: auth, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
 
@@ -95,15 +122,17 @@ async function connect() {
     cachedGroupMetadata: async (jid) => groupCache.get(jid),
   });
   state.sock = sock;
-  state.connection = 'connecting';
+  state.state = 'connecting';
   state.pairingRequested = false;
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
+    if (sock !== state.sock) return; // a socket /logout or a reconnect already replaced
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      state.state = 'qr';
       state.qr = qr;
       state.qrAt = Date.now();
       if (PHONE && !state.pairingRequested && !auth.creds.registered) {
@@ -125,49 +154,58 @@ async function connect() {
     }
 
     if (connection === 'open') {
-      state.connection = 'open';
+      state.state = 'connected';
       state.connectedAt = Date.now();
       state.qr = null;
       state.pairingCode = null;
       state.lastError = null;
       state.user = sock.user || null;
-      reconnectDelay = 2000;
+      reconnectDelay = RECONNECT_BASE_MS;
       logger.info({ user: state.user?.id, name: state.user?.name }, 'WhatsApp connected');
     }
 
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
-      state.connection = 'closed';
+      const plan = reconnectPlan({ code, state: state.state, delayMs: reconnectDelay });
+      logger.warn({ code, from: state.state, to: plan.state, delayMs: plan.delayMs }, 'WhatsApp connection closed');
+      state.state = plan.state;
       state.user = null;
       state.lastError = lastDisconnect?.error?.message || `closed (${code ?? 'unknown'})`;
-      if (code === DisconnectReason.loggedOut) {
-        logger.warn('WhatsApp logged this device out. Credentials removed; pair again.');
-        fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-        reconnectDelay = 2000;
-      } else {
-        logger.warn({ code, error: state.lastError }, 'WhatsApp connection closed, reconnecting');
+      if (plan.forget) {
+        logger.warn('WhatsApp unlinked this device. Credentials removed; pair again.');
+        state.qr = null;
+        forgetLogin();
       }
-      scheduleReconnect();
+      reconnectDelay = plan.nextDelayMs;
+      scheduleReconnect(plan.delayMs);
     }
   });
 }
 
-function scheduleReconnect() {
-  if (stopping || reconnectTimer) return;
-  const delay = reconnectDelay;
-  reconnectDelay = Math.min(reconnectDelay * 2, 60_000);
+/** Every deferred connect() goes through here, so a failure inside it is logged and retried
+ * with the ordinary backoff instead of becoming an unhandled rejection in a timer. */
+function scheduleReconnect(delayMs) {
+  if (stopping) return;
+  clearTimeout(reconnectTimer);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     connect().catch((err) => {
-      logger.error({ err }, 'Reconnect failed');
-      scheduleReconnect();
+      logger.error({ err }, 'Connect failed; retrying');
+      if (state.state === 'connected') state.state = 'connecting';
+      scheduleReconnect(reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
     });
-  }, delay);
+  }, delayMs);
 }
 
 function requireOpen() {
-  if (state.connection !== 'open' || !state.sock) {
-    const err = new Error(state.qr ? 'WhatsApp is not paired yet: scan the QR first' : 'WhatsApp is not connected');
+  if (state.state !== 'connected' || !state.sock) {
+    const err = new Error(
+      state.state === 'qr' ? 'WhatsApp is not paired yet: scan the QR first'
+        : state.state === 'logged_out' ? 'WhatsApp unlinked this device: pair again'
+          : state.state === 'restricted' ? 'WhatsApp refused this number (restricted)'
+            : 'WhatsApp is not connected',
+    );
     err.status = 503;
     throw err;
   }
@@ -218,15 +256,16 @@ async function sendText(to, text) {
 }
 
 async function statusPayload() {
-  const qrPending = Boolean(state.qr) && state.connection !== 'open';
+  const qrPending = state.state === 'qr' && Boolean(state.qr);
   return {
-    connected: state.connection === 'open',
-    state: state.connection,
+    connected: state.state === 'connected',
+    state: state.state,
     user: state.user ? { id: state.user.id, name: state.user.name || '' } : null,
+    number: state.user ? (state.user.id || '').split('@')[0].split(':')[0] || null : null,
     qr_pending: qrPending,
     qr: qrPending ? await QRCode.toDataURL(state.qr, { margin: 1, width: 320 }) : null,
     qr_age_seconds: qrPending ? Math.round((Date.now() - state.qrAt) / 1000) : null,
-    pairing_code: state.connection === 'open' ? null : state.pairingCode,
+    pairing_code: state.state === 'connected' ? null : state.pairingCode,
     last_error: state.lastError,
     started_at: new Date(state.startedAt).toISOString(),
     connected_at: state.connectedAt ? new Date(state.connectedAt).toISOString() : null,
@@ -292,10 +331,10 @@ p{margin:12px 0 0;color:#466}code{font-size:28px;letter-spacing:3px}</style>
 <script>
 const key=new URLSearchParams(location.search).get('key')||'';
 async function tick(){try{const r=await fetch('/status?key='+encodeURIComponent(key));if(r.status===401){box.innerHTML='<p>Missing or wrong key: open /pair?key=YOUR_API_KEY</p>';return}
-const s=await r.json();if(s.connected){box.innerHTML='<p>Connected as <b>'+(s.user?.name||'')+'</b> '+(s.user?.id||'')+'</p><p>You can close this page.</p>'}
+const s=await r.json();if(s.connected){box.innerHTML='<p>Connected as <b>'+(s.user?.name||'')+'</b> '+(s.number||'')+'</p><p>You can close this page.</p>'}
 else if(s.pairing_code){box.innerHTML='<p>Pairing code</p><code>'+s.pairing_code+'</code><p>WhatsApp › Linked devices › Link with phone number</p>'}
 else if(s.qr){box.innerHTML='<img src="'+s.qr+'" alt="QR"><p>WhatsApp › Linked devices › Link a device</p>'}
-else{box.innerHTML='<p>'+(s.last_error||'Connecting…')+'</p>'}}catch(e){box.innerHTML='<p>Gateway unreachable</p>'}}
+else{box.innerHTML='<p>'+(s.state+(s.last_error?': '+s.last_error:''))+'</p>'}}catch(e){box.innerHTML='<p>Gateway unreachable</p>'}}
 tick();setInterval(tick,4000);
 </script>`;
 
@@ -303,7 +342,7 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   try {
     if (url.pathname === '/health') {
-      return json(res, 200, { ok: true, connected: state.connection === 'open' });
+      return json(res, 200, { ok: true, state: state.state, connected: state.state === 'connected' });
     }
     if (!authorized(req, url)) {
       return json(res, 401, { error: 'Unauthorized' });
@@ -316,7 +355,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(PAIR_PAGE);
     }
     if (req.method === 'GET' && url.pathname === '/qr.png') {
-      if (!state.qr || state.connection === 'open') return json(res, 404, { error: 'No pairing QR right now' });
+      if (state.state !== 'qr' || !state.qr) return json(res, 404, { error: 'No pairing QR right now' });
       const png = await QRCode.toBuffer(state.qr, { margin: 1, width: 320 });
       res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
       return res.end(png);
@@ -331,12 +370,19 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, result);
     }
     if (req.method === 'POST' && url.pathname === '/logout') {
-      if (state.sock && state.connection === 'open') {
-        await state.sock.logout();
+      if (state.sock && state.state === 'connected') {
+        await state.sock.logout(); // closes with 401 → reconnectPlan forgets the login
       } else {
-        fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-        state.sock?.end(undefined);
-        scheduleReconnect();
+        forgetLogin();
+        state.state = 'connecting';
+        state.qr = null;
+        try {
+          state.sock?.end(undefined);
+        } catch {
+          // already closed
+        }
+        reconnectDelay = RECONNECT_BASE_MS;
+        scheduleReconnect(0);
       }
       return json(res, 200, { ok: true });
     }
@@ -351,10 +397,14 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   logger.info(`Gateway listening on http://${HOST}:${PORT} (auth dir ${AUTH_DIR})`);
-  connect().catch((err) => {
-    logger.error({ err }, 'Initial connection failed');
-    scheduleReconnect();
-  });
+  scheduleReconnect(0);
+});
+
+// A rejection nothing caught is a bug, not a condition to limp on with: exit non-zero on
+// purpose so the service manager (Restart=on-failure) brings a fresh process up.
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED_REJECTION', reason instanceof Error ? reason.stack ?? reason.message : String(reason));
+  process.exit(1);
 });
 
 function shutdown(signal) {

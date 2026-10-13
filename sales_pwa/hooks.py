@@ -191,6 +191,9 @@ scheduler_events = {
 	# Managers get a Notification Log (desk bell + email per their settings) listing
 	# every shift still open from an earlier day.
 	"daily": ["sales_pwa.sales_app.tasks.notify_stale_shifts"],
+	# Records the WhatsApp gateway's state on WhatsApp Settings; returns at once when
+	# no gateway URL is configured.
+	"cron": {"* * * * *": ["sales_pwa.sales_app.whatsapp.check_gateway_health"]},
 }
 
 # scheduler_events = {

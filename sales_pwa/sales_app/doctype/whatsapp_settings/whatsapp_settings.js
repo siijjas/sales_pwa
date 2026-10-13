@@ -2,6 +2,8 @@
 // and send a test message. All calls go through sales_pwa.sales_app.whatsapp.
 frappe.ui.form.on('WhatsApp Settings', {
 	refresh(frm) {
+		const colour = { Connected: 'green', 'Not linked': 'orange', Connecting: 'orange', Down: 'red', Restricted: 'red' };
+		if (frm.doc.status) frm.page.set_indicator(__(frm.doc.status), colour[frm.doc.status] || 'gray');
 		frm.add_custom_button(__('Check connection'), () => check_connection(frm));
 		frm.add_custom_button(__('Pair device'), () => pair_device(frm));
 		frm.add_custom_button(__('Pick group'), () => pick_group(frm));
@@ -24,7 +26,9 @@ function describe(status) {
 	}
 	if (status.pairing_code) return __('Not paired. Pairing code: {0}', [status.pairing_code]);
 	if (status.qr_pending) return __('Not paired yet: use Pair device to scan the QR.');
-	return __('Gateway reachable but WhatsApp is not connected. {0}', [status.last_error || '']);
+	if (status.state === 'logged_out') return __('The phone unlinked this device. Use Pair device to link it again.');
+	if (status.state === 'restricted') return __('WhatsApp refused this number. {0}', [status.last_error || '']);
+	return __('Gateway reachable but WhatsApp is not connected ({0}). {1}', [status.state, status.last_error || '']);
 }
 
 async function check_connection(frm) {

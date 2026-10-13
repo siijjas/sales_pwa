@@ -14,6 +14,13 @@
   "group_id",
   "column_break_target",
   "group_name",
+  "section_status",
+  "status",
+  "linked_number",
+  "column_break_status",
+  "status_changed_at",
+  "last_error",
+  "failed_checks",
   "section_events",
   "notify_orders",
   "notify_payments",
@@ -70,6 +77,48 @@
    "fieldname": "group_name",
    "fieldtype": "Data",
    "label": "Group Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Status",
+   "description": "Checked every minute by the scheduler. Use Check connection for a live answer."
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "read_only": 1,
+   "options": "\nConnecting\nNot linked\nConnected\nDown\nRestricted"
+  },
+  {
+   "fieldname": "linked_number",
+   "fieldtype": "Data",
+   "label": "Linked Number",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "status_changed_at",
+   "fieldtype": "Datetime",
+   "label": "Since",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  },
+  {
+   "fieldname": "failed_checks",
+   "fieldtype": "Int",
+   "label": "Failed Checks",
+   "hidden": 1,
    "read_only": 1
   },
   {

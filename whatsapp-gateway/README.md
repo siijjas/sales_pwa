@@ -27,22 +27,21 @@ and use *Pair device* (shows the same QR), *Pick group* and *Send test message*.
 
 ## Keep it running
 
-Any process manager works. With the bench's supervisor, add a program next to
-the bench's own (needs sudo):
+`deploy/sales-pwa-whatsapp.service` is a `systemd --user` unit for the bench
+account, no root needed:
 
-```ini
-[program:sales-pwa-whatsapp]
-command=/usr/bin/node server.js
-directory=/home/frappe/frappe-bench/apps/sales_pwa/whatsapp-gateway
-user=frappe
-autostart=true
-autorestart=true
-stdout_logfile=/home/frappe/frappe-bench/logs/whatsapp-gateway.log
-redirect_stderr=true
+```bash
+mkdir -p ~/.config/systemd/user
+cp apps/sales_pwa/deploy/sales-pwa-whatsapp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now sales-pwa-whatsapp
+journalctl --user -u sales-pwa-whatsapp -f
 ```
 
-Without sudo, `pm2 start server.js --name whatsapp-gateway` or a
-`systemd --user` unit does the same job.
+Run `loginctl enable-linger $USER` once so it keeps running while nobody is
+logged in. The unit reads `.env`; set `WA_NODE` there if the node on its PATH
+is older than 20. It restarts the gateway on failure, and the gateway exits on
+purpose on any unhandled rejection so a restart is always clean.
 
 ## API
 
@@ -61,6 +60,21 @@ Bearer`, or `?key=` on the browser routes.
 
 `/send` answers 503 while WhatsApp is not connected; Frappe's background job
 fails and the message shows up in the Error Log instead of being lost silently.
+
+`state` is `connecting`, `qr` (waiting for a scan), `connected`, `logged_out`
+(the phone unlinked the device; credentials wiped, pair again) or `restricted`
+(WhatsApp refused the number; retried every five minutes). Frappe polls this
+every minute and shows it at the top of WhatsApp Settings.
+
+## How it reconnects
+
+`reconnect.mjs` decides every close, ported from the restaurant app's bridge
+after its first live pairing: a successful scan is answered by WhatsApp with
+stream error 515 and needs an immediate reconnect, or the phone gives up and
+unlinks the device; a QR timing out (408) never grows the backoff; 401 forgets
+the login; 403 waits five minutes; anything else doubles the delay up to a
+minute. `quiet.mjs` keeps libsignal from printing session keys through the bare
+console into the journal. Both are pure modules with `npm test` suites.
 
 ## Notes
 

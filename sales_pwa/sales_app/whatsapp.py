@@ -12,6 +12,10 @@ a slow or dead gateway never slows down or fails the sale itself.
 
 Adding a use case: write a `_<something>_message(doc, event, user)` builder,
 list it in MESSAGE_BUILDERS, and hook the doctype's events in hooks.py.
+
+Health: check_gateway_health() runs every minute from the scheduler, asks the
+gateway for its state and records it on WhatsApp Settings (status, linked
+number, last error), raising one Error Log entry when the link goes down.
 """
 
 import requests
@@ -52,6 +56,18 @@ PAYMENT_HEADINGS = {
 
 class GatewayError(Exception):
 	"""The gateway could not be reached or refused the request."""
+
+
+# Gateway /status "state" → the status shown on WhatsApp Settings.
+STATUS_BY_STATE = {
+	"connected": "Connected",
+	"qr": "Not linked",
+	"logged_out": "Not linked",
+	"restricted": "Restricted",
+}
+# "connecting" or no answer at all is a failed check; this many in a row is Down.
+FAILED_CHECKS_FOR_DOWN = 2
+STATUS_FIELDS = ("status", "linked_number", "last_error", "failed_checks", "status_changed_at")
 
 
 # ------------------------------------------------------------------ settings
@@ -258,6 +274,60 @@ def send_group_message(text: str, to: str | None = None) -> dict:
 	if not target:
 		raise GatewayError("WhatsApp Settings has no group to post into.")
 	return gateway_request("POST", "/send", {"to": target, "text": text}, settings)
+
+
+# -------------------------------------------------------------------- health
+
+
+def check_gateway_health():
+	"""Scheduler, every minute: record the gateway's state on WhatsApp Settings."""
+	settings = get_settings()
+	if not settings.gateway_url:
+		return
+	try:
+		data = gateway_request("GET", "/status", settings=settings)
+	except GatewayError as exc:
+		apply_health(settings, None, str(exc))
+	else:
+		apply_health(settings, data.get("state"), data.get("last_error") or "", data.get("number") or "")
+
+
+def apply_health(settings, observed: str | None, error: str = "", number: str = "") -> str | None:
+	"""Fold one observation into the settings. Writes only what changed, so a healthy
+	link costs no database write per minute. Returns the new status when it changed."""
+	previous = settings.status or ""
+	failed = cint(settings.failed_checks)
+	status = STATUS_BY_STATE.get(observed)
+	if status:
+		failed = 0
+	else:
+		failed = min(failed + 1, FAILED_CHECKS_FOR_DOWN)
+		status = "Down" if failed >= FAILED_CHECKS_FOR_DOWN else (previous or "Connecting")
+		if not error:
+			error = f"gateway state: {observed}" if observed else "gateway not answering"
+	if status == "Connected":
+		error = ""
+
+	updates = {
+		"status": status,
+		"failed_checks": failed,
+		"last_error": (error or "")[:500],
+		"linked_number": number if status == "Connected" else (settings.linked_number or ""),
+	}
+	changed = status != previous
+	if changed:
+		updates["status_changed_at"] = now_datetime()
+	for field, value in updates.items():
+		if (settings.get(field) or "") != (value or ""):
+			frappe.db.set_single_value(SETTINGS, field, value)
+	frappe.clear_document_cache(SETTINGS, SETTINGS)
+
+	if changed and (status in ("Down", "Restricted") or previous == "Connected"):
+		frappe.log_error(
+			title=f"WhatsApp gateway: {status}",
+			message=f"Status went from {previous or 'unknown'} to {status}.\n{error or ''}".strip(),
+		)
+	return status if changed else None
 
 
 # ------------------------------------------------------------ desk helpers

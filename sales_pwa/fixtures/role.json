@@ -1,8 +1,8 @@
 [
  {
   "doctype": "Role",
-  "name": "Van Sales Driver",
-  "role_name": "Van Sales Driver",
+  "name": "Sales App User",
+  "role_name": "Sales App User",
   "desk_access": 1,
   "is_custom": 1,
   "disabled": 0,

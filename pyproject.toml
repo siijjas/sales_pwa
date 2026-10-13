@@ -3,7 +3,7 @@ name = "sales_pwa"
 authors = [
     { name = "me", email = "me@me.com"}
 ]
-description = "Van sale application"
+description = "Sales app for ERPNext van and field sales"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]

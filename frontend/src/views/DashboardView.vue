@@ -140,7 +140,7 @@ const setupMessage = computed(() => {
   return '';
 });
 
-// A shift left open from an earlier day has to be closed first; with the Van Profile's
+// A shift left open from an earlier day has to be closed first; with the Sales Profile's
 // require_open_shift, selling also waits for today's shift. The server enforces the
 // same rule (shift.require_open_shift) — this just gets the driver there sooner.
 const caps = computed(() => store.capabilities);
@@ -171,7 +171,7 @@ const actions = computed(() => {
     { label: 'New Order', icon: 'cart', accent: 'bg-primary/12 text-primary', go: gated(() => router.push({ name: 'customers', query: { redirect: 'order' } })) },
     { label: 'Payment', icon: 'wallet', accent: 'bg-success/12 text-success', go: gated(() => router.push({ name: 'customers', query: { redirect: 'payment' } })) },
   ];
-  // Capabilities come from the Van Profile type: Field Sales staff take orders and
+  // Capabilities come from the Sales Profile type: Field Sales staff take orders and
   // collect payments only (no van to load, nothing to return into, shifts optional).
   if (driverConfig.value ? caps.value.can_load_stock : store.isManager) {
     list.push({ label: 'Load Stock', icon: 'truck', accent: 'bg-warning/15 text-warning', go: () => router.push({ name: 'stock-transfer' }) });
@@ -182,7 +182,7 @@ const actions = computed(() => {
   if (caps.value.uses_shifts) {
     list.push({ label: 'Cash Out', icon: 'banknote', accent: 'bg-info/12 text-info', go: gated(() => router.push({ name: 'expenses' })) });
     if (activeShift.value) {
-      // Van Profile.allow_driver_close_shift off: only a manager closes this shift.
+      // Sales Profile.allow_driver_close_shift off: only a manager closes this shift.
       if (caps.value.can_close_shift) {
         list.push({ label: 'Close Shift', icon: 'check-circle', accent: 'bg-primary/12 text-primary', go: () => router.push({ name: 'shift-close' }) });
       }

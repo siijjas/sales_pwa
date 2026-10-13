@@ -166,7 +166,7 @@ const error = ref('');
 const submitting = ref(false);
 const invoicing = ref(false);
 const invoiceCreated = ref('');
-// Van Profile.allow_credit_sale off: every invoice is collected when it is raised.
+// Sales Profile.allow_credit_sale off: every invoice is collected when it is raised.
 const canCreditSale = computed(() => store.isManager || store.capabilities.can_credit_sale !== false);
 const markAsPaid = ref(!canCreditSale.value);
 const modeOfPayment = ref('');
@@ -226,7 +226,7 @@ const createInvoice = async () => {
   invoicing.value = true;
   error.value = '';
   try {
-    // With the Van Profile override on, warn before billing items the van can't cover.
+    // With the Sales Profile override on, warn before billing items the van can't cover.
     // Without it there is nothing to confirm: the server rejects the shortage as before.
     if (allowWithoutStock.value) {
       const check = await api.getInvoiceStockShortages(order.value.name);

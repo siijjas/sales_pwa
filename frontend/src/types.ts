@@ -35,9 +35,9 @@ export interface Capabilities {
 }
 
 // The runtime driver config served in UserSession. It is derived entirely from
-// the driver's assigned Van Profile (see get_van_profile_for_driver on the
-// backend) — `name` is the Van Profile name. There is no separate Driver
-// Configuration record; Van Profile is the single source of truth.
+// the driver's assigned Sales Profile (see get_van_profile_for_driver on the
+// backend) — `name` is the Sales Profile name. There is no separate Driver
+// Configuration record; Sales Profile is the single source of truth.
 export interface DriverConfig {
   name: string;
   profile_name?: string;
@@ -146,14 +146,14 @@ export interface OutsideWindow {
 export interface PaymentReconciliationRow {
   mode_of_payment: string;
   opening_amount: number;
-  /** null on a blind count (Van Profile.hide_expected_amount). */
+  /** null on a blind count (Sales Profile.hide_expected_amount). */
   expected_amount: number | null;
   closing_amount: number;
   difference: number | null;
 }
 
 export interface ShiftClosingSummary {
-  /** The driver counts without seeing expected amounts (Van Profile.hide_expected_amount). */
+  /** The driver counts without seeing expected amounts (Sales Profile.hide_expected_amount). */
   blind: boolean;
   opening_shift: string;
   driver: string;
@@ -171,11 +171,11 @@ export interface ShiftClosingSummary {
   taxes: ShiftTaxRow[];
   total_collections: number;
   total_expenses: number;
-  /** Cash handed to the office mid-shift (Van Cash Movement, type Deposit). */
+  /** Cash handed to the office mid-shift (Sales Cash Movement, type Deposit). */
   total_deposits: number;
   total_opening_float: number;
   expected_cash: number | null;
-  /** From the Van Profile; a net difference beyond it is flagged, never blocked. */
+  /** From the Sales Profile; a net difference beyond it is flagged, never blocked. */
   variance_tolerance: number;
   draft_orders: ShiftDraftOrder[];
   outside_window: OutsideWindow;

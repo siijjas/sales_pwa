@@ -27,7 +27,7 @@
           <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-success/15 text-success">
             <AppIcon name="truck" :size="18" />
           </div>
-          <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-success">Van Sales Driver</p>
+          <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-success">Sales App User</p>
           <p class="mt-1 text-lg font-bold text-foreground">Field driver</p>
           <p class="mt-1 text-sm text-muted">PWA only. Own data via row-level filter.</p>
         </AppCard>
@@ -60,10 +60,10 @@
 
       <!-- How-to -->
       <AppAlert tone="info">
-        <span class="font-semibold">Assign the Van Sales Driver role:</span>
+        <span class="font-semibold">Assign the Sales App User role:</span>
         <ol class="mt-2 list-inside list-decimal space-y-1">
           <li>Open <strong>ERPNext Desk → Setup → User</strong> and select the driver.</li>
-          <li>Add the <strong>Van Sales Driver</strong> role.</li>
+          <li>Add the <strong>Sales App User</strong> role.</li>
           <li>Create a Driver Profile for that user in <strong>Profiles</strong>.</li>
           <li>Activate the profile — the driver can now use the PWA.</li>
         </ol>

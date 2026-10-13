@@ -14,7 +14,7 @@ bench install-app sales_pwa
 
 ### Setup
 
-The app serves two kinds of field staff from one PWA, chosen per **Van Profile** (Settings → Van Profiles in the app, or the Van Profile doctype):
+The app serves two kinds of field staff from one PWA, chosen per **Sales Profile** (Settings → Sales Profiles in the app, or the Sales Profile doctype):
 
 - **Van Sales** — drivers with stock on board: orders, invoicing, delivery, returns, van loading, stock dashboard, and cash shifts.
 - **Field Sales** — order takers without a van: orders and payments only; the back office invoices and delivers. An optional stock warehouse gives them read-only quantities. Shifts are optional.
@@ -30,7 +30,7 @@ bench --site <your-site> migrate
 cd apps/sales_pwa/frontend && npm run build
 ```
 
-Enable the bench scheduler on the site if it is not already: the daily `sales_pwa.van_sale.tasks.notify_stale_shifts` job notifies managers of shifts left open from earlier days.
+Enable the bench scheduler on the site if it is not already: the daily `sales_pwa.sales_app.tasks.notify_stale_shifts` job notifies managers of shifts left open from earlier days.
 
 Tests run against a site with ERPNext set up:
 

@@ -1,13 +1,13 @@
 {
-  "name": "Van Sale",
-  "short_name": "Van Sale",
+  "name": "Sales App",
+  "short_name": "Sales App",
   "start_url": "./",
   "display": "standalone",
   "theme_color": "#FFFFFF",
   "background_color": "#F3F4F6",
   "icons": [
     {
-      "src": "/assets/sales_pwa/frontend/van-sale-icon.svg",
+      "src": "/assets/sales_pwa/frontend/sales-app-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml"
     }

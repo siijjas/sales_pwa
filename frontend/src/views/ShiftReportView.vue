@@ -279,8 +279,8 @@ const load = async () => {
 
 const printPdf = () => {
   if (!report.value) return;
-  if (isSummary.value) api.downloadPdf('Van Shift Opening', report.value.shift.opening_shift, 'Van Shift Summary');
-  else api.downloadPdf('Van Shift Closing', report.value.shift.closing_shift!, 'Van Shift Closing Report');
+  if (isSummary.value) api.downloadPdf('Sales Shift Opening', report.value.shift.opening_shift, 'Sales Shift Summary');
+  else api.downloadPdf('Sales Shift Closing', report.value.shift.closing_shift!, 'Sales Shift Closing Report');
 };
 
 watch(() => route.fullPath, load, { immediate: true });

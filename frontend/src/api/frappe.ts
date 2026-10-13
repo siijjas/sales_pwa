@@ -189,7 +189,7 @@ export async function getSession(): Promise<UserSession> {
     return cachedDriverContext;
   }
 
-  const res = await fetch('/api/method/sales_pwa.van_sale.driver.get_app_context', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.driver.get_app_context', {
     credentials: 'include',
     headers: defaultHeaders(),
   });
@@ -219,7 +219,7 @@ export async function searchCustomers(txt: string): Promise<Customer[]> {
 
 export async function createCustomer(customerName: string, mobileNo?: string): Promise<Customer> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.create_customer', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_customer', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -342,7 +342,7 @@ async function getDefaultWarehouse(): Promise<string | null> {
 
 const DEFAULT_SELLING_PRICE_LIST = 'Standard Selling';
 const DEFAULT_NAMING_SERIES = 'SO-';
-/** Customer.default_price_list, for Van Profile.use_customer_price_list. */
+/** Customer.default_price_list, for Sales Profile.use_customer_price_list. */
 async function getCustomerPriceList(customer: string): Promise<string | null> {
   try {
     const res = await fetch(`/api/resource/Customer/${encodeURIComponent(customer)}`, { method: 'GET', credentials: 'include' });
@@ -378,7 +378,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
   const data = await handleResponse(res);
   const items = (data.data || data.message || []) as Item[];
 
-  // Prefer the driver's own Van Profile price list (their "special" pricing,
+  // Prefer the driver's own Sales Profile price list (their "special" pricing,
   // e.g. "For special customers") over the global Selling Settings default —
   // matching what createSalesOrder() already does. Falling back to the global
   // default here was the bug: a driver assigned a special price list never
@@ -386,7 +386,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
   const session = await getSession().catch(() => null);
   const globalPriceList = (await getSellingPriceList()) || DEFAULT_SELLING_PRICE_LIST;
   let priceList = session?.driver_config?.selling_price_list || globalPriceList;
-  // Van Profile.use_customer_price_list: the customer's own default list wins. The server
+  // Sales Profile.use_customer_price_list: the customer's own default list wins. The server
   // prices the order the same way (_resolve_price_list in sales.py).
   if (customer && session?.driver_config?.use_customer_price_list) {
     priceList = (await getCustomerPriceList(customer)) || priceList;
@@ -495,7 +495,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
       actual_qty: stockMap[item.item_code] ?? null,
       standard_rate: priceMap[item.item_code] ?? item.standard_rate,
     }));
-    // Van Profile.hide_unavailable_items (the catalog only; returns list everything).
+    // Sales Profile.hide_unavailable_items (the catalog only; returns list everything).
     return opts.hideUnavailable ? priced.filter((item) => (item.actual_qty ?? 0) > 0) : priced;
   } catch (_e) {
     return items;
@@ -508,12 +508,12 @@ export async function createSalesOrder(payload: {
   discountPercent?: number;
   discountAmount?: number;
 }): Promise<SalesOrder> {
-  // The document is assembled server-side by sales_pwa.van_sale.sales.create_sales_order:
+  // The document is assembled server-side by sales_pwa.sales_app.sales.create_sales_order:
   // company, price list, currency, taxes, payment schedule and every total come from the
-  // driver's Van Profile and ERPNext's own calculation, not from this client. That is what
-  // lets the Van Sales Driver role hold read-only DocPerms on Sales Order.
+  // driver's Sales Profile and ERPNext's own calculation, not from this client. That is what
+  // lets the Sales App User role hold read-only DocPerms on Sales Order.
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.create_sales_order', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_sales_order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -543,7 +543,7 @@ export async function updateSalesOrder(
   payload: { items: SalesOrderItem[]; customer: string; discountPercent?: number; discountAmount?: number },
 ): Promise<SalesOrder> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.update_sales_order', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.update_sales_order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -561,7 +561,7 @@ export async function updateSalesOrder(
 
 export async function submitSalesOrder(name: string): Promise<SalesOrder> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.submit_sales_order', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.submit_sales_order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -577,7 +577,7 @@ export async function getItemSalesHistory(itemCode: string, customer?: string, l
     limit: String(limit),
     ...(customer ? { customer } : {}),
   });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.sales.get_item_sales_history?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_item_sales_history?${params.toString()}`, {
     method: 'GET',
     headers: { ...defaultHeaders() },
     credentials: 'include',
@@ -588,7 +588,7 @@ export async function getItemSalesHistory(itemCode: string, customer?: string, l
 
 export async function getInvoiceStockShortages(salesOrder: string): Promise<InvoiceStockCheck> {
   const params = new URLSearchParams({ sales_order: salesOrder });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.sales.get_invoice_stock_shortages?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_invoice_stock_shortages?${params.toString()}`, {
     method: 'GET',
     headers: { ...defaultHeaders() },
     credentials: 'include',
@@ -599,7 +599,7 @@ export async function getInvoiceStockShortages(salesOrder: string): Promise<Invo
 
 export async function deliverPendingItems(salesOrder: string): Promise<string[]> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.deliver_pending_items', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.deliver_pending_items', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -614,7 +614,7 @@ export async function createSalesInvoice(
   options?: { markAsPaid?: boolean; modeOfPayment?: string; allowWithoutStock?: boolean },
 ): Promise<string> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.create_sales_invoice', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_sales_invoice', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -704,7 +704,7 @@ export async function findDraftOrder(customer: string, owner?: string): Promise<
 }
 
 export async function getOutstandingInvoices(customer: string): Promise<OutstandingInvoice[]> {
-  const res = await fetch(`/api/method/sales_pwa.van_sale.finance.get_outstanding_invoices?customer=${encodeURIComponent(customer)}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.finance.get_outstanding_invoices?customer=${encodeURIComponent(customer)}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -713,7 +713,7 @@ export async function getOutstandingInvoices(customer: string): Promise<Outstand
 }
 
 export async function getPaymentModes(): Promise<PaymentMode[]> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.finance.get_payment_modes', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.finance.get_payment_modes', {
     method: 'GET',
     credentials: 'include',
   });
@@ -722,7 +722,7 @@ export async function getPaymentModes(): Promise<PaymentMode[]> {
 }
 
 export async function getAllPaymentModes(): Promise<PaymentMode[]> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.driver.get_driver_setup_options', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.driver.get_driver_setup_options', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -733,7 +733,7 @@ export async function getAllPaymentModes(): Promise<PaymentMode[]> {
 
 export async function getSalesOrders(customer: string): Promise<SalesOrderSummary[]> {
   const params = new URLSearchParams({ customer });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.sales.get_sales_orders?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_sales_orders?${params.toString()}`, {
     headers: defaultHeaders(),
     credentials: 'include',
   });
@@ -743,7 +743,7 @@ export async function getSalesOrders(customer: string): Promise<SalesOrderSummar
 
 export async function getCustomerSummary(customer: string): Promise<CustomerSummary> {
   const params = new URLSearchParams({ customer });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.finance.get_customer_summary?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.finance.get_customer_summary?${params.toString()}`, {
     headers: defaultHeaders(),
     credentials: 'include',
   });
@@ -770,7 +770,7 @@ export async function createPaymentEntry(
   }
 
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.finance.create_payment_entry', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.finance.create_payment_entry', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
     credentials: 'include',
@@ -789,7 +789,7 @@ export async function getCustomerLedger(
   if (fromDate) params.append('from_date', fromDate);
   if (toDate) params.append('to_date', toDate);
 
-  const res = await fetch(`/api/method/sales_pwa.van_sale.finance.get_customer_ledger?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.finance.get_customer_ledger?${params.toString()}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -798,7 +798,7 @@ export async function getCustomerLedger(
 }
 
 export async function getDailySummary(): Promise<{ sales_orders: { count: number; total: number }; payments: { count: number; total: number } }> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.get_daily_summary', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.get_daily_summary', {
     method: 'GET',
     credentials: 'include',
   });
@@ -810,7 +810,7 @@ export async function getDailyLog(doctype: 'Sales Order' | 'Payment Entry') {
     doctype,
     _: Date.now().toString()
   });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.sales.get_daily_log?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_daily_log?${params.toString()}`, {
     method: 'GET',
     credentials: 'include',
   });
@@ -833,7 +833,7 @@ export async function getDriverStockDashboard(forceRefresh = false): Promise<Dri
     params.set('force_refresh', '1');
   }
   const suffix = params.toString() ? `?${params.toString()}` : '';
-  const res = await fetch(`/api/method/sales_pwa.van_sale.inventory.get_driver_stock_dashboard${suffix}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.inventory.get_driver_stock_dashboard${suffix}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -845,7 +845,7 @@ export async function getDriverStockDashboard(forceRefresh = false): Promise<Dri
 export async function searchTransferItems(search = ''): Promise<Item[]> {
   const params = new URLSearchParams();
   if (search.trim()) params.set('search', search.trim());
-  const res = await fetch(`/api/method/sales_pwa.van_sale.inventory.search_transfer_items?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.inventory.search_transfer_items?${params.toString()}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -856,7 +856,7 @@ export async function searchTransferItems(search = ''): Promise<Item[]> {
 
 export async function getTransferItemDetail(itemCode: string): Promise<TransferItemDetail> {
   const params = new URLSearchParams({ item_code: itemCode });
-  const res = await fetch(`/api/method/sales_pwa.van_sale.inventory.get_transfer_item_detail?${params.toString()}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.inventory.get_transfer_item_detail?${params.toString()}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -867,7 +867,7 @@ export async function getTransferItemDetail(itemCode: string): Promise<TransferI
 
 export async function createStockTransfer(lines: StockTransferLine[], remarks = '') {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.inventory.create_stock_transfer', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.inventory.create_stock_transfer', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -893,7 +893,7 @@ export async function createStockTransfer(lines: StockTransferLine[], remarks = 
 }
 
 export async function getDriverSetupOptions(): Promise<DriverSetupOptions> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.driver.get_driver_setup_options', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.driver.get_driver_setup_options', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -907,7 +907,7 @@ export async function createSalesReturn(
   items: { item_code: string; qty: number; rate?: number }[],
 ): Promise<string> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.sales.create_sales_return', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_sales_return', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -918,7 +918,7 @@ export async function createSalesReturn(
 }
 
 export async function getActiveShift(): Promise<ActiveShift | null> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.shift.get_active_shift', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.shift.get_active_shift', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -929,7 +929,7 @@ export async function getActiveShift(): Promise<ActiveShift | null> {
 
 export async function openShift(balanceDetails: ShiftBalanceDetail[], notes?: string): Promise<ActiveShift> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.shift.open_shift', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.shift.open_shift', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -941,7 +941,7 @@ export async function openShift(balanceDetails: ShiftBalanceDetail[], notes?: st
 
 export async function getShiftClosingSummary(openingShift?: string): Promise<ShiftClosingSummary> {
   const qs = openingShift ? `?opening_shift=${encodeURIComponent(openingShift)}` : '';
-  const res = await fetch(`/api/method/sales_pwa.van_sale.shift.get_shift_closing_summary${qs}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.shift.get_shift_closing_summary${qs}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -956,7 +956,7 @@ export async function closeShift(
   notes?: string,
 ): Promise<{ name: string; net_difference: number; variance_status: VarianceStatus; variance_tolerance: number; draft_orders_count: number }> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.shift.close_shift', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.shift.close_shift', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -973,7 +973,7 @@ export async function closeShift(
 /** Managers only: cancel a closing so the driver's shift is open again. */
 export async function reopenShift(closingShift: string): Promise<ActiveShift> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.shift.reopen_shift', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.shift.reopen_shift', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -986,7 +986,7 @@ export async function reopenShift(closingShift: string): Promise<ActiveShift> {
 // ─── Cash movements (expenses & deposits from the drawer) ─────────────────────
 
 export async function getCashMovementContext(): Promise<import('../types').CashMovementContext> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.cash_movement.get_cash_movement_context', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.cash_movement.get_cash_movement_context', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1003,7 +1003,7 @@ export async function createCashMovement(payload: {
   remarks?: string;
 }): Promise<import('../types').CashMovement> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.cash_movement.create_cash_movement', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.cash_movement.create_cash_movement', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -1015,7 +1015,7 @@ export async function createCashMovement(payload: {
 
 export async function getShiftCashMovements(openingShift?: string): Promise<import('../types').CashMovement[]> {
   const qs = openingShift ? `?opening_shift=${encodeURIComponent(openingShift)}` : '';
-  const res = await fetch(`/api/method/sales_pwa.van_sale.cash_movement.get_shift_cash_movements${qs}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.cash_movement.get_shift_cash_movements${qs}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1026,7 +1026,7 @@ export async function getShiftCashMovements(openingShift?: string): Promise<impo
 
 export async function cancelCashMovement(name: string): Promise<{ name: string; docstatus: number }> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.cash_movement.cancel_cash_movement', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.cash_movement.cancel_cash_movement', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -1038,7 +1038,7 @@ export async function cancelCashMovement(name: string): Promise<{ name: string; 
 
 export async function getShiftSummary(openingShift?: string): Promise<import('../types').ShiftReport> {
   const qs = openingShift ? `?opening_shift=${encodeURIComponent(openingShift)}` : '';
-  const res = await fetch(`/api/method/sales_pwa.van_sale.shift_report.get_shift_summary${qs}`, {
+  const res = await fetch(`/api/method/sales_pwa.sales_app.shift_report.get_shift_summary${qs}`, {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1049,7 +1049,7 @@ export async function getShiftSummary(openingShift?: string): Promise<import('..
 
 export async function getClosingReport(closingShift: string): Promise<import('../types').ShiftReport> {
   const res = await fetch(
-    `/api/method/sales_pwa.van_sale.shift_report.get_closing_report?closing_shift=${encodeURIComponent(closingShift)}`,
+    `/api/method/sales_pwa.sales_app.shift_report.get_closing_report?closing_shift=${encodeURIComponent(closingShift)}`,
     { method: 'GET', credentials: 'include', headers: defaultHeaders() },
   );
   const data = await handleResponse(res);
@@ -1057,7 +1057,7 @@ export async function getClosingReport(closingShift: string): Promise<import('..
 }
 
 export async function getShiftClosings(): Promise<import('../types').ShiftClosingListRow[]> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.shift_report.get_shift_closings', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.shift_report.get_shift_closings', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1082,12 +1082,12 @@ async function getMethod<T>(method: string, params: Record<string, string | unde
 }
 
 export const getManagerDashboard = () =>
-  getMethod<import('../types').ManagerDashboard>('sales_pwa.van_sale.manager_report.get_manager_dashboard');
+  getMethod<import('../types').ManagerDashboard>('sales_pwa.sales_app.manager_report.get_manager_dashboard');
 
-export const getFleet = () => getMethod<import('../types').FleetOptions>('sales_pwa.van_sale.manager_report.get_fleet');
+export const getFleet = () => getMethod<import('../types').FleetOptions>('sales_pwa.sales_app.manager_report.get_fleet');
 
 export const getPeriodReport = (fromDate: string, toDate: string, driver?: string, vanProfile?: string) =>
-  getMethod<import('../types').PeriodReport>('sales_pwa.van_sale.manager_report.get_period_report', {
+  getMethod<import('../types').PeriodReport>('sales_pwa.sales_app.manager_report.get_period_report', {
     from_date: fromDate,
     to_date: toDate,
     driver,
@@ -1097,14 +1097,14 @@ export const getPeriodReport = (fromDate: string, toDate: string, driver?: strin
 export function downloadPdf(doctype: string, name: string, format = 'Standard') {
   // van_sale.pdf.download_pdf inlines the print stylesheet so wkhtmltopdf never has to
   // fetch the site's own assets over the network (that fetch 404s behind some proxies).
-  const url = `/api/method/sales_pwa.van_sale.pdf.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(format)}&no_letterhead=0`;
+  const url = `/api/method/sales_pwa.sales_app.pdf.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(format)}&no_letterhead=0`;
   window.open(url, '_blank');
 }
 
-// ─── Van Profile API ─────────────────────────────────────────────────────────
+// ─── Sales Profile API ─────────────────────────────────────────────────────────
 
 export async function listVanProfiles(): Promise<import('../types').VanProfile[]> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.van_profile.list_van_profiles', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.list_van_profiles', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1114,7 +1114,7 @@ export async function listVanProfiles(): Promise<import('../types').VanProfile[]
 }
 
 export async function getVanProfileOptions(): Promise<import('../types').VanProfileOptions> {
-  const res = await fetch('/api/method/sales_pwa.van_sale.van_profile.get_van_profile_options', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.get_van_profile_options', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
@@ -1125,7 +1125,7 @@ export async function getVanProfileOptions(): Promise<import('../types').VanProf
 
 export async function saveVanProfile(payload: Partial<import('../types').VanProfile>): Promise<import('../types').VanProfile> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.van_profile.save_van_profile', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.save_van_profile', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -1137,7 +1137,7 @@ export async function saveVanProfile(payload: Partial<import('../types').VanProf
 
 export async function deleteVanProfile(name: string): Promise<void> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.van_profile.delete_van_profile', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.delete_van_profile', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
@@ -1148,7 +1148,7 @@ export async function deleteVanProfile(name: string): Promise<void> {
 
 export async function assignDriverToProfile(driverUser: string, vanProfile: string): Promise<void> {
   await refreshCsrfToken();
-  const res = await fetch('/api/method/sales_pwa.van_sale.van_profile.assign_driver_to_profile', {
+  const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.assign_driver_to_profile', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },

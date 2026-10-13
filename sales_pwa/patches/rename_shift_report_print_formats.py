@@ -2,8 +2,8 @@ import frappe
 
 # X/Y reports were renamed to Shift Summary / Closing Report.
 RENAMES = {
-	"Van Shift X Report": "Van Shift Summary",
-	"Van Shift Y Report": "Van Shift Closing Report",
+	"Van Shift X Report": "Sales Shift Summary",
+	"Van Shift Y Report": "Sales Shift Closing Report",
 }
 
 

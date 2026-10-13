@@ -1,0 +1,390 @@
+"""
+Shift summary and closing report.
+
+- Shift summary: a read-only snapshot of a shift that is still open. It runs the same
+  aggregation close_shift() would (shift._compute_closing) without writing
+  anything, so a driver can check their numbers as often as they like mid-route.
+- Closing report: the final report of a closed shift, read from its Sales Shift Closing.
+  Totals and the per-mode reconciliation come straight off the closing doc, and the
+  breakdowns are built from the closing's frozen `transactions` list, so the report
+  reads the same whenever it is reprinted.
+
+Both share one shape (see _build_report), rendered by ShiftReportView.vue in the app
+and by the "Sales Shift Summary" / "Sales Shift Closing Report" print formats, which call
+get_shift_report_for_print() through the jinja hook.
+"""
+
+import frappe
+from frappe.utils import cint, flt, now_datetime
+
+from sales_pwa.sales_app.doctype.sales_shift_closing.sales_shift_closing import variance_status
+from sales_pwa.sales_app.shift import _compute_closing, _find_open_shift, _serialize_opening, _variance_tolerance
+from sales_pwa.sales_app.utils import _is_manager, _require_van_user
+
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def _check_access(doc):
+	if frappe.session.user != "Administrator" and not _is_manager() and doc.driver != frappe.session.user:
+		frappe.throw("You can only view reports for your own shifts.", frappe.PermissionError)
+
+
+def _names(transactions: list[dict], doctype: str) -> list[str]:
+	return [t["reference_name"] for t in transactions if t["reference_doctype"] == doctype]
+
+
+def _amounts(transactions: list[dict], doctype: str) -> dict[str, float]:
+	return {t["reference_name"]: flt(t["amount"]) for t in transactions if t["reference_doctype"] == doctype}
+
+
+# How closings made before `transactions` existed selected each doctype for a driver's
+# day: (date field, owner field, extra filters, amount field). Current closings use the
+# shift window instead (shift._compute_closing); this only rebuilds old ones.
+_LEGACY_SOURCES = {
+	"Sales Order": ("transaction_date", "owner", {"docstatus": 1}, "grand_total"),
+	"Sales Invoice": ("posting_date", "owner", {"docstatus": 1}, "grand_total"),
+	"Payment Entry": ("posting_date", "owner", {"docstatus": 1, "payment_type": "Receive"}, "paid_amount"),
+	"Sales Expense Log": ("expense_date", "driver", {}, "amount"),
+}
+
+
+def _legacy_transactions(doctypes: list[str], driver: str, shift_date, period_end) -> list[dict]:
+	"""Rebuild references for closings that predate them being stored on the closing.
+
+	Closings made before `transactions` existed hold none at all, and ones made before
+	invoices were recorded hold no Sales Invoice rows. Matched the way _compute_closing()
+	selects them, by date and owner, limited to records created before the shift closed.
+	"""
+	transactions = []
+	for doctype in doctypes:
+		date_field, owner_field, filters, amount_field = _LEGACY_SOURCES[doctype]
+		filters = {**filters, date_field: shift_date, owner_field: driver}
+		if period_end:
+			filters["creation"] = ["<=", period_end]
+		transactions += [
+			{"reference_doctype": doctype, "reference_name": row.name, "amount": flt(row.get(amount_field))}
+			for row in frappe.get_all(doctype, filters=filters, fields=["name", amount_field])
+		]
+	return transactions
+
+
+def _item_rows(sales_orders: list[str], returns: list[str]) -> list[dict]:
+	"""Per-item quantities sold (on the shift's Sales Orders) and returned (credit notes).
+
+	Quantities are in stock UOM so lines sold in different UOMs add up; amounts are
+	net_amount, i.e. after any order-level discount and before tax.
+	"""
+	items: dict[str, dict] = {}
+
+	def add(parenttype: str, parents: list[str], qty_key: str, amount_key: str):
+		if not parents:
+			return
+		for row in frappe.get_all(
+			f"{parenttype} Item",
+			filters={"parent": ["in", parents], "parenttype": parenttype},
+			fields=["item_code", "item_name", "stock_uom", "stock_qty", "net_amount"],
+			order_by="idx asc",
+		):
+			entry = items.setdefault(
+				row.item_code,
+				{
+					"item_code": row.item_code,
+					"item_name": row.item_name,
+					"uom": row.stock_uom,
+					"sold_qty": 0.0,
+					"sold_amount": 0.0,
+					"returned_qty": 0.0,
+					"returned_amount": 0.0,
+				},
+			)
+			# Credit notes carry negative quantities and amounts.
+			entry[qty_key] += abs(flt(row.stock_qty))
+			entry[amount_key] += abs(flt(row.net_amount))
+
+	add("Sales Order", sales_orders, "sold_qty", "sold_amount")
+	add("Sales Invoice", returns, "returned_qty", "returned_amount")
+
+	rows = sorted(items.values(), key=lambda r: (-r["sold_qty"], r["item_name"] or r["item_code"]))
+	for row in rows:
+		row["net_qty"] = row["sold_qty"] - row["returned_qty"]
+	return rows
+
+
+def _build_report(
+	report_type: str,
+	header: dict,
+	totals: dict,
+	reconciliation: list[dict],
+	transactions: list[dict],
+	taxes: list[dict] | None = None,
+	draft_orders: list[dict] | None = None,
+) -> dict:
+	"""Assemble the report shape the summary and closing report share, from a shift's
+	transaction references.
+
+	`transactions` is the reference list shift._compute_closing() produces (and a
+	closing stores). Amounts are taken from it rather than re-read, so a closing report
+	shows what the shift actually closed on. `taxes` is the per-account tax breakdown
+	of the shift's orders; `draft_orders` the unsubmitted orders still hanging (only
+	meaningful on a summary, where they can still be submitted).
+	"""
+	order_names = _names(transactions, "Sales Order")
+	payment_amounts = _amounts(transactions, "Payment Entry")
+	expense_amounts = _amounts(transactions, "Sales Expense Log")
+	movement_amounts = _amounts(transactions, "Sales Cash Movement")
+	invoice_amounts = _amounts(transactions, "Sales Invoice")
+
+	# Invoices vs credit notes.
+	return_flags = {}
+	if invoice_amounts:
+		return_flags = {
+			r.name: cint(r.is_return)
+			for r in frappe.get_all(
+				"Sales Invoice", filters={"name": ["in", list(invoice_amounts)]}, fields=["name", "is_return"]
+			)
+		}
+	invoices = [n for n in invoice_amounts if not return_flags.get(n)]
+	returns = [n for n in invoice_amounts if return_flags.get(n)]
+	invoiced_total = sum(invoice_amounts[n] for n in invoices)
+	returns_total = abs(sum(invoice_amounts[n] for n in returns))
+
+	# Collections, grouped by mode in first-seen order.
+	collections: dict[str, dict] = {}
+	if payment_amounts:
+		for pe in frappe.get_all(
+			"Payment Entry",
+			filters={"name": ["in", list(payment_amounts)]},
+			fields=["name", "mode_of_payment"],
+			order_by="creation asc",
+		):
+			mode = pe.mode_of_payment or "Cash"
+			row = collections.setdefault(mode, {"mode_of_payment": mode, "count": 0, "amount": 0.0})
+			row["count"] += 1
+			row["amount"] += payment_amounts[pe.name]
+
+	# Expenses: legacy logs (type + notes, no accounting) and cash movements of type
+	# Expense (account + remarks, posted to a Journal Entry). Deposits are listed apart.
+	expenses = []
+	deposits = []
+	if expense_amounts:
+		expenses = [
+			{
+				"name": e.name,
+				"expense_type": e.expense_type,
+				"notes": e.notes,
+				"amount": expense_amounts[e.name],
+				"journal_entry": None,
+			}
+			for e in frappe.get_all(
+				"Sales Expense Log",
+				filters={"name": ["in", list(expense_amounts)]},
+				fields=["name", "expense_type", "notes"],
+				order_by="creation asc",
+			)
+		]
+	if movement_amounts:
+		for m in frappe.get_all(
+			"Sales Cash Movement",
+			filters={"name": ["in", list(movement_amounts)]},
+			fields=["name", "movement_type", "expense_account", "target_account", "against_name", "remarks", "journal_entry"],
+			order_by="creation asc",
+		):
+			row = {
+				"name": m.name,
+				"expense_type": frappe.get_cached_value("Account", m.target_account, "account_name") or m.target_account,
+				"notes": " · ".join(x for x in (m.against_name, m.remarks) if x) or None,
+				"amount": movement_amounts[m.name],
+				"journal_entry": m.journal_entry,
+			}
+			(expenses if m.movement_type == "Expense" else deposits).append(row)
+
+	return {
+		"report_type": report_type,
+		"generated_at": str(now_datetime()),
+		"shift": header,
+		"totals": {
+			**totals,
+			"sales_orders_count": len(order_names),
+			"invoices_count": len(invoices),
+			"invoiced_total": invoiced_total,
+			"returns_count": len(returns),
+			"returns_total": returns_total,
+			"net_invoiced": invoiced_total - returns_total,
+			"payments_count": len(payment_amounts),
+			"expenses_count": len(expenses),
+			"deposits_count": len(deposits),
+			"total_deposits": flt(totals.get("total_deposits")) or sum(d["amount"] for d in deposits),
+		},
+		"payment_reconciliation": reconciliation,
+		"collections": list(collections.values()),
+		"taxes": taxes or [],
+		"expenses": expenses,
+		"deposits": deposits,
+		"items": _item_rows(order_names, returns),
+		"draft_orders": draft_orders or [],
+	}
+
+
+def _header(doc, opening_shift: str, closing_shift: str | None) -> dict:
+	return {
+		"opening_shift": opening_shift,
+		"closing_shift": closing_shift,
+		"driver": doc.driver,
+		"driver_name": frappe.utils.get_fullname(doc.driver),
+		"van_profile": doc.van_profile,
+		"company": doc.company,
+		"currency": frappe.get_cached_value("Company", doc.company, "default_currency") if doc.company else None,
+		"shift_date": str(doc.shift_date),
+		"period_start": str(doc.period_start) if doc.period_start else None,
+		"period_end": str(doc.period_end) if doc.get("period_end") else None,
+		"status": doc.status,
+		"closed_by": doc.get("closed_by"),
+		"closed_by_name": frappe.utils.get_fullname(doc.get("closed_by")) if doc.get("closed_by") else None,
+		"notes": doc.notes,
+	}
+
+
+# ─── Builders ─────────────────────────────────────────────────────────────────
+
+def build_shift_summary(opening_doc) -> dict:
+	"""Live snapshot of an open shift. Writes nothing."""
+	if opening_doc.docstatus != 1 or opening_doc.status != "Open":
+		frappe.throw("The shift summary is only available while a shift is open. Closed shifts have a closing report.")
+
+	computed = _compute_closing(_serialize_opening(opening_doc))
+	totals = {
+		key: computed[key]
+		for key in (
+			"total_sales", "net_total", "total_taxes", "total_quantity", "total_returns",
+			"total_collections", "total_expenses", "total_deposits", "total_opening_float", "expected_cash",
+		)
+	}
+	totals["variance_tolerance"] = _variance_tolerance(opening_doc.van_profile)
+	totals["draft_orders_count"] = len(computed["draft_orders"])
+	reconciliation = [
+		{**row, "closing_amount": None, "difference": None} for row in computed["rows"]
+	]
+	return _build_report(
+		"summary",
+		_header(opening_doc, opening_doc.name, None),
+		totals,
+		reconciliation,
+		computed["transactions"],
+		taxes=computed["taxes"],
+		draft_orders=computed["draft_orders"],
+	)
+
+
+def build_closing_report(closing_doc) -> dict:
+	"""Final report of a closed shift, from its Sales Shift Closing."""
+	if closing_doc.docstatus != 1:
+		frappe.throw("The closing report is only available for a submitted shift closing.")
+
+	transactions = [
+		{"reference_doctype": t.reference_doctype, "reference_name": t.reference_name, "amount": flt(t.amount)}
+		for t in closing_doc.transactions
+	]
+	recorded = {t["reference_doctype"] for t in transactions}
+	missing = list(_LEGACY_SOURCES) if not transactions else [] if "Sales Invoice" in recorded else ["Sales Invoice"]
+	transactions += _legacy_transactions(missing, closing_doc.driver, closing_doc.shift_date, closing_doc.period_end)
+
+	totals = {
+		key: flt(closing_doc.get(key))
+		for key in (
+			"total_sales", "net_total", "total_taxes", "total_quantity", "total_returns",
+			"total_collections", "total_expenses", "total_deposits", "total_opening_float",
+			"expected_cash", "net_difference", "variance_tolerance",
+		)
+	}
+	totals["variance_status"] = closing_doc.get("variance_status") or variance_status(
+		closing_doc.net_difference, closing_doc.get("variance_tolerance")
+	)
+	totals["draft_orders_count"] = cint(closing_doc.get("draft_orders_count"))
+	taxes = [
+		{"account_head": t.account_head, "rate": flt(t.rate), "amount": flt(t.amount)}
+		for t in (closing_doc.get("taxes") or [])
+	]
+	reconciliation = [
+		{
+			"mode_of_payment": r.mode_of_payment,
+			"opening_amount": flt(r.opening_amount),
+			"expected_amount": flt(r.expected_amount),
+			"closing_amount": flt(r.closing_amount),
+			"difference": flt(r.difference),
+		}
+		for r in closing_doc.payment_reconciliation
+	]
+	return _build_report(
+		"closing",
+		_header(closing_doc, closing_doc.opening_shift, closing_doc.name),
+		totals,
+		reconciliation,
+		transactions,
+		taxes=taxes,
+	)
+
+
+# ─── Endpoints ────────────────────────────────────────────────────────────────
+
+@frappe.whitelist()
+def get_shift_summary(opening_shift: str | None = None):
+	"""Summary of the given open shift, or of the caller's own open shift."""
+	_require_van_user()
+	if not opening_shift:
+		opening_shift = _find_open_shift(frappe.session.user, today_only=False)
+		if not opening_shift:
+			frappe.throw("No open shift found. Open a shift to see its summary.")
+	doc = frappe.get_doc("Sales Shift Opening", opening_shift)
+	_check_access(doc)
+	return build_shift_summary(doc)
+
+
+@frappe.whitelist()
+def get_closing_report(closing_shift: str):
+	_require_van_user()
+	doc = frappe.get_doc("Sales Shift Closing", closing_shift)
+	_check_access(doc)
+	return build_closing_report(doc)
+
+
+@frappe.whitelist()
+def get_shift_closings(limit: int = 30):
+	"""Recent closed shifts to pick a closing report from: the caller's own, or everyone's for a manager."""
+	_require_van_user()
+	filters = {"docstatus": 1}
+	if frappe.session.user != "Administrator" and not _is_manager():
+		filters["driver"] = frappe.session.user
+	rows = frappe.get_all(
+		"Sales Shift Closing",
+		filters=filters,
+		fields=[
+			"name", "opening_shift", "driver", "shift_date", "period_start", "period_end",
+			"total_sales", "total_collections", "net_difference", "variance_status", "closed_by", "draft_orders_count",
+		],
+		order_by="period_end desc, creation desc",
+		limit_page_length=min(max(cint(limit), 1), 100),
+	)
+	for row in rows:
+		row["driver_name"] = frappe.utils.get_fullname(row.driver)
+	return rows
+
+
+def get_shift_report_for_print(doctype: str, name: str) -> dict | None:
+	"""Jinja method (see hooks.py) backing the shift summary / closing report print formats.
+
+	Returns None when the document can't produce that report (a summary of a shift
+	that has since closed, or a draft/cancelled closing), so the template can say so
+	rather than failing the whole print.
+	"""
+	doc = frappe.get_doc(doctype, name)
+	if not (frappe.has_permission(doctype, "print", doc) or frappe.has_permission(doctype, "read", doc)):
+		frappe.throw("Not permitted to print this shift.", frappe.PermissionError)
+	if doctype == "Sales Shift Opening":
+		if doc.docstatus != 1 or doc.status != "Open":
+			return None
+		return build_shift_summary(doc)
+	if doctype == "Sales Shift Closing":
+		if doc.docstatus != 1:
+			return None
+		return build_closing_report(doc)
+	frappe.throw(f"No shift report for {doctype}.")

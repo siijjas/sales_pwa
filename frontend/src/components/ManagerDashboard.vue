@@ -81,7 +81,7 @@
           <p class="text-xs font-bold uppercase tracking-wider text-muted">Vans</p>
           <button class="text-xs font-semibold text-primary" @click="router.push({ name: 'shift-reports' })">Shift reports</button>
         </div>
-        <EmptyState v-if="!data.vans.length" icon="truck" title="No vans yet" description="Assign drivers to a Van Profile to see them here." />
+        <EmptyState v-if="!data.vans.length" icon="truck" title="No vans yet" description="Assign drivers to a Sales Profile to see them here." />
         <div v-else class="grid gap-2.5 md:grid-cols-2">
           <AppCard v-for="v in data.vans" :key="v.driver" padding="sm" :interactive="Boolean(reportRoute(v))" @click="openVan(v)">
             <div class="flex items-start justify-between gap-3">

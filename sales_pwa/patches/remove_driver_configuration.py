@@ -6,8 +6,8 @@ def execute():
 
 	Driver Configuration (and its child Driver Allowed Payment Mode) were never
 	read or written by application code. The runtime driver config is derived
-	entirely from Van Profile via get_van_profile_for_driver(), so these tables
-	are dead schema. Removing them makes Van Profile the single source of truth
+	entirely from Sales Profile via get_van_profile_for_driver(), so these tables
+	are dead schema. Removing them makes Sales Profile the single source of truth
 	and eliminates the risk of the two configurations drifting apart.
 	"""
 	for doctype in ("Driver Configuration", "Driver Allowed Payment Mode"):

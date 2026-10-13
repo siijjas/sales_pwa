@@ -211,7 +211,7 @@ import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, SearchBar, SegmentedControl, SkeletonList, EmptyState, StickyBar } from '../components/ui';
 
 const store = useSessionStore();
-// Van Profile.show_customer_balance off: staff never see what the customer owes.
+// Sales Profile.show_customer_balance off: staff never see what the customer owes.
 const showBalance = computed(() => store.isManager || store.capabilities.shows_customer_balance !== false);
 const route = useRoute();
 const router = useRouter();

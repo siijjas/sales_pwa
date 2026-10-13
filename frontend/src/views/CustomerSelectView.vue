@@ -123,7 +123,7 @@ const selectCustomer = (customer: Customer) => {
   } else router.push({ name: 'items' });
 };
 
-// Van Profile.allow_create_customer off: staff pick from the list only.
+// Sales Profile.allow_create_customer off: staff pick from the list only.
 const canCreateCustomer = computed(() => store.isManager || store.capabilities.can_create_customer !== false);
 const openNewCustomer = () => {
   newCustomerName.value = txt.value.trim();

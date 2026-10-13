@@ -1,6 +1,6 @@
-{#- Shared body of the "Van Shift Summary" / "Van Shift Closing Report" print formats.
-    Expects `doc` (a Van Shift Opening or Van Shift Closing). Report data comes from
-    sales_pwa.van_sale.shift_report.get_shift_report_for_print (jinja hook). -#}
+{#- Shared body of the "Sales Shift Summary" / "Sales Shift Closing Report" print formats.
+    Expects `doc` (a Sales Shift Opening or Sales Shift Closing). Report data comes from
+    sales_pwa.sales_app.shift_report.get_shift_report_for_print (jinja hook). -#}
 {%- set r = get_shift_report_for_print(doc.doctype, doc.name) -%}
 
 <style>
@@ -23,8 +23,8 @@
 <div class="vs-report">
 {%- if not r %}
 	<h2>Shift report unavailable</h2>
-	{%- if doc.doctype == "Van Shift Opening" %}
-	<p>This shift is no longer open, so it has no summary. Print the closing report from its Van Shift Closing instead.</p>
+	{%- if doc.doctype == "Sales Shift Opening" %}
+	<p>This shift is no longer open, so it has no summary. Print the closing report from its Sales Shift Closing instead.</p>
 	{%- else %}
 	<p>A closing report is only available once the shift closing is submitted.</p>
 	{%- endif %}

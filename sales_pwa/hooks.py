@@ -1,7 +1,7 @@
 app_name = "sales_pwa"
-app_title = "Van Sale"
+app_title = "Sales App"
 app_publisher = "me"
-app_description = "Van sale application"
+app_description = "Sales app for ERPNext van and field sales"
 app_email = "me@me.com"
 app_license = "mit"
 
@@ -61,7 +61,7 @@ app_license = "mit"
 
 # website user home page (by Role)
 role_home_page = {
-	"Van Sales Driver": "/sales"
+	"Sales App User": "/sales"
 }
 
 # Generators
@@ -113,11 +113,11 @@ role_home_page = {
 
 # notification_config = "van_sale.notifications.get_notification_config"
 
-# Fixtures — ship the Van Sales Driver role with the app so it is created on install
+# Fixtures — ship the Sales App User role with the app so it is created on install
 fixtures = [
 	{
 		"dt": "Role",
-		"filters": [["name", "in", ["Van Sales Driver"]]]
+		"filters": [["name", "in", ["Sales App User"]]]
 	}
 ]
 
@@ -126,30 +126,30 @@ fixtures = [
 # Permissions evaluated in scripted ways
 
 permission_query_conditions = {
-	"Van EOD Report": "sales_pwa.permissions.get_van_eod_report_permission_query_conditions",
-	"Van Expense Log": "sales_pwa.permissions.get_van_expense_log_permission_query_conditions",
-	"Van Profile": "sales_pwa.permissions.get_van_profile_permission_query_conditions",
-	"Van Shift Opening": "sales_pwa.permissions.get_van_shift_opening_permission_query_conditions",
-	"Van Shift Closing": "sales_pwa.permissions.get_van_shift_closing_permission_query_conditions",
-	"Van Cash Movement": "sales_pwa.permissions.get_van_cash_movement_permission_query_conditions",
+	"Sales EOD Report": "sales_pwa.permissions.get_van_eod_report_permission_query_conditions",
+	"Sales Expense Log": "sales_pwa.permissions.get_van_expense_log_permission_query_conditions",
+	"Sales Profile": "sales_pwa.permissions.get_van_profile_permission_query_conditions",
+	"Sales Shift Opening": "sales_pwa.permissions.get_van_shift_opening_permission_query_conditions",
+	"Sales Shift Closing": "sales_pwa.permissions.get_van_shift_closing_permission_query_conditions",
+	"Sales Cash Movement": "sales_pwa.permissions.get_van_cash_movement_permission_query_conditions",
 }
 
 has_permission = {
-	"Van EOD Report": "sales_pwa.permissions.has_van_eod_report_permission",
-	"Van Expense Log": "sales_pwa.permissions.has_van_expense_log_permission",
-	"Van Profile": "sales_pwa.permissions.has_van_profile_permission",
-	"Van Shift Opening": "sales_pwa.permissions.has_van_shift_opening_permission",
-	"Van Shift Closing": "sales_pwa.permissions.has_van_shift_closing_permission",
-	"Van Cash Movement": "sales_pwa.permissions.has_van_cash_movement_permission",
+	"Sales EOD Report": "sales_pwa.permissions.has_van_eod_report_permission",
+	"Sales Expense Log": "sales_pwa.permissions.has_van_expense_log_permission",
+	"Sales Profile": "sales_pwa.permissions.has_van_profile_permission",
+	"Sales Shift Opening": "sales_pwa.permissions.has_van_shift_opening_permission",
+	"Sales Shift Closing": "sales_pwa.permissions.has_van_shift_closing_permission",
+	"Sales Cash Movement": "sales_pwa.permissions.has_van_cash_movement_permission",
 }
 
 # Run after every bench migrate to ensure Custom DocPerm entries exist for the
-# Van Sales Driver role on the standard ERPNext doctypes the PWA uses via REST.
-after_migrate = ["sales_pwa.van_sale.setup.setup_van_sales_driver_permissions"]
+# Sales App User role on the standard ERPNext doctypes the PWA uses via REST.
+after_migrate = ["sales_pwa.sales_app.setup.setup_sales_app_user_permissions"]
 
-# Lets the "Van Shift Summary" / "Van Shift Closing Report" print formats build their data.
+# Lets the "Sales Shift Summary" / "Sales Shift Closing Report" print formats build their data.
 jinja = {
-	"methods": ["sales_pwa.van_sale.shift_report.get_shift_report_for_print"],
+	"methods": ["sales_pwa.sales_app.shift_report.get_shift_report_for_print"],
 }
 
 # DocType Class
@@ -164,8 +164,8 @@ jinja = {
 # ---------------
 # Hook on document methods and events
 
-# Cache invalidation for Van Profile is handled by the VanProfile DocType class
-# (on_update / on_trash in sales_pwa/van_sale/van_sale/doctype/van_profile/van_profile.py).
+# Cache invalidation for Sales Profile is handled by the SalesProfile DocType class
+# (on_update / on_trash in sales_pwa/sales_app/doctype/sales_profile/sales_profile.py).
 # No doc_events hook needed here.
 
 # Scheduled Tasks
@@ -174,7 +174,7 @@ jinja = {
 scheduler_events = {
 	# Managers get a Notification Log (desk bell + email per their settings) listing
 	# every shift still open from an earlier day.
-	"daily": ["sales_pwa.van_sale.tasks.notify_stale_shifts"],
+	"daily": ["sales_pwa.sales_app.tasks.notify_stale_shifts"],
 }
 
 # scheduler_events = {

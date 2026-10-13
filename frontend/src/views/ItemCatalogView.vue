@@ -139,7 +139,7 @@ const customerNameParam = route.query.customer_name as string | undefined;
 
 const search = ref('');
 const items = ref<Item[]>([]);
-// Van Profile.hide_unavailable_items: only what the van actually holds is listed.
+// Sales Profile.hide_unavailable_items: only what the van actually holds is listed.
 // Field Sales never sells from a warehouse, so it always sees the full catalog.
 const hideUnavailable = computed(() => !store.isManager && !store.isFieldSales && Boolean(store.driverConfig?.hide_unavailable_items));
 const loading = ref(true);
@@ -147,7 +147,7 @@ const error = ref('');
 const currency = computed(() => store.currencyDisplay);
 const cartCount = computed(() => store.cartCount);
 const total = computed(() => store.cartTotal.toFixed(2));
-// Van Profile override: out-of-stock items can still be ordered; create_sales_invoice()
+// Sales Profile override: out-of-stock items can still be ordered; create_sales_invoice()
 // then bills them without moving stock and delivers only what the van holds. Field Sales
 // staff never sell from a warehouse, so for them the qty shown is information only.
 const allowWithoutStock = computed(() => store.canOrderWithoutStock);

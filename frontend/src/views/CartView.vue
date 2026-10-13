@@ -154,12 +154,12 @@ const orderDetail = ref<SalesOrder | null>(null);
 const currency = computed(() => store.currencyDisplay);
 // Matches the backend precedence exactly (_check_rate_change_allowed /
 // _check_discount_change_allowed in sales.py): managers are exempt outright,
-// and a user with no Van Profile at all (e.g. an admin/manager account not
+// and a user with no Sales Profile at all (e.g. an admin/manager account not
 // assigned to any van) is also treated as allowed — only an *explicit* false
 // on an actual driver's own profile restricts it.
 const allowRateChange = computed(() => store.isManager || store.driverConfig?.allow_rate_change !== false);
 const allowDiscountChange = computed(() => store.isManager || store.driverConfig?.allow_discount_change !== false);
-// Van Profile.max_discount_percent (0 = no cap). The server rejects anything above it.
+// Sales Profile.max_discount_percent (0 = no cap). The server rejects anything above it.
 const maxDiscountPercent = computed(() => (store.isManager ? 0 : Number(store.driverConfig?.max_discount_percent) || 0));
 const tax = computed(() => {
   const t = orderDetail.value?.total_taxes_and_charges;
@@ -168,7 +168,7 @@ const tax = computed(() => {
 const discountMode = ref<'percent' | 'amount'>('percent');
 const discountPercent = ref(0);
 const discountAmountInput = ref(0);
-// The server sets apply_discount_on = "Grand Total" (Van Profile default), so ERPNext
+// The server sets apply_discount_on = "Grand Total" (Sales Profile default), so ERPNext
 // applies a percentage to net + tax, not to net alone. Mirror that here or the figure
 // quoted to the customer differs from the order that gets saved whenever tax applies.
 const applyDiscountOnGrandTotal = computed(() => (store.driverConfig?.apply_discount_on || 'Grand Total') === 'Grand Total');

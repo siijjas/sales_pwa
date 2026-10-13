@@ -23,6 +23,7 @@ from sales_pwa.sales_app.utils import (
 	_manager_only, _coerce_list, _to_float, _coerce_check, _capabilities,
 	_default_company, _driver_cache_key, _driver_stock_cache_key,
 )
+from sales_pwa.sales_app.invoice_option import profile_invoice_options
 
 # Check fields added for the POS-profile style controls, with the default a new profile
 # gets. Existing rows received the same defaults from the column default on migrate.
@@ -95,6 +96,13 @@ def get_van_profile_options():
 			fields=["name", "company"],
 			limit_page_length=100,
 			order_by="name asc",
+		),
+		"invoice_options": frappe.get_all(
+			"Sales Invoice Option",
+			filters={"disabled": 0},
+			fields=["name", "option_name", "naming_series", "taxes_and_charges", "company", "description"],
+			limit_page_length=200,
+			order_by="option_name asc",
 		),
 		"currencies": frappe.get_all(
 			"Currency",
@@ -248,6 +256,15 @@ def list_van_profiles():
 				order_by="idx asc",
 			)
 		]
+		row.invoice_options = [
+			{"invoice_option": child.invoice_option, "is_default": _coerce_check(child.is_default)}
+			for child in frappe.get_all(
+				"Sales Profile Invoice Option",
+				filters={"parent": row.name, "parenttype": "Sales Profile"},
+				fields=["invoice_option", "is_default"],
+				order_by="idx asc",
+			)
+		]
 		# Coerce booleans
 		row.profile_type = row.profile_type or "Van Sales"
 		for check_field in (
@@ -345,6 +362,16 @@ def save_van_profile(payload):
 			doc.append("allowed_customer_groups", {"customer_group": group.strip()})
 
 	# Allowed expense accounts child table (Table MultiSelect)
+	# Invoice options: [{invoice_option, is_default}] (a bare name means not default).
+	doc.set("invoice_options", [])
+	for entry in _coerce_list(data.get("invoice_options")):
+		if isinstance(entry, dict):
+			option, is_default = entry.get("invoice_option"), _coerce_check(entry.get("is_default"))
+		else:
+			option, is_default = entry, False
+		if option:
+			doc.append("invoice_options", {"invoice_option": option, "is_default": 1 if is_default else 0})
+
 	doc.set("allowed_expense_accounts", [])
 	for account in _coerce_list(data.get("allowed_expense_accounts")):
 		if isinstance(account, str) and account.strip():
@@ -526,6 +553,7 @@ def _build_van_profile_payload(doc) -> dict:
 			for row in (doc.allowed_customer_groups or [])
 			if row.customer_group
 		],
+		"invoice_options": profile_invoice_options(doc),
 		"allowed_expense_accounts": [
 			row.account for row in (doc.allowed_expense_accounts or []) if row.account
 		],

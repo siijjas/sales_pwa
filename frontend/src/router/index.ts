@@ -40,6 +40,7 @@ const router = createRouter({
     { path: '/shift/report/y/:name', redirect: (to) => ({ name: 'closing-report', params: { name: to.params.name } }) },
     { path: '/eod', redirect: { name: 'shift-close' } },
     { path: '/sales-profiles', name: 'sales-profiles', component: () => import('../views/SalesProfileView.vue'), meta: { requiresManager: true } },
+    { path: '/invoice-options', name: 'invoice-options', component: () => import('../views/InvoiceOptionsView.vue'), meta: { requiresManager: true } },
   ],
 });
 

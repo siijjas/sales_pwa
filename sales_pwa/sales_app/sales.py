@@ -1,7 +1,7 @@
 import json
 import math
 import frappe
-from frappe.utils import add_days, nowdate, flt
+from frappe.utils import add_days, cint, flt, nowdate
 from sales_pwa.sales_app.shift import require_open_shift
 from sales_pwa.sales_app.utils import (
 	_coerce_check,
@@ -14,6 +14,7 @@ from sales_pwa.sales_app.utils import (
 	_require_capability,
 	_selling_warehouse,
 )
+from sales_pwa.sales_app.invoice_option import resolve_invoice_option
 
 
 def _apply_defaults(doc):
@@ -900,11 +901,168 @@ def get_invoice_stock_shortages(sales_order: str):
 	}
 
 
+def _build_sales_invoice(so, config: dict | None, option: dict | None, defer_delivery: bool):
+	"""The Sales Invoice for an order, built in memory with ERPNext's own totals but
+	not yet inserted. preview_sales_invoice() shows it, create_sales_invoice() saves
+	it, so what staff confirm is exactly what gets raised.
+
+	`option` is a Sales Invoice Option payload (see invoice_option.py): it sets the
+	naming series and replaces the order's tax template with its own (blank meaning
+	no taxes). Without one the invoice copies the order's taxes and takes the default
+	series, as it always did.
+	"""
+	van_warehouse = _selling_warehouse(config)
+
+	sinv = frappe.new_doc("Sales Invoice")
+	sinv.customer = so.customer
+	sinv.company = so.company
+	sinv.posting_date = nowdate()
+	sinv.selling_price_list = so.selling_price_list
+	sinv.currency = so.currency
+	sinv.conversion_rate = so.conversion_rate or 1
+	sinv.update_stock = 0 if defer_delivery else 1
+	if van_warehouse:
+		sinv.set_warehouse = van_warehouse
+	if so.taxes_and_charges:
+		sinv.taxes_and_charges = so.taxes_and_charges
+	if option:
+		sinv.naming_series = option["naming_series"]
+		sinv.taxes_and_charges = option.get("taxes_and_charges") or None
+
+	for so_item in so.items:
+		remaining_qty = flt(so_item.qty) - flt(so_item.returned_qty or 0)
+		if remaining_qty <= 0:
+			continue
+		sinv.append("items", {
+			"item_code": so_item.item_code,
+			"item_name": so_item.item_name,
+			"qty": remaining_qty,
+			"uom": so_item.uom or so_item.stock_uom,
+			"stock_uom": so_item.stock_uom,
+			"rate": so_item.rate,
+			"sales_order": so.name,
+			"so_detail": so_item.name,
+			"cost_center": getattr(so_item, "cost_center", None),
+			"warehouse": van_warehouse,
+		})
+
+	# Carry the order-level discount across. Without this the invoice is raised at the
+	# UNDISCOUNTED total — a 100.00 order with 10% off bills 100.00, and with mark_as_paid
+	# the customer is charged the full amount while the order and invoice totals diverge
+	# permanently. Copied verbatim, which is exact for the normal path (creation is
+	# refused once per_billed reaches 100, so the invoice bills the whole order); if
+	# returns have reduced what is being billed, a flat discount_amount is proportionally
+	# generous, though ERPNext still caps it at the invoice total.
+	sinv.apply_discount_on = so.apply_discount_on or "Grand Total"
+	sinv.additional_discount_percentage = flt(so.additional_discount_percentage)
+	sinv.discount_amount = flt(so.discount_amount)
+
+	sinv.run_method("set_missing_values")
+	if option:
+		# set_missing_values() may have filled taxes from the customer's tax category or
+		# the company default; the option decides, including "no taxes" when blank.
+		template = option.get("taxes_and_charges") or None
+		if sinv.taxes_and_charges != template or not template:
+			sinv.taxes_and_charges = template
+			sinv.set("taxes", [])
+			if template:
+				sinv.run_method("set_taxes")
+	sinv.run_method("calculate_taxes_and_totals")
+	return sinv
+
+
+def _proposed_invoice_name(sinv) -> str | None:
+	"""The number the invoice would most likely get: the series' next counter value,
+	read without consuming it. Only a proposal — another invoice saved in between, or
+	a date-based series rolling over, moves it on. The real name is assigned on save."""
+	from frappe.model.naming import get_default_naming_series, parse_naming_series
+
+	series = sinv.naming_series or get_default_naming_series("Sales Invoice")
+	if not series:
+		return None
+
+	def peek(prefix: str, digits: int) -> str:
+		current = frappe.db.sql("select current from `tabSeries` where name = %s", (prefix,))
+		return str(cint(current[0][0] if current else 0) + 1).zfill(digits)
+
+	try:
+		# Mirrors set_name_by_naming_series(): the trailing counter is ignored when the
+		# series already carries one.
+		return parse_naming_series(series + ".#####", doc=sinv, number_generator=peek)
+	except Exception:
+		return None
+
+
+@frappe.whitelist()
+def preview_sales_invoice(sales_order: str, invoice_option: str | None = None):
+	"""What create_sales_invoice() would raise for this order with this option: the
+	proposed number, lines, subtotal, each tax line and the grand total — plus the
+	stock shortages, so the app can show everything on one confirmation sheet.
+	Read-only: nothing is inserted and no series counter moves."""
+	_require_van_user()
+	_require_capability("can_invoice", "invoice orders")
+	so = _get_invoiceable_order(sales_order)
+	config = _get_driver_config(required=False)
+	option = resolve_invoice_option(config, invoice_option)
+	short_items = _van_stock_shortages(so, _selling_warehouse(config))
+	allow_without_stock = bool(config and config.get("allow_sale_without_stock"))
+	sinv = _build_sales_invoice(so, config, option, defer_delivery=bool(short_items) and allow_without_stock)
+	return {
+		"sales_order": so.name,
+		"customer": sinv.customer,
+		"customer_name": sinv.customer_name,
+		"posting_date": sinv.posting_date,
+		"currency": sinv.currency,
+		"invoice_option": option,
+		"naming_series": sinv.naming_series or None,
+		"proposed_name": _proposed_invoice_name(sinv),
+		"taxes_and_charges": sinv.taxes_and_charges,
+		"items": [
+			{
+				"item_code": row.item_code,
+				"item_name": row.item_name,
+				"qty": flt(row.qty),
+				"uom": row.uom,
+				"rate": flt(row.rate),
+				"amount": flt(row.amount),
+			}
+			for row in sinv.items
+		],
+		"total_qty": flt(sinv.total_qty),
+		"total": flt(sinv.total),
+		"net_total": flt(sinv.net_total),
+		"discount_amount": flt(sinv.discount_amount),
+		"taxes": [
+			{
+				"description": row.description,
+				"rate": flt(row.rate),
+				"tax_amount": flt(row.tax_amount),
+				"included_in_print_rate": _coerce_check(row.included_in_print_rate),
+			}
+			for row in sinv.taxes
+		],
+		"total_taxes_and_charges": flt(sinv.total_taxes_and_charges),
+		"grand_total": flt(sinv.grand_total),
+		"rounding_adjustment": flt(sinv.rounding_adjustment),
+		"rounded_total": flt(sinv.rounded_total),
+		"disable_rounded_total": _coerce_check(sinv.disable_rounded_total),
+		"short_items": short_items,
+		"allow_sale_without_stock": allow_without_stock,
+	}
+
+
 @frappe.whitelist()
 def create_sales_invoice(
-	sales_order: str, mark_as_paid: int = 0, mode_of_payment: str = None, allow_without_stock: int = 0
+	sales_order: str,
+	mark_as_paid: int = 0,
+	mode_of_payment: str = None,
+	allow_without_stock: int = 0,
+	invoice_option: str | None = None,
 ):
 	"""Create (and submit) a Sales Invoice from a submitted Sales Order.
+
+	`invoice_option` names a Sales Invoice Option (numbering series + tax template)
+	from the staff member's profile; see preview_sales_invoice() for what it yields.
 
 	By default the invoice is left outstanding (a credit sale, collected later
 	via create_payment_entry()). Pass mark_as_paid=1 with a mode_of_payment to
@@ -936,6 +1094,7 @@ def create_sales_invoice(
 
 	config = _get_driver_config(required=False)
 	van_warehouse = _selling_warehouse(config)
+	option = resolve_invoice_option(config, invoice_option)
 
 	# Re-checked here rather than trusted from the client: the flag only means "the
 	# driver saw the warning", the Sales Profile decides whether it is allowed at all.
@@ -946,49 +1105,7 @@ def create_sales_invoice(
 			frappe.throw("Selling without van stock is not enabled on your Sales Profile.", frappe.PermissionError)
 		defer_delivery = bool(_van_stock_shortages(so, van_warehouse))
 
-	sinv = frappe.new_doc("Sales Invoice")
-	sinv.customer = so.customer
-	sinv.company = so.company
-	sinv.posting_date = nowdate()
-	sinv.selling_price_list = so.selling_price_list
-	sinv.currency = so.currency
-	sinv.conversion_rate = so.conversion_rate or 1
-	sinv.update_stock = 0 if defer_delivery else 1
-	if van_warehouse:
-		sinv.set_warehouse = van_warehouse
-	if so.taxes_and_charges:
-		sinv.taxes_and_charges = so.taxes_and_charges
-
-	for so_item in so.items:
-		remaining_qty = flt(so_item.qty) - flt(so_item.returned_qty or 0)
-		if remaining_qty <= 0:
-			continue
-		sinv.append("items", {
-			"item_code": so_item.item_code,
-			"item_name": so_item.item_name,
-			"qty": remaining_qty,
-			"uom": so_item.uom or so_item.stock_uom,
-			"stock_uom": so_item.stock_uom,
-			"rate": so_item.rate,
-			"sales_order": so.name,
-			"so_detail": so_item.name,
-			"cost_center": getattr(so_item, "cost_center", None),
-			"warehouse": van_warehouse,
-		})
-
-	# Carry the order-level discount across. Without this the invoice is raised at the
-	# UNDISCOUNTED total — a 100.00 order with 10% off bills 100.00, and with mark_as_paid
-	# the customer is charged the full amount while the order and invoice totals diverge
-	# permanently. Copied verbatim, which is exact for the normal path (creation is
-	# refused once per_billed reaches 100, so the invoice bills the whole order); if
-	# returns have reduced what is being billed, a flat discount_amount is proportionally
-	# generous, though ERPNext still caps it at the invoice total.
-	sinv.apply_discount_on = so.apply_discount_on or "Grand Total"
-	sinv.additional_discount_percentage = flt(so.additional_discount_percentage)
-	sinv.discount_amount = flt(so.discount_amount)
-
-	sinv.run_method("set_missing_values")
-	sinv.run_method("calculate_taxes_and_totals")
+	sinv = _build_sales_invoice(so, config, option, defer_delivery)
 
 	# Sales Invoice is a standard ERPNext financial doctype. Sales App User does not hold
 	# broad ERPNext accounting permissions, so we use flags.ignore_permissions after

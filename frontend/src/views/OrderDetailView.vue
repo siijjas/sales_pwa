@@ -107,7 +107,7 @@
         :disabled="markAsPaid && !modeOfPayment"
         @click="createInvoice"
       >
-        {{ invoicing ? 'Creating invoice…' : markAsPaid ? 'Create paid invoice' : 'Create sales invoice' }}
+        {{ invoicing ? 'Creating invoice…' : previewLoading ? 'Preparing preview…' : markAsPaid ? 'Create paid invoice' : 'Create sales invoice' }}
       </AppButton>
     </StickyBar>
     <StickyBar v-else-if="canDeliver && hasPendingDelivery">
@@ -116,27 +116,114 @@
       </AppButton>
     </StickyBar>
 
-    <BottomSheet v-model="stockWarningOpen" title="Not enough van stock">
-      <div class="space-y-4">
-        <p class="text-sm text-muted">
-          The van doesn't have enough stock for these items. The invoice will be created without updating stock.
-          Whatever is in the van is delivered now; the rest stays pending until stock arrives and a Delivery Note is made.
-        </p>
+    <!-- Step 1: which invoice option (numbering series + tax template) -->
+    <BottomSheet v-model="optionSheetOpen" title="Invoice option">
+      <div class="space-y-3">
+        <p class="text-sm text-muted">Choose how this invoice is numbered and taxed. You will see the proposed number and totals before anything is created.</p>
+        <AppAlert v-if="sheetError" tone="danger" :message="sheetError" />
+        <button
+          v-for="opt in invoiceOptions"
+          :key="opt.name"
+          type="button"
+          class="flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition hover:bg-card-muted"
+          :class="opt.is_default ? 'border-primary/40 bg-primary/[0.05]' : 'border-line'"
+          :disabled="previewLoading"
+          @click="openPreview(opt.name)"
+        >
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary"><AppIcon name="file-text" :size="18" /></span>
+          <span class="min-w-0 flex-1">
+            <span class="flex items-center gap-2">
+              <span class="truncate font-semibold text-foreground">{{ opt.option_name }}</span>
+              <StatusBadge v-if="opt.is_default" tone="primary" :dot="false">Default</StatusBadge>
+            </span>
+            <span class="block truncate text-xs text-muted">{{ opt.naming_series }} · {{ opt.taxes_and_charges || 'No tax' }}</span>
+            <span v-if="opt.description" class="block truncate text-xs text-subtle">{{ opt.description }}</span>
+          </span>
+          <AppIcon name="chevron-right" :size="16" class="shrink-0 text-subtle" />
+        </button>
+      </div>
+    </BottomSheet>
+
+    <!-- Step 2: preview, then confirm -->
+    <BottomSheet v-model="previewOpen" title="Confirm invoice">
+      <div v-if="preview" class="space-y-4">
+        <AppAlert v-if="sheetError" tone="danger" :message="sheetError" />
+
+        <div class="rounded-2xl bg-slate-950 p-4 text-white">
+          <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400">Proposed invoice number</p>
+          <p class="tnum mt-1 text-2xl font-bold">{{ preview.proposed_name || '—' }}</p>
+          <p class="mt-1 text-xs text-slate-400">
+            Series {{ preview.naming_series || 'default' }} · the final number is assigned when the invoice is saved.
+          </p>
+          <div v-if="preview.invoice_option" class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span class="rounded-full bg-white/10 px-2.5 py-1 font-semibold">{{ preview.invoice_option.option_name }}</span>
+            <span class="rounded-full bg-white/10 px-2.5 py-1">{{ preview.taxes_and_charges || 'No tax' }}</span>
+          </div>
+        </div>
+
         <div class="divide-y divide-line rounded-2xl border border-line">
-          <div v-for="row in shortItems" :key="row.item_code" class="flex items-center justify-between gap-3 px-4 py-3">
+          <div v-for="line in preview.items" :key="line.item_code" class="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
             <div class="min-w-0">
-              <p class="truncate font-semibold text-foreground">{{ row.item_name }}</p>
+              <p class="truncate font-semibold text-foreground">{{ line.item_name }}</p>
+              <p class="tnum text-xs text-muted">{{ line.qty }} {{ line.uom }} × {{ currency }} {{ fmt(line.rate) }}</p>
+            </div>
+            <p class="tnum shrink-0 font-semibold text-foreground">{{ currency }} {{ fmt(line.amount) }}</p>
+          </div>
+        </div>
+
+        <div class="space-y-1.5 rounded-2xl bg-card-muted px-4 py-3 text-sm">
+          <div class="flex items-center justify-between text-muted"><span>Subtotal</span><span class="tnum">{{ currency }} {{ fmt(preview.total) }}</span></div>
+          <div v-if="preview.discount_amount" class="flex items-center justify-between text-muted"><span>Discount</span><span class="tnum">− {{ currency }} {{ fmt(preview.discount_amount) }}</span></div>
+          <div v-if="preview.discount_amount || preview.net_total !== preview.total" class="flex items-center justify-between text-muted"><span>Net total</span><span class="tnum">{{ currency }} {{ fmt(preview.net_total) }}</span></div>
+          <div v-for="(tax, i) in preview.taxes" :key="i" class="flex items-center justify-between text-muted">
+            <span>{{ tax.description }}<span v-if="tax.rate"> ({{ tax.rate }}%)</span><span v-if="tax.included_in_print_rate" class="text-subtle"> · inclusive</span></span>
+            <span class="tnum">{{ currency }} {{ fmt(tax.tax_amount) }}</span>
+          </div>
+          <div v-if="!preview.taxes.length" class="flex items-center justify-between text-muted"><span>Tax</span><span class="tnum">{{ currency }} {{ fmt(0) }}</span></div>
+          <div class="flex items-center justify-between border-t border-line pt-2 text-base font-bold text-foreground">
+            <span>Grand total</span><span class="tnum">{{ currency }} {{ fmt(preview.grand_total) }}</span>
+          </div>
+          <div v-if="showRounded" class="flex items-center justify-between text-muted">
+            <span>Rounded total</span><span class="tnum">{{ currency }} {{ fmt(preview.rounded_total) }}</span>
+          </div>
+          <div class="flex items-center justify-between pt-1 text-xs text-subtle">
+            <span>Payment</span><span>{{ markAsPaid ? `Paid now · ${modeOfPayment}` : 'Credit (collect later)' }}</span>
+          </div>
+        </div>
+
+        <AppAlert
+          v-if="preview.short_items.length"
+          :tone="preview.allow_sale_without_stock ? 'warning' : 'danger'"
+          :title="preview.allow_sale_without_stock ? 'Not enough stock' : 'Not enough stock to invoice'"
+          :message="preview.allow_sale_without_stock
+            ? 'The invoice will be created without updating stock. Whatever is available is delivered now; the rest stays pending until stock arrives.'
+            : 'Load the missing stock first, or ask a manager to allow selling without stock on your profile.'"
+        />
+        <div v-if="preview.short_items.length" class="divide-y divide-line rounded-2xl border border-line">
+          <div v-for="row in preview.short_items" :key="row.item_code" class="flex items-center justify-between gap-3 px-4 py-2.5">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-foreground">{{ row.item_name }}</p>
               <p class="text-xs text-muted">{{ row.item_code }}</p>
             </div>
             <div class="shrink-0 text-right text-xs">
               <p class="tnum font-bold text-danger">{{ row.short_qty }} {{ row.stock_uom }} short</p>
-              <p class="tnum text-muted">Need {{ row.required_qty }} • In van {{ row.available_qty }}</p>
+              <p class="tnum text-muted">Need {{ row.required_qty }} • Available {{ row.available_qty }}</p>
             </div>
           </div>
         </div>
+
         <div class="flex gap-2">
-          <AppButton variant="secondary" block @click="stockWarningOpen = false">Cancel</AppButton>
-          <AppButton variant="warning" block icon="file-text" @click="confirmWithoutStock">Create invoice</AppButton>
+          <AppButton variant="secondary" block @click="backFromPreview">{{ invoiceOptions.length > 1 ? 'Change option' : 'Cancel' }}</AppButton>
+          <AppButton
+            :variant="preview.short_items.length ? 'warning' : 'primary'"
+            block
+            icon="check"
+            :loading="invoicing"
+            :disabled="invoicing || (preview.short_items.length > 0 && !preview.allow_sale_without_stock)"
+            @click="confirmInvoice"
+          >
+            {{ markAsPaid ? 'Create paid invoice' : 'Create invoice' }}
+          </AppButton>
         </div>
       </div>
     </BottomSheet>
@@ -147,10 +234,10 @@
 import { onMounted, ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
-import type { SalesOrder, PaymentMode, InvoiceStockShortage } from '../types';
+import type { SalesOrder, PaymentMode, InvoiceOption, InvoicePreview } from '../types';
 import { useSessionStore } from '../stores/session';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, StatusBadge, SkeletonList, StickyBar, SegmentedControl, FormField, BaseSelect, BottomSheet } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, StatusBadge, SkeletonList, StickyBar, SegmentedControl, FormField, BaseSelect, BottomSheet } from '../components/ui';
 
 const route = useRoute();
 const router = useRouter();
@@ -171,10 +258,21 @@ const canCreditSale = computed(() => store.isManager || store.capabilities.can_c
 const markAsPaid = ref(!canCreditSale.value);
 const modeOfPayment = ref('');
 const paymentModes = ref<PaymentMode[]>([]);
-const stockWarningOpen = ref(false);
-const shortItems = ref<InvoiceStockShortage[]>([]);
+// Invoicing runs as: pick an invoice option (numbering series + tax template, when the
+// profile lists more than one) → preview the proposed number and totals → confirm.
+// The preview comes from the server building the very invoice it will then save.
+const invoiceOptions = ref<InvoiceOption[]>([]);
+const optionSheetOpen = ref(false);
+const previewOpen = ref(false);
+const previewLoading = ref(false);
+const preview = ref<InvoicePreview | null>(null);
+const selectedOption = ref<string | null>(null);
+const sheetError = ref('');
 const deferredNotice = ref('');
-const allowWithoutStock = computed(() => !!store.driverConfig?.allow_sale_without_stock);
+const showRounded = computed(
+  () => !!preview.value && !preview.value.disable_rounded_total && preview.value.rounded_total > 0
+    && Math.abs(preview.value.rounded_total - preview.value.grand_total) >= 0.005,
+);
 const delivering = ref(false);
 const deliveredNotice = ref('');
 // Billed in full but not yet delivered in full: sold while short of van stock.
@@ -199,6 +297,9 @@ const load = async () => {
 onMounted(() => {
   load();
   api.getPaymentModes().then((modes) => (paymentModes.value = modes)).catch(() => {});
+  if (canInvoice.value) {
+    api.listInvoiceOptions().then((opts) => (invoiceOptions.value = opts)).catch(() => {});
+  }
 });
 const reload = () => load();
 
@@ -223,49 +324,60 @@ const createInvoice = async () => {
     error.value = 'Select a mode of payment to mark this invoice as paid.';
     return;
   }
-  invoicing.value = true;
   error.value = '';
+  sheetError.value = '';
+  if (invoiceOptions.value.length > 1) {
+    optionSheetOpen.value = true;
+    return;
+  }
+  // One option (or none): the server applies the profile default, straight to the preview.
+  await openPreview(invoiceOptions.value[0]?.name ?? null);
+};
+
+const openPreview = async (option: string | null) => {
+  if (!order.value) return;
+  previewLoading.value = true;
+  sheetError.value = '';
   try {
-    // With the Sales Profile override on, warn before billing items the van can't cover.
-    // Without it there is nothing to confirm: the server rejects the shortage as before.
-    if (allowWithoutStock.value) {
-      const check = await api.getInvoiceStockShortages(order.value.name);
-      if (check.short_items.length) {
-        shortItems.value = check.short_items;
-        stockWarningOpen.value = true;
-        return;
-      }
-    }
-    await submitInvoice(false);
+    preview.value = await api.previewSalesInvoice(order.value.name, option);
+    selectedOption.value = option;
+    optionSheetOpen.value = false;
+    previewOpen.value = true;
   } catch (e: any) {
-    error.value = e?.message || 'Failed to create invoice';
+    const message = e?.message || 'Failed to prepare the invoice preview';
+    if (optionSheetOpen.value) sheetError.value = message;
+    else error.value = message;
   } finally {
-    invoicing.value = false;
+    previewLoading.value = false;
   }
 };
 
-const submitInvoice = async (withoutStock: boolean) => {
-  if (!order.value) return;
-  invoiceCreated.value = await api.createSalesInvoice(order.value.name, {
-    markAsPaid: markAsPaid.value,
-    modeOfPayment: modeOfPayment.value,
-    allowWithoutStock: withoutStock,
-  });
-  deferredNotice.value = withoutStock
-    ? `Invoice ${invoiceCreated.value} created. Available stock was delivered; `
-      + `${shortItems.value.map((row) => `${row.short_qty} ${row.stock_uom} ${row.item_name}`).join(', ')} still to be delivered.`
-    : '';
-  await load();
+const backFromPreview = () => {
+  previewOpen.value = false;
+  if (invoiceOptions.value.length > 1) optionSheetOpen.value = true;
 };
 
-const confirmWithoutStock = async () => {
-  stockWarningOpen.value = false;
+const confirmInvoice = async () => {
+  if (!order.value || !preview.value) return;
+  const withoutStock = preview.value.short_items.length > 0 && preview.value.allow_sale_without_stock;
   invoicing.value = true;
-  error.value = '';
+  sheetError.value = '';
   try {
-    await submitInvoice(true);
+    invoiceCreated.value = await api.createSalesInvoice(order.value.name, {
+      markAsPaid: markAsPaid.value,
+      modeOfPayment: modeOfPayment.value,
+      allowWithoutStock: withoutStock,
+      invoiceOption: selectedOption.value,
+    });
+    deferredNotice.value = withoutStock
+      ? `Invoice ${invoiceCreated.value} created. Available stock was delivered; `
+        + `${preview.value.short_items.map((row) => `${row.short_qty} ${row.stock_uom} ${row.item_name}`).join(', ')} still to be delivered.`
+      : '';
+    previewOpen.value = false;
+    preview.value = null;
+    await load();
   } catch (e: any) {
-    error.value = e?.message || 'Failed to create invoice';
+    sheetError.value = e?.message || 'Failed to create invoice';
   } finally {
     invoicing.value = false;
   }

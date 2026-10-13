@@ -636,7 +636,7 @@ export async function deliverPendingItems(salesOrder: string): Promise<string[]>
 
 export async function createSalesInvoice(
   salesOrder: string,
-  options?: { markAsPaid?: boolean; modeOfPayment?: string; allowWithoutStock?: boolean },
+  options?: { markAsPaid?: boolean; modeOfPayment?: string; allowWithoutStock?: boolean; invoiceOption?: string | null },
 ): Promise<string> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_sales_invoice', {
@@ -649,10 +649,80 @@ export async function createSalesInvoice(
         ? { mark_as_paid: 1, mode_of_payment: options.modeOfPayment }
         : {}),
       ...(options?.allowWithoutStock ? { allow_without_stock: 1 } : {}),
+      ...(options?.invoiceOption ? { invoice_option: options.invoiceOption } : {}),
     }),
   });
   const data = await handleResponse(res);
   return (data.message || data.data) as string;
+}
+
+/** What the invoice would look like (number, lines, taxes, totals) — nothing is created. */
+export async function previewSalesInvoice(salesOrder: string, invoiceOption?: string | null): Promise<import('../types').InvoicePreview> {
+  const params = new URLSearchParams({ sales_order: salesOrder });
+  if (invoiceOption) params.set('invoice_option', invoiceOption);
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.preview_sales_invoice?${params.toString()}`, {
+    method: 'GET',
+    headers: { ...defaultHeaders() },
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').InvoicePreview;
+}
+
+/** The invoice options the current user may pick from (profile list, or all for a manager). */
+export async function listInvoiceOptions(): Promise<import('../types').InvoiceOption[]> {
+  const res = await fetch('/api/method/sales_pwa.sales_app.invoice_option.list_invoice_options', {
+    method: 'GET',
+    headers: { ...defaultHeaders() },
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as import('../types').InvoiceOption[];
+}
+
+// ─── Sales Invoice Option master (managers) ───────────────────────────────────
+
+export async function listAllInvoiceOptions(): Promise<import('../types').InvoiceOption[]> {
+  const res = await fetch('/api/method/sales_pwa.sales_app.invoice_option.list_all_invoice_options', {
+    method: 'GET',
+    headers: { ...defaultHeaders() },
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as import('../types').InvoiceOption[];
+}
+
+export async function getInvoiceOptionChoices(): Promise<import('../types').InvoiceOptionChoices> {
+  const res = await fetch('/api/method/sales_pwa.sales_app.invoice_option.get_invoice_option_choices', {
+    method: 'GET',
+    headers: { ...defaultHeaders() },
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').InvoiceOptionChoices;
+}
+
+export async function saveInvoiceOption(payload: Partial<import('../types').InvoiceOption>): Promise<import('../types').InvoiceOption> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.invoice_option.save_invoice_option', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify({ payload: JSON.stringify(payload) }),
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').InvoiceOption;
+}
+
+export async function deleteInvoiceOption(name: string): Promise<void> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.invoice_option.delete_invoice_option', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify({ name }),
+  });
+  await handleResponse(res);
 }
 
 export interface RecentOrdersOptions {

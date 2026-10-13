@@ -1,0 +1,124 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:option_name",
+ "creation": "2026-10-13 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "option_name",
+  "disabled",
+  "column_break_identity",
+  "company",
+  "section_configuration",
+  "naming_series",
+  "column_break_configuration",
+  "taxes_and_charges",
+  "section_notes",
+  "description"
+ ],
+ "fields": [
+  {
+   "fieldname": "option_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Option Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "disabled",
+   "fieldtype": "Check",
+   "label": "Disabled"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Optional. Limits the tax template to this company; the option itself can be enabled on any Sales Profile.",
+   "fieldname": "company",
+   "fieldtype": "Link",
+   "label": "Company",
+   "options": "Company"
+  },
+  {
+   "fieldname": "section_configuration",
+   "fieldtype": "Section Break",
+   "label": "Invoice Configuration"
+  },
+  {
+   "description": "Must be one of the Sales Invoice naming series (Settings > Naming Series), e.g. ACC-SINV-.YYYY.-",
+   "fieldname": "naming_series",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Invoice Naming Series",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_configuration",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Leave empty to raise the invoice without taxes.",
+   "fieldname": "taxes_and_charges",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Taxes and Charges Template",
+   "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "fieldname": "section_notes",
+   "fieldtype": "Section Break"
+  },
+  {
+   "description": "Shown to staff when they pick this option.",
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "Sales Invoice Option",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales App User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

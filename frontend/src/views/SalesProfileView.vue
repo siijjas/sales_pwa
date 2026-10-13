@@ -214,6 +214,36 @@
           </div>
         </FormSection>
 
+        <!-- Invoice options -->
+        <FormSection v-if="!isFieldSales" title="Invoice options" icon="file-text" :badge="`${form.invoice_options?.length || 0}`">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-xs text-muted">
+              Ways staff on this profile can raise an invoice, each with its own numbering series and tax template.
+              They pick one and preview the number and totals before the invoice is created. Empty = the tax template above and the default series.
+            </p>
+            <AppButton variant="ghost" size="sm" icon="settings" @click="router.push({ name: 'invoice-options' })">Manage options</AppButton>
+          </div>
+          <EmptyState v-if="!filteredInvoiceOptions.length" icon="file-text" title="No invoice options yet" description="Create them under Settings → Invoice options." />
+          <div v-else class="grid gap-2 md:grid-cols-2">
+            <div
+              v-for="opt in filteredInvoiceOptions"
+              :key="opt.name"
+              class="flex items-center gap-3 rounded-2xl border p-3 transition"
+              :class="isInvoiceOptionEnabled(opt.name) ? 'border-success/40 bg-success/[0.06]' : 'border-line hover:bg-card-muted'"
+            >
+              <input type="checkbox" :checked="isInvoiceOptionEnabled(opt.name)" class="h-4 w-4 accent-primary" @change="toggleInvoiceOption(opt.name)" />
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm font-semibold text-foreground">{{ opt.option_name }}</p>
+                <p class="truncate text-xs text-muted">{{ opt.naming_series }} · {{ opt.taxes_and_charges || 'No tax' }}</p>
+              </div>
+              <label v-if="isInvoiceOptionEnabled(opt.name)" class="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-semibold text-muted">
+                <input type="radio" name="default-invoice-option" :checked="isDefaultInvoiceOption(opt.name)" class="accent-primary" @change="setDefaultInvoiceOption(opt.name)" />
+                Default
+              </label>
+            </div>
+          </div>
+        </FormSection>
+
         <!-- Cash movements -->
         <FormSection v-if="form.use_shifts" title="Cash movements (expenses & deposits)" icon="banknote">
           <p class="text-xs text-muted">Cash leaving the drawer mid-shift. Each entry posts a Journal Entry that credits the drawer account and debits the expense or back-office account, and the shift closing deducts it from expected cash.</p>
@@ -300,6 +330,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, defineComponent, h } from 'vue';
+import { useRouter } from 'vue-router';
 import { listSalesProfiles, getSalesProfileOptions, saveSalesProfile } from '../api/frappe';
 import type { SalesProfile, SalesProfileOptions } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
@@ -341,6 +372,7 @@ const ToggleRow = defineComponent({
   },
 });
 
+const router = useRouter();
 const loading = ref(true);
 const isSaving = ref(false);
 const errorMsg = ref('');
@@ -356,6 +388,7 @@ const options = ref<SalesProfileOptions>({
   companies: [],
   price_lists: [],
   tax_templates: [],
+  invoice_options: [],
   currencies: [],
   print_formats: [],
   users: [],
@@ -404,6 +437,7 @@ const defaultForm = (): Partial<SalesProfile> => ({
   cash_movement_max_amount: 0,
   require_cash_movement_remarks: false,
   allowed_expense_accounts: [],
+  invoice_options: [],
   allowed_payment_modes: [],
   allowed_customer_groups: [],
   assigned_drivers: [],
@@ -484,6 +518,29 @@ const isValid = computed(() => {
   if (!form.value.separate_van_warehouse) return true;
   return !!form.value.van_warehouse && form.value.source_warehouse !== form.value.van_warehouse;
 });
+
+// Invoice options: the master list filtered to the profile's company (options without a
+// company fit anywhere); the profile keeps [{invoice_option, is_default}].
+const filteredInvoiceOptions = computed(() =>
+  (options.value.invoice_options || []).filter((o) => !o.company || !form.value.company || o.company === form.value.company),
+);
+function isInvoiceOptionEnabled(name: string): boolean {
+  return (form.value.invoice_options || []).some((r) => r.invoice_option === name);
+}
+function isDefaultInvoiceOption(name: string): boolean {
+  return (form.value.invoice_options || []).some((r) => r.invoice_option === name && r.is_default);
+}
+function toggleInvoiceOption(name: string) {
+  if (!form.value.invoice_options) form.value.invoice_options = [];
+  const rows = form.value.invoice_options;
+  const idx = rows.findIndex((r) => r.invoice_option === name);
+  if (idx >= 0) rows.splice(idx, 1);
+  else rows.push({ invoice_option: name, is_default: false });
+  if (rows.length && !rows.some((r) => r.is_default)) rows[0].is_default = true;
+}
+function setDefaultInvoiceOption(name: string) {
+  for (const r of form.value.invoice_options || []) r.is_default = r.invoice_option === name;
+}
 
 function isDriverAssigned(username: string): boolean {
   return form.value.assigned_drivers?.some((d) => d.driver_user === username) || false;

@@ -1,0 +1,40 @@
+{
+ "actions": [],
+ "creation": "2026-10-13 00:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "invoice_option",
+  "is_default"
+ ],
+ "fields": [
+  {
+   "fieldname": "invoice_option",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Invoice Option",
+   "options": "Sales Invoice Option",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Pre-selected when staff create an invoice. Only one option per profile can be the default.",
+   "fieldname": "is_default",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Default"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "Sales Profile Invoice Option",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

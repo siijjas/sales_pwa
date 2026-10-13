@@ -58,6 +58,18 @@
         </div>
       </AppCard>
 
+      <!-- Invoice options -->
+      <AppCard padding="lg">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold uppercase tracking-widest text-muted">Invoicing</p>
+            <p class="mt-1 text-lg font-bold text-foreground">Invoice options</p>
+            <p class="mt-1 text-sm text-muted">Named ways of raising an invoice, each with its own numbering series and tax template. Enable them per Sales Profile; staff pick one and preview the number and totals before the invoice is created.</p>
+          </div>
+          <AppButton variant="secondary" size="sm" icon="receipt" @click="router.push({ name: 'invoice-options' })">Manage</AppButton>
+        </div>
+      </AppCard>
+
       <!-- How-to -->
       <AppAlert tone="info">
         <span class="font-semibold">Assign the Sales App User role:</span>
@@ -74,8 +86,11 @@
 
 <script setup lang="ts">
 import { defineComponent, h } from 'vue';
+import { useRouter } from 'vue-router';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppAlert, AppIcon, StatusBadge } from '../components/ui';
+import { AppCard, AppAlert, AppButton, AppIcon, StatusBadge } from '../components/ui';
+
+const router = useRouter();
 
 // Tiny inline cell renderer for the ✅ / ❌ / 🔐 matrix values.
 const PermCell = defineComponent({

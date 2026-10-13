@@ -25,6 +25,7 @@ class SalesProfile(Document):
 				frappe.throw("Allowed payment modes cannot contain duplicates")
 			seen_modes.add(row.mode_of_payment)
 
+		self._validate_invoice_options()
 		self._validate_drivers_are_enabled()
 		self._validate_one_active_profile_per_driver()
 
@@ -63,6 +64,22 @@ class SalesProfile(Document):
 			self.van_warehouse = None
 		if not self.use_shifts:
 			self.require_open_shift = 0
+
+	def _validate_invoice_options(self):
+		"""No duplicate options, and exactly one default when any are listed (the first
+		one if the manager marked none), so the app always has something to pre-select."""
+		seen = set()
+		defaults = 0
+		for row in self.invoice_options or []:
+			if row.invoice_option in seen:
+				frappe.throw(f"Invoice option {row.invoice_option} is listed twice")
+			seen.add(row.invoice_option)
+			if row.is_default:
+				defaults += 1
+		if defaults > 1:
+			frappe.throw("Only one invoice option can be the default")
+		if self.invoice_options and not defaults:
+			self.invoice_options[0].is_default = 1
 
 	def is_field_sales(self) -> bool:
 		return (self.profile_type or "Van Sales") == "Field Sales"

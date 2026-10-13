@@ -53,6 +53,8 @@ export interface DriverConfig {
   selling_warehouse?: string | null;
   /** Field Sales only: catalog qty is read from here for display. */
   stock_warehouse?: string | null;
+  /** Resolved invoice options (numbering + tax) this staff member may pick when invoicing. */
+  invoice_options?: InvoiceOption[];
   delivery_route?: string;
   daily_credit_limit: number;
   low_stock_threshold: number;
@@ -265,6 +267,8 @@ export interface SalesProfile {
   cash_movement_max_amount: number;
   require_cash_movement_remarks: boolean;
   allowed_expense_accounts: string[];
+  /** Sales Invoice Options this profile's staff may invoice with; one is the default. */
+  invoice_options: Array<{ invoice_option: string; is_default: boolean }>;
   // POS-profile style controls
   max_discount_percent: number;
   use_customer_price_list: boolean;
@@ -290,6 +294,7 @@ export interface SalesProfileOptions {
   companies: Array<{ name: string; default_currency?: string }>;
   price_lists: Array<{ name: string }>;
   tax_templates: Array<{ name: string; company: string }>;
+  invoice_options: InvoiceOption[];
   currencies: Array<{ name: string }>;
   print_formats: Array<{ name: string; doc_type: string }>;
   users: Array<{ name: string; full_name: string }>;
@@ -353,6 +358,68 @@ export interface InvoiceStockShortage {
 export interface InvoiceStockCheck {
   allow_sale_without_stock: boolean;
   short_items: InvoiceStockShortage[];
+}
+
+/** A way of raising an invoice: numbering series + tax template (Sales Invoice Option master). */
+export interface InvoiceOption {
+  name: string;
+  option_name: string;
+  naming_series: string;
+  taxes_and_charges: string | null;
+  company?: string | null;
+  description?: string | null;
+  disabled?: boolean;
+  /** Set on a profile's list: pre-selected for its staff. */
+  is_default?: boolean;
+}
+
+export interface InvoiceOptionChoices {
+  naming_series: string[];
+  tax_templates: Array<{ name: string; company: string }>;
+  companies: Array<{ name: string }>;
+}
+
+export interface InvoicePreviewLine {
+  item_code: string;
+  item_name: string;
+  qty: number;
+  uom: string;
+  rate: number;
+  amount: number;
+}
+
+export interface InvoicePreviewTax {
+  description: string;
+  rate: number;
+  tax_amount: number;
+  included_in_print_rate: boolean;
+}
+
+/** preview_sales_invoice(): what create_sales_invoice() would raise, nothing saved. */
+export interface InvoicePreview {
+  sales_order: string;
+  customer: string;
+  customer_name: string;
+  posting_date: string;
+  currency: string;
+  invoice_option: InvoiceOption | null;
+  naming_series: string | null;
+  /** The series' next number, read without consuming it. May move on before Confirm. */
+  proposed_name: string | null;
+  taxes_and_charges: string | null;
+  items: InvoicePreviewLine[];
+  total_qty: number;
+  total: number;
+  net_total: number;
+  discount_amount: number;
+  taxes: InvoicePreviewTax[];
+  total_taxes_and_charges: number;
+  grand_total: number;
+  rounding_adjustment: number;
+  rounded_total: number;
+  disable_rounded_total: boolean;
+  short_items: InvoiceStockShortage[];
+  allow_sale_without_stock: boolean;
 }
 
 export interface CartLine {

@@ -60,6 +60,7 @@
   "allowed_expense_accounts",
   "section_pricing",
   "taxes_and_charges",
+  "invoice_options",
   "apply_discount_on",
   "max_discount_percent",
   "use_customer_price_list",
@@ -433,10 +434,18 @@
    "label": "Pricing & Tax"
   },
   {
+   "description": "Used on orders, and on invoices when no invoice option is chosen.",
    "fieldname": "taxes_and_charges",
    "fieldtype": "Link",
    "label": "Taxes and Charges Template",
    "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "description": "Ways of raising an invoice that staff on this profile can pick from (each with its own numbering series and tax template). The app previews the invoice number and totals before creating it. Leave empty to invoice with the template above and the default series.",
+   "fieldname": "invoice_options",
+   "fieldtype": "Table",
+   "label": "Invoice Options",
+   "options": "Sales Profile Invoice Option"
   },
   {
    "default": "Grand Total",

@@ -18,7 +18,7 @@ import frappe
 from frappe.utils import cint, flt, now_datetime
 
 from sales_pwa.sales_app.doctype.sales_shift_closing.sales_shift_closing import variance_status
-from sales_pwa.sales_app.shift import _compute_closing, _find_open_shift, _serialize_opening, _variance_tolerance
+from sales_pwa.sales_app.shift import _cash_modes, _compute_closing, _find_open_shift, _serialize_opening, _variance_tolerance
 from sales_pwa.sales_app.utils import _is_manager, _require_van_user
 
 
@@ -198,10 +198,64 @@ def _build_report(
 			}
 			(expenses if m.movement_type == "Expense" else deposits).append(row)
 
+	# The documents behind each figure, so the app can drill down from a total.
+	documents = {"orders": [], "invoices": [], "payments": []}
+	if order_names:
+		documents["orders"] = frappe.get_all(
+			"Sales Order",
+			filters={"name": ["in", order_names]},
+			fields=["name", "customer", "customer_name", "grand_total", "total_qty", "status", "creation"],
+			order_by="creation asc",
+		)
+	if invoice_amounts:
+		documents["invoices"] = [
+			{
+				"name": si.name,
+				"customer": si.customer,
+				"customer_name": si.customer_name,
+				"amount": abs(invoice_amounts[si.name]),
+				"is_return": cint(si.is_return),
+				"status": si.status,
+				"creation": si.creation,
+			}
+			for si in frappe.get_all(
+				"Sales Invoice",
+				filters={"name": ["in", list(invoice_amounts)]},
+				fields=["name", "customer", "customer_name", "is_return", "status", "creation"],
+				order_by="creation asc",
+			)
+		]
+	if payment_amounts:
+		documents["payments"] = [
+			{
+				"name": pe.name,
+				"party": pe.party,
+				"party_name": pe.party_name,
+				"mode_of_payment": pe.mode_of_payment or "Cash",
+				"amount": payment_amounts[pe.name],
+				"creation": pe.creation,
+			}
+			for pe in frappe.get_all(
+				"Payment Entry",
+				filters={"name": ["in", list(payment_amounts)]},
+				fields=["name", "party", "party_name", "mode_of_payment", "creation"],
+				order_by="creation asc",
+			)
+		]
+
+	# The drawer mode expenses and deposits were deducted from (see shift._compute_closing).
+	cash_modes = _cash_modes()
+	cash_mode = next(
+		(r["mode_of_payment"] for r in reconciliation if r["mode_of_payment"] in cash_modes or r["mode_of_payment"] == "Cash"),
+		None,
+	)
+
 	return {
 		"report_type": report_type,
 		"generated_at": str(now_datetime()),
 		"shift": header,
+		"cash_mode": cash_mode,
+		"documents": documents,
 		"totals": {
 			**totals,
 			"sales_orders_count": len(order_names),

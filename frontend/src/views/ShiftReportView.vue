@@ -41,11 +41,137 @@
       </AppCard>
 
       <div class="grid grid-cols-2 gap-3">
-        <KpiTile label="Sales" :value="`${currency} ${fmt(t.total_sales)}`" :sub="`${t.sales_orders_count} orders · ${qty(t.total_quantity)} units`" icon="cart" tone="primary" />
-        <KpiTile label="Collections" :value="`${currency} ${fmt(t.total_collections)}`" :sub="`${t.payments_count} payments`" icon="wallet" tone="success" />
-        <KpiTile label="Expenses" :value="`${currency} ${fmt(t.total_expenses)}`" :sub="`${t.expenses_count} entries`" icon="file-text" tone="warning" />
-        <KpiTile label="Expected cash" :value="`${currency} ${fmt(t.expected_cash)}`" :sub="`Float ${currency} ${fmt(t.total_opening_float)}`" icon="banknote" tone="info" />
+        <KpiTile label="Sales" :value="`${currency} ${fmt(t.total_sales)}`" :sub="`${t.sales_orders_count} orders · ${qty(t.total_quantity)} units`" icon="cart" tone="primary" interactive @click="openDetail('sales')" />
+        <KpiTile label="Collections" :value="`${currency} ${fmt(t.total_collections)}`" :sub="`${t.payments_count} payments`" icon="wallet" tone="success" interactive @click="openDetail('collections')" />
+        <KpiTile label="Expenses" :value="`${currency} ${fmt(t.total_expenses)}`" :sub="`${t.expenses_count} entries`" icon="file-text" tone="warning" interactive @click="openDetail('expenses')" />
+        <KpiTile label="Expected cash" :value="`${currency} ${fmt(t.expected_cash)}`" :sub="`Float ${currency} ${fmt(t.total_opening_float)}`" icon="banknote" tone="info" interactive @click="openDetail('cash')" />
       </div>
+
+      <!-- Tile drill-down -->
+      <BottomSheet v-model="detailOpen" :title="detailTitle">
+        <div class="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+          <!-- Sales: orders, invoices, returns -->
+          <template v-if="detail === 'sales'">
+            <section>
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Sales orders · {{ docs.orders.length }}</p>
+              <p v-if="!docs.orders.length" class="text-sm text-muted">No orders on this shift.</p>
+              <button
+                v-for="o in docs.orders"
+                :key="o.name"
+                type="button"
+                class="flex w-full items-center justify-between gap-3 border-t border-line py-2.5 text-left first-of-type:border-0"
+                @click="goTo({ name: 'order-detail', params: { name: o.name } })"
+              >
+                <span class="min-w-0">
+                  <span class="block truncate text-sm font-semibold text-foreground">{{ o.customer_name || o.customer }}</span>
+                  <span class="tnum block text-xs text-muted">{{ o.name }} · {{ formatTime(o.creation) }} · {{ qty(o.total_qty) }} units</span>
+                </span>
+                <span class="tnum shrink-0 text-sm font-bold text-foreground">{{ currency }} {{ fmt(o.grand_total) }}</span>
+              </button>
+            </section>
+            <section v-if="docs.invoices.length">
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Invoices &amp; returns · {{ docs.invoices.length }}</p>
+              <div v-for="i in docs.invoices" :key="i.name" class="flex items-center justify-between gap-3 border-t border-line py-2.5 first-of-type:border-0">
+                <span class="min-w-0">
+                  <span class="block truncate text-sm font-semibold text-foreground">{{ i.customer_name || i.customer }}</span>
+                  <span class="tnum block text-xs text-muted">{{ i.name }} · {{ i.is_return ? 'Return' : i.status }}</span>
+                </span>
+                <span class="tnum shrink-0 text-sm font-bold" :class="i.is_return ? 'text-danger' : 'text-foreground'">{{ i.is_return ? '−' : '' }}{{ currency }} {{ fmt(i.amount) }}</span>
+              </div>
+            </section>
+            <div class="flex items-center justify-between border-t border-line pt-3 text-sm">
+              <span class="font-semibold text-foreground">Total sales</span>
+              <span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_sales) }}</span>
+            </div>
+          </template>
+
+          <!-- Collections: payments -->
+          <template v-else-if="detail === 'collections'">
+            <p v-if="!docs.payments.length" class="text-sm text-muted">No payments on this shift.</p>
+            <section v-for="group in paymentsByMode" :key="group.mode">
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">{{ group.mode }} · {{ group.rows.length }}</p>
+              <button
+                v-for="p in group.rows"
+                :key="p.name"
+                type="button"
+                class="flex w-full items-center justify-between gap-3 border-t border-line py-2.5 text-left first-of-type:border-0"
+                @click="goTo({ name: 'payment-detail', params: { name: p.name } })"
+              >
+                <span class="min-w-0">
+                  <span class="block truncate text-sm font-semibold text-foreground">{{ p.party_name || p.party }}</span>
+                  <span class="tnum block text-xs text-muted">{{ p.name }} · {{ formatTime(p.creation) }}</span>
+                </span>
+                <span class="tnum shrink-0 text-sm font-bold text-foreground">{{ currency }} {{ fmt(p.amount) }}</span>
+              </button>
+              <div class="flex items-center justify-between pt-2 text-xs text-muted">
+                <span>Subtotal</span><span class="tnum font-semibold">{{ currency }} {{ fmt(group.amount) }}</span>
+              </div>
+            </section>
+            <div class="flex items-center justify-between border-t border-line pt-3 text-sm">
+              <span class="font-semibold text-foreground">Total collected</span>
+              <span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_collections) }}</span>
+            </div>
+          </template>
+
+          <!-- Expenses and deposits out of the drawer -->
+          <template v-else-if="detail === 'expenses'">
+            <section>
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Expenses · {{ report.expenses.length }}</p>
+              <p v-if="!report.expenses.length" class="text-sm text-muted">No expenses on this shift.</p>
+              <div v-for="e in report.expenses" :key="e.name" class="flex items-start justify-between gap-3 border-t border-line py-2.5 first-of-type:border-0">
+                <span class="min-w-0">
+                  <span class="block text-sm font-semibold text-foreground">{{ e.expense_type }}</span>
+                  <span v-if="e.notes" class="block truncate text-xs text-muted">{{ e.notes }}</span>
+                  <span class="block text-[11px] text-subtle">{{ e.name }}<template v-if="e.journal_entry"> · {{ e.journal_entry }}</template></span>
+                </span>
+                <span class="tnum shrink-0 text-sm font-bold text-foreground">{{ currency }} {{ fmt(e.amount) }}</span>
+              </div>
+            </section>
+            <section v-if="report.deposits?.length">
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Deposited to office · {{ report.deposits.length }}</p>
+              <div v-for="d in report.deposits" :key="d.name" class="flex items-start justify-between gap-3 border-t border-line py-2.5 first-of-type:border-0">
+                <span class="min-w-0">
+                  <span class="block text-sm font-semibold text-foreground">{{ d.expense_type }}</span>
+                  <span v-if="d.notes" class="block truncate text-xs text-muted">{{ d.notes }}</span>
+                  <span class="block text-[11px] text-subtle">{{ d.name }}<template v-if="d.journal_entry"> · {{ d.journal_entry }}</template></span>
+                </span>
+                <span class="tnum shrink-0 text-sm font-bold text-foreground">{{ currency }} {{ fmt(d.amount) }}</span>
+              </div>
+            </section>
+            <div class="space-y-1 border-t border-line pt-3 text-sm">
+              <div class="flex items-center justify-between"><span class="font-semibold text-foreground">Total expenses</span><span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_expenses) }}</span></div>
+              <div v-if="t.total_deposits" class="flex items-center justify-between"><span class="font-semibold text-foreground">Total deposited</span><span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_deposits) }}</span></div>
+            </div>
+            <AppButton v-if="isSummary && store.capabilities.uses_shifts" variant="secondary" block icon="file-text" @click="goTo({ name: 'expenses' })">Record expense or deposit</AppButton>
+          </template>
+
+          <!-- Expected cash: how the drawer figure is built -->
+          <template v-else-if="detail === 'cash'">
+            <p class="text-xs text-muted">
+              <template v-if="report.cash_mode">What the <span class="font-semibold text-foreground">{{ report.cash_mode }}</span> drawer should hold now.</template>
+              <template v-else>This shift has no cash mode, so nothing is expected in the drawer.</template>
+            </p>
+            <div class="space-y-1.5 text-sm">
+              <div v-for="line in cashLines" :key="line.label" class="flex items-center justify-between">
+                <span class="text-muted">{{ line.label }}</span>
+                <span class="tnum font-semibold" :class="line.sign < 0 ? 'text-danger' : 'text-foreground'">{{ line.sign < 0 ? '−' : line.sign > 0 ? '+' : '' }}{{ currency }} {{ fmt(line.amount) }}</span>
+              </div>
+              <div class="flex items-center justify-between border-t border-line pt-2">
+                <span class="font-semibold text-foreground">Expected cash</span>
+                <span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.expected_cash) }}</span>
+              </div>
+            </div>
+            <section v-if="otherModeRows.length">
+              <p class="mb-2 text-xs font-bold uppercase tracking-wider text-muted">Other modes</p>
+              <div v-for="row in otherModeRows" :key="row.mode_of_payment" class="flex items-center justify-between border-t border-line py-2 text-sm first-of-type:border-0">
+                <span class="text-muted">{{ row.mode_of_payment }} <span class="text-subtle">· float {{ fmt(row.opening_amount) }}</span></span>
+                <span class="tnum font-semibold text-foreground">{{ currency }} {{ fmt(row.expected_amount) }}</span>
+              </div>
+            </section>
+            <AppButton v-if="isSummary && (store.isManager || store.capabilities.can_close_shift)" block icon="check" @click="goTo({ name: 'shift-close' })">Count and close shift</AppButton>
+          </template>
+        </div>
+      </BottomSheet>
 
       <div
         v-if="!isSummary && t.net_difference !== undefined"
@@ -194,7 +320,7 @@ import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
 import type { ShiftReport } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, KpiTile, SkeletonList } from '../components/ui';
+import { AppCard, AppButton, AppAlert, BottomSheet, KpiTile, SkeletonList } from '../components/ui';
 
 const route = useRoute();
 const router = useRouter();
@@ -233,6 +359,43 @@ const description = computed(() =>
       ? `Final figures for the shift on ${formatDate(report.value.shift.shift_date)}.`
       : 'Final figures for a closed shift.',
 );
+// ─── Tile drill-down ────────────────────────────────────────────────────────
+type DetailKind = 'sales' | 'collections' | 'expenses' | 'cash';
+const detail = ref<DetailKind | null>(null);
+const detailOpen = computed({ get: () => detail.value !== null, set: (v: boolean) => { if (!v) detail.value = null; } });
+const openDetail = (kind: DetailKind) => { detail.value = kind; };
+const goTo = (to: Parameters<typeof router.push>[0]) => { detail.value = null; router.push(to); };
+const detailTitle = computed(
+  () => ({ sales: 'Sales on this shift', collections: 'Collections on this shift', expenses: 'Expenses & deposits', cash: 'Expected cash' })[detail.value || 'sales'],
+);
+const docs = computed(() => report.value?.documents || { orders: [], invoices: [], payments: [] });
+const paymentsByMode = computed(() => {
+  const groups: Record<string, { mode: string; rows: typeof docs.value.payments; amount: number }> = {};
+  for (const p of docs.value.payments) {
+    const g = (groups[p.mode_of_payment] ||= { mode: p.mode_of_payment, rows: [], amount: 0 });
+    g.rows.push(p);
+    g.amount += p.amount;
+  }
+  return Object.values(groups);
+});
+const cashRow = computed(() => report.value?.payment_reconciliation.find((r) => r.mode_of_payment === report.value?.cash_mode) || null);
+const otherModeRows = computed(() => (report.value?.payment_reconciliation || []).filter((r) => r.mode_of_payment !== report.value?.cash_mode));
+const cashLines = computed(() => {
+  const r = report.value;
+  if (!r || !r.cash_mode) return [];
+  const cashCollections = r.collections.find((c) => c.mode_of_payment === r.cash_mode)?.amount || 0;
+  return [
+    { label: 'Opening float', amount: cashRow.value?.opening_amount || 0, sign: 0 },
+    { label: `${r.cash_mode} collections`, amount: cashCollections, sign: 1 },
+    { label: 'Expenses', amount: r.totals.total_expenses, sign: -1 },
+    { label: 'Deposited to office', amount: r.totals.total_deposits, sign: -1 },
+  ];
+});
+const formatTime = (ts: string | null) => {
+  const d = parseTs(ts);
+  return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+};
+
 const salesLines = computed(() => [
   { label: 'Sales orders', count: t.value.sales_orders_count, amount: t.value.total_sales, negative: false },
   { label: 'Net before tax', count: `${qty(t.value.total_quantity)} units`, amount: t.value.net_total, negative: false },

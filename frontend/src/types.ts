@@ -562,6 +562,14 @@ export interface ShiftReport {
     expenses_count: number;
     deposits_count: number;
   };
+  /** Drawer mode expenses and deposits are deducted from; null when the shift has no cash mode. */
+  cash_mode: string | null;
+  /** The documents behind the totals, for drilling down from a tile. */
+  documents: {
+    orders: ShiftReportOrder[];
+    invoices: ShiftReportInvoice[];
+    payments: ShiftReportPayment[];
+  };
   payment_reconciliation: ShiftReportReconciliationRow[];
   collections: Array<{ mode_of_payment: string; count: number; amount: number }>;
   taxes: ShiftTaxRow[];
@@ -571,6 +579,36 @@ export interface ShiftReport {
   items: ShiftReportItem[];
   /** Only on a summary: drafts can still be submitted while the shift is open. */
   draft_orders: ShiftDraftOrder[];
+}
+
+export interface ShiftReportOrder {
+  name: string;
+  customer: string;
+  customer_name: string | null;
+  grand_total: number;
+  total_qty: number;
+  status: string;
+  creation: string;
+}
+
+export interface ShiftReportInvoice {
+  name: string;
+  customer: string;
+  customer_name: string | null;
+  /** Always positive; is_return tells a credit note apart. */
+  amount: number;
+  is_return: 0 | 1;
+  status: string;
+  creation: string;
+}
+
+export interface ShiftReportPayment {
+  name: string;
+  party: string;
+  party_name: string | null;
+  mode_of_payment: string;
+  amount: number;
+  creation: string;
 }
 
 export interface ShiftReportCashRow {

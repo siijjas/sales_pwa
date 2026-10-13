@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "creation": "2026-10-13 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_gateway",
+  "gateway_url",
+  "column_break_gateway",
+  "api_key",
+  "section_target",
+  "group_id",
+  "column_break_target",
+  "group_name",
+  "section_events",
+  "notify_orders",
+  "notify_payments",
+  "column_break_events",
+  "only_sales_app",
+  "include_items",
+  "max_items"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "section_gateway",
+   "fieldtype": "Section Break",
+   "label": "Gateway",
+   "description": "The Baileys gateway in the app's whatsapp-gateway folder. Run it next to the bench and pair it with the WhatsApp number that will post into the group."
+  },
+  {
+   "default": "http://127.0.0.1:3010",
+   "fieldname": "gateway_url",
+   "fieldtype": "Data",
+   "label": "Gateway URL"
+  },
+  {
+   "fieldname": "column_break_gateway",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key",
+   "description": "The WA_API_KEY the gateway was started with."
+  },
+  {
+   "fieldname": "section_target",
+   "fieldtype": "Section Break",
+   "label": "Where to post"
+  },
+  {
+   "fieldname": "group_id",
+   "fieldtype": "Data",
+   "label": "Group",
+   "description": "The WhatsApp group's JID, e.g. 120363012345678901@g.us. Use Pick group once the gateway is paired."
+  },
+  {
+   "fieldname": "column_break_target",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "group_name",
+   "fieldtype": "Data",
+   "label": "Group Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_events",
+   "fieldtype": "Section Break",
+   "label": "What to post"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_orders",
+   "fieldtype": "Check",
+   "label": "Orders",
+   "description": "When a Sales Order is created, updated, confirmed or cancelled."
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_payments",
+   "fieldtype": "Check",
+   "label": "Payments",
+   "description": "When a customer payment is received or cancelled."
+  },
+  {
+   "fieldname": "column_break_events",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "only_sales_app",
+   "fieldtype": "Check",
+   "label": "Only documents made through the Sales App",
+   "description": "Off: orders and payments entered in the desk are posted too."
+  },
+  {
+   "default": "1",
+   "fieldname": "include_items",
+   "fieldtype": "Check",
+   "label": "List the order items"
+  },
+  {
+   "default": "10",
+   "depends_on": "include_items",
+   "fieldname": "max_items",
+   "fieldtype": "Int",
+   "label": "Items to list"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-13 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "WhatsApp Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

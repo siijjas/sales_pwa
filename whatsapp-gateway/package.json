@@ -1,0 +1,19 @@
+{
+  "name": "sales-pwa-whatsapp-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny HTTP bridge from the Sales App (Frappe) to WhatsApp via Baileys",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "pino": "10.4.0",
+    "qrcode": "1.5.4"
+  }
+}

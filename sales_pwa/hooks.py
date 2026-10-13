@@ -166,7 +166,23 @@ jinja = {
 
 # Cache invalidation for Sales Profile is handled by the SalesProfile DocType class
 # (on_update / on_trash in sales_pwa/sales_app/doctype/sales_profile/sales_profile.py).
-# No doc_events hook needed here.
+
+# WhatsApp group notifications (see sales_pwa/sales_app/whatsapp.py). The handler
+# returns immediately unless WhatsApp Settings is enabled for that doctype.
+_whatsapp = "sales_pwa.sales_app.whatsapp.on_document_event"
+doc_events = {
+	"Sales Order": {
+		"after_insert": _whatsapp,
+		"on_update": _whatsapp,
+		"on_submit": _whatsapp,
+		"on_update_after_submit": _whatsapp,
+		"on_cancel": _whatsapp,
+	},
+	"Payment Entry": {
+		"on_submit": _whatsapp,
+		"on_cancel": _whatsapp,
+	},
+}
 
 # Scheduled Tasks
 # ---------------

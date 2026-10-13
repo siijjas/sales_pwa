@@ -10,3 +10,4 @@ sales_pwa.patches.remove_driver_configuration
 sales_pwa.patches.set_default_profile_type
 sales_pwa.patches.backfill_shift_closing_links
 sales_pwa.patches.set_separate_van_warehouse_default
+sales_pwa.patches.split_profile_print_format

@@ -44,6 +44,17 @@ PROFILE_CONTROL_CHECKS = {
 
 # ─── Setup Options ─────────────────────────────────────────────────────────────
 
+# Sales Profile print-format fields and the doctype each one must belong to. The app's
+# PDF endpoint (pdf.py) picks the field by the document being printed; credit notes
+# (Sales Invoice with is_return) use return_print_format, falling back to the invoice one.
+PRINT_FORMAT_DOCTYPES = {
+	"order_print_format": "Sales Order",
+	"invoice_print_format": "Sales Invoice",
+	"return_print_format": "Sales Invoice",
+	"payment_print_format": "Payment Entry",
+}
+
+
 @frappe.whitelist()
 def get_van_profile_options():
 	"""Return all option lists needed to build/edit a Sales Profile form."""
@@ -105,10 +116,19 @@ def get_van_profile_options():
 			limit_page_length=100,
 			order_by="name asc",
 		),
+		# Formats the app can print with (see pdf.py); the editor filters by doc_type.
 		"print_formats": frappe.get_all(
 			"Print Format",
+			filters={"disabled": 0, "doc_type": ["in", list(PRINT_FORMAT_DOCTYPES.values())]},
 			fields=["name", "doc_type"],
-			limit_page_length=200,
+			limit_page_length=500,
+			order_by="name asc",
+		),
+		"letter_heads": frappe.get_all(
+			"Letter Head",
+			filters={"disabled": 0},
+			fields=["name", "is_default"],
+			limit_page_length=100,
 			order_by="name asc",
 		),
 		"users": frappe.get_all(
@@ -179,7 +199,7 @@ def list_van_profiles():
 			"allow_offline_stock_dashboard",
 			"ignore_pricing_rule",
 			"disable_rounded_total",
-			"print_format",
+			*PRINT_FORMAT_DOCTYPES,
 			"letter_head",
 			"income_account",
 			"expense_account",
@@ -314,7 +334,8 @@ def save_van_profile(payload):
 	doc.allow_offline_stock_dashboard = 1 if _coerce_check(data.get("allow_offline_stock_dashboard", True)) else 0
 	doc.ignore_pricing_rule = 1 if _coerce_check(data.get("ignore_pricing_rule")) else 0
 	doc.disable_rounded_total = 1 if _coerce_check(data.get("disable_rounded_total")) else 0
-	doc.print_format = data.get("print_format") or None
+	for field in PRINT_FORMAT_DOCTYPES:
+		doc.set(field, data.get(field) or None)
 	doc.letter_head = data.get("letter_head") or None
 	doc.income_account = data.get("income_account") or None
 	doc.expense_account = data.get("expense_account") or None
@@ -517,7 +538,7 @@ def _build_van_profile_payload(doc) -> dict:
 		"allow_offline_stock_dashboard": _coerce_check(doc.allow_offline_stock_dashboard),
 		"ignore_pricing_rule": _coerce_check(doc.ignore_pricing_rule),
 		"disable_rounded_total": _coerce_check(doc.disable_rounded_total),
-		"print_format": doc.print_format,
+		**{field: doc.get(field) for field in PRINT_FORMAT_DOCTYPES},
 		"letter_head": doc.letter_head,
 		"income_account": doc.income_account,
 		"expense_account": doc.expense_account,

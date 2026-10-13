@@ -94,10 +94,14 @@ const submit = async () => {
     // Send the rate the driver was shown — the server only sees the price list otherwise.
     const items = returns.lines.map((line) => ({ item_code: line.item.item_code, qty: line.qty, rate: lineRate(line) }));
     const total = returns.total;
-    await api.createSalesReturn(returns.customer.name, items);
+    const creditNote = await api.createSalesReturn(returns.customer.name, items);
     const customer = returns.customer.name;
     returns.clear();
-    toast.success('Credit note issued', { message: `${currency.value} ${money(total)} credited` });
+    toast.success(`Credit note ${creditNote} issued`, {
+      message: `${currency.value} ${money(total)} credited`,
+      action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', creditNote) },
+      duration: 8000,
+    });
     router.replace({ name: 'customer', params: { name: customer } });
   } catch (e: any) {
     error.value = e?.message || 'Failed to process the return. Check permissions and stock settings.';

@@ -5,6 +5,7 @@ import type {
   SalesOrder,
   SalesOrderItem,
   OutstandingInvoice,
+  OrderInvoice,
   PaymentReference,
   LedgerEntry,
   PaymentMode,
@@ -871,6 +872,16 @@ export async function getSalesOrders(customer: string): Promise<SalesOrderSummar
   return (data.message || []) as SalesOrderSummary[];
 }
 
+export async function getOrderInvoices(salesOrder: string): Promise<OrderInvoice[]> {
+  const params = new URLSearchParams({ sales_order: salesOrder });
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_order_invoices?${params.toString()}`, {
+    headers: defaultHeaders(),
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as OrderInvoice[];
+}
+
 export async function getCustomerSummary(customer: string): Promise<CustomerSummary> {
   const params = new URLSearchParams({ customer });
   const res = await fetch(`/api/method/sales_pwa.sales_app.finance.get_customer_summary?${params.toString()}`, {
@@ -1275,11 +1286,17 @@ export const getPeriodReport = (fromDate: string, toDate: string, driver?: strin
     van_profile: vanProfile,
   });
 
-export function downloadPdf(doctype: string, name: string, format = 'Standard') {
-  // van_sale.pdf.download_pdf inlines the print stylesheet so wkhtmltopdf never has to
+/**
+ * Open the document's PDF in a new tab. Without `format` the server prints with the
+ * Sales Profile's print format and letter head for that document (Staff → Printing);
+ * the shift reports name their own formats.
+ */
+export function downloadPdf(doctype: string, name: string, format?: string) {
+  // sales_pwa.pdf.download_pdf inlines the print stylesheet so wkhtmltopdf never has to
   // fetch the site's own assets over the network (that fetch 404s behind some proxies).
-  const url = `/api/method/sales_pwa.sales_app.pdf.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=${encodeURIComponent(format)}&no_letterhead=0`;
-  window.open(url, '_blank');
+  const params = new URLSearchParams({ doctype, name, no_letterhead: '0' });
+  if (format) params.set('format', format);
+  window.open(`/api/method/sales_pwa.sales_app.pdf.download_pdf?${params.toString()}`, '_blank');
 }
 
 // ─── Sales Profile API ─────────────────────────────────────────────────────────

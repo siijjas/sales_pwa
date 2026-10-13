@@ -259,7 +259,7 @@ async function submit(withInvoice: boolean) {
 function onInvoiceCreated(invoiceName: string) {
   const name = submittedOrder.value!.name;
   invoiceOpen.value = false;
-  toast.success(`Invoice ${invoiceName} created`);
+  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', invoiceName) }, duration: 8000 });
   finish(name);
 }
 // Sheet dismissed without an invoice: the order is still submitted.

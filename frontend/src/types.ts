@@ -74,7 +74,12 @@ export interface DriverConfig {
   validate_stock_on_save?: boolean;
   ignore_pricing_rule?: boolean;
   disable_rounded_total?: boolean;
-  print_format?: string;
+  /** Print formats the app prints with (see Sales Profile → Printing). Blank = the doctype's default. */
+  order_print_format?: string;
+  invoice_print_format?: string;
+  /** Credit notes; blank = the invoice format. */
+  return_print_format?: string;
+  payment_print_format?: string;
   letter_head?: string;
   income_account?: string;
   expense_account?: string;
@@ -253,7 +258,12 @@ export interface SalesProfile {
   allow_offline_stock_dashboard: boolean;
   ignore_pricing_rule: boolean;
   disable_rounded_total: boolean;
-  print_format?: string;
+  /** Print formats the app prints with (see Sales Profile → Printing). Blank = the doctype's default. */
+  order_print_format?: string;
+  invoice_print_format?: string;
+  /** Credit notes; blank = the invoice format. */
+  return_print_format?: string;
+  payment_print_format?: string;
   letter_head?: string;
   income_account?: string;
   expense_account?: string;
@@ -297,6 +307,7 @@ export interface SalesProfileOptions {
   invoice_options: InvoiceOption[];
   currencies: Array<{ name: string }>;
   print_formats: Array<{ name: string; doc_type: string }>;
+  letter_heads: Array<{ name: string; is_default?: number }>;
   users: Array<{ name: string; full_name: string }>;
   cash_accounts: Array<{ name: string; account_name: string; company: string; account_type: string }>;
   expense_accounts: Array<{ name: string; account_name: string; company: string }>;
@@ -478,6 +489,16 @@ export interface SalesOrder {
   discount_amount?: number;
   apply_discount_on?: string;
 }
+/** A submitted Sales Invoice raised from an order (sales.get_order_invoices). */
+export interface OrderInvoice {
+  name: string;
+  posting_date: string;
+  grand_total: number;
+  outstanding_amount: number;
+  is_return: boolean;
+  status: string;
+}
+
 export interface OutstandingInvoice {
   name: string;
   posting_date: string;

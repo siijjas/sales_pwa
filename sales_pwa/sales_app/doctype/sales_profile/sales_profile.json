@@ -69,7 +69,11 @@
   "ignore_pricing_rule",
   "disable_rounded_total",
   "section_print",
-  "print_format",
+  "order_print_format",
+  "invoice_print_format",
+  "column_break_print",
+  "return_print_format",
+  "payment_print_format",
   "letter_head",
   "section_accounting",
   "income_account",
@@ -494,12 +498,36 @@
   {
    "fieldname": "section_print",
    "fieldtype": "Section Break",
-   "label": "Print Settings"
+   "label": "Print Settings",
+   "description": "Print formats the app uses when staff print from their phone. Blank = the doctype's default format. Credit notes fall back to the invoice format."
   },
   {
-   "fieldname": "print_format",
+   "fieldname": "order_print_format",
    "fieldtype": "Link",
-   "label": "Print Format",
+   "label": "Sales Order Print Format",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "invoice_print_format",
+   "fieldtype": "Link",
+   "label": "Sales Invoice Print Format",
+   "options": "Print Format"
+  },
+  {
+   "fieldname": "column_break_print",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "return_print_format",
+   "fieldtype": "Link",
+   "label": "Credit Note Print Format",
+   "options": "Print Format",
+   "description": "A Sales Invoice print format used for returns. Blank = the invoice format."
+  },
+  {
+   "fieldname": "payment_print_format",
+   "fieldtype": "Link",
+   "label": "Payment Entry Print Format",
    "options": "Print Format"
   },
   {

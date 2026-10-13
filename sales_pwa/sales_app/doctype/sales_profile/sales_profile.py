@@ -26,6 +26,7 @@ class SalesProfile(Document):
 			seen_modes.add(row.mode_of_payment)
 
 		self._validate_invoice_options()
+		self._validate_print_formats()
 		self._validate_drivers_are_enabled()
 		self._validate_one_active_profile_per_driver()
 
@@ -64,6 +65,23 @@ class SalesProfile(Document):
 			self.van_warehouse = None
 		if not self.use_shifts:
 			self.require_open_shift = 0
+
+	def _validate_print_formats(self):
+		"""Each print-format field must name an enabled format of the doctype it prints."""
+		from sales_pwa.sales_app.van_profile import PRINT_FORMAT_DOCTYPES
+
+		for field, doctype in PRINT_FORMAT_DOCTYPES.items():
+			name = self.get(field)
+			if not name:
+				continue
+			row = frappe.db.get_value("Print Format", name, ["doc_type", "disabled"], as_dict=True)
+			label = self.meta.get_label(field)
+			if not row:
+				frappe.throw(f"{label}: print format {name} does not exist")
+			if row.doc_type != doctype:
+				frappe.throw(f"{label}: {name} is a {row.doc_type} print format, not {doctype}")
+			if row.disabled:
+				frappe.throw(f"{label}: print format {name} is disabled")
 
 	def _validate_invoice_options(self):
 		"""No duplicate options, and exactly one default when any are listed (the first

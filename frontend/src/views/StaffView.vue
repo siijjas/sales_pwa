@@ -249,6 +249,41 @@
           </div>
         </FormSection>
 
+        <!-- Printing -->
+        <FormSection title="Printing" icon="printer">
+          <p class="text-xs text-muted">
+            What staff get when they tap Print on a phone. Blank uses the doctype's default format
+            and the company's default letter head.
+          </p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <FormField label="Order print format">
+              <BaseSelect :model-value="form.order_print_format ?? ''" @update:model-value="(v) => (form.order_print_format = v)" placeholder="Default (Standard)">
+                <option v-for="f in formatsFor('Sales Order')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField label="Payment receipt print format">
+              <BaseSelect :model-value="form.payment_print_format ?? ''" @update:model-value="(v) => (form.payment_print_format = v)" placeholder="Default (Standard)">
+                <option v-for="f in formatsFor('Payment Entry')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField v-if="!isFieldSales" label="Invoice print format">
+              <BaseSelect :model-value="form.invoice_print_format ?? ''" @update:model-value="(v) => (form.invoice_print_format = v)" placeholder="Default (Standard)">
+                <option v-for="f in formatsFor('Sales Invoice')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField v-if="!isFieldSales && form.allow_return" label="Credit note print format" hint="A Sales Invoice format for returns. Blank = the invoice format.">
+              <BaseSelect :model-value="form.return_print_format ?? ''" @update:model-value="(v) => (form.return_print_format = v)" placeholder="Same as invoice">
+                <option v-for="f in formatsFor('Sales Invoice')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField label="Letter head">
+              <BaseSelect :model-value="form.letter_head ?? ''" @update:model-value="(v) => (form.letter_head = v)" placeholder="Company default">
+                <option v-for="l in options.letter_heads" :key="l.name" :value="l.name">{{ l.name }}{{ l.is_default ? ' (default)' : '' }}</option>
+              </BaseSelect>
+            </FormField>
+          </div>
+        </FormSection>
+
         <!-- Cash movements -->
         <FormSection v-if="form.use_shifts" title="Cash movements (expenses & deposits)" icon="banknote">
           <p class="text-xs text-muted">Cash leaving the drawer mid-shift. Each entry posts a Journal Entry that credits the drawer account and debits the expense or back-office account, and the shift closing deducts it from expected cash.</p>
@@ -386,6 +421,7 @@ const options = ref<SalesProfileOptions>({
   invoice_options: [],
   currencies: [],
   print_formats: [],
+  letter_heads: [],
   users: [],
   cash_accounts: [],
   expense_accounts: [],
@@ -419,7 +455,10 @@ const defaultForm = (): Partial<SalesProfile> => ({
   allow_offline_stock_dashboard: true,
   ignore_pricing_rule: false,
   disable_rounded_total: false,
-  print_format: '',
+  order_print_format: '',
+  invoice_print_format: '',
+  return_print_format: '',
+  payment_print_format: '',
   letter_head: '',
   income_account: '',
   expense_account: '',
@@ -461,6 +500,7 @@ const filteredProfiles = computed(() => {
 const filteredWarehouses = computed(() =>
   form.value.company ? options.value.warehouses.filter((w) => w.company === form.value.company) : options.value.warehouses,
 );
+const formatsFor = (doctype: string) => options.value.print_formats.filter((f) => f.doc_type === doctype);
 const filteredTaxTemplates = computed(() =>
   form.value.company ? options.value.tax_templates.filter((t) => t.company === form.value.company) : options.value.tax_templates,
 );

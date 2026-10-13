@@ -509,6 +509,31 @@ def get_sales_orders(customer: str):
 
 
 @frappe.whitelist()
+def get_order_invoices(sales_order: str):
+	"""Submitted invoices (and credit notes) raised from an order, for the order page's
+	print buttons. Same access rule as the order itself: the caller's customer access."""
+	_require_van_user()
+	customer = frappe.db.get_value("Sales Order", sales_order, "customer")
+	if not customer:
+		frappe.throw(f"Sales Order {sales_order} not found")
+	_validate_customer_access(customer)
+	names = frappe.get_all(
+		"Sales Invoice Item",
+		filters={"sales_order": sales_order, "docstatus": 1},
+		pluck="parent",
+		distinct=True,
+	)
+	if not names:
+		return []
+	return frappe.get_all(
+		"Sales Invoice",
+		filters={"name": ["in", names], "docstatus": 1},
+		fields=["name", "posting_date", "grand_total", "outstanding_amount", "is_return", "status"],
+		order_by="posting_date desc, creation desc",
+	)
+
+
+@frappe.whitelist()
 def get_item_sales_history(item_code: str, customer: str = None, limit: int = 20):
 	"""Who this item was sold to and at what rate, most recent first.
 

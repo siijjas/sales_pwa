@@ -49,6 +49,27 @@
         </div>
       </AppCard>
 
+      <!-- Invoices raised from this order -->
+      <AppCard v-if="invoices.length" padding="none">
+        <div class="border-b border-line px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted">Invoices ({{ invoices.length }})</div>
+        <div class="divide-y divide-line">
+          <ListRow
+            v-for="inv in invoices"
+            :key="inv.name"
+            dense
+            icon="file-text"
+            :tone="inv.is_return ? 'danger' : inv.outstanding_amount > 0.005 ? 'warning' : 'success'"
+            :title="inv.name"
+            :subtitle="`${inv.is_return ? 'Credit note' : inv.status} · ${shortDate(inv.posting_date)}`"
+          >
+            <template #trailing>
+              <p class="tnum text-[14px] font-bold text-foreground">{{ currency }} {{ money(Math.abs(inv.grand_total)) }}</p>
+              <AppButton variant="ghost" size="sm" icon="printer" :aria-label="`Print ${inv.name}`" @click="api.downloadPdf('Sales Invoice', inv.name)" />
+            </template>
+          </ListRow>
+        </div>
+      </AppCard>
+
       <AppAlert
         v-if="!canInvoice && order.docstatus === 1 && !fullyBilled"
         tone="info"
@@ -84,7 +105,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
-import type { SalesOrder } from '../types';
+import type { OrderInvoice, SalesOrder } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useSaleStore } from '../stores/sale';
 import { useToast } from '../composables/useToast';
@@ -105,6 +126,7 @@ const canInvoice = computed(() => store.capabilities.can_invoice);
 const canDeliver = computed(() => store.capabilities.can_deliver);
 
 const order = ref<SalesOrder | null>(null);
+const invoices = ref<OrderInvoice[]>([]);
 const loading = ref(true);
 const error = ref('');
 const submitting = ref(false);
@@ -136,6 +158,10 @@ async function load() {
   error.value = '';
   try {
     order.value = await api.getSalesOrder(orderId);
+    // Only a submitted order can carry invoices; a failed lookup just hides the card.
+    invoices.value = order.value.docstatus === 1 && (order.value.per_billed ?? 0) > 0
+      ? await api.getOrderInvoices(orderId).catch(() => [])
+      : [];
   } catch (e: any) {
     error.value = e?.message || 'Failed to load order';
   } finally {
@@ -173,7 +199,7 @@ function editOrder() {
 async function onInvoiceCreated(invoiceName: string, note: string) {
   invoiceOpen.value = false;
   deferredNote.value = note;
-  toast.success(`Invoice ${invoiceName} created`);
+  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', invoiceName) }, duration: 8000 });
   await load();
 }
 

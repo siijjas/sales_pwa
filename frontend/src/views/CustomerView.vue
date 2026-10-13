@@ -59,6 +59,7 @@
                 <p class="tnum text-[14px] font-bold text-foreground">{{ currency }} {{ money(inv.outstanding_amount) }}</p>
                 <p v-if="inv.outstanding_amount < inv.grand_total - 0.005" class="tnum text-[11px] text-muted">of {{ money(inv.grand_total) }}</p>
               </div>
+              <AppButton variant="ghost" size="sm" icon="printer" :aria-label="`Print ${inv.name}`" @click="api.downloadPdf('Sales Invoice', inv.name)" />
             </template>
           </ListRow>
         </AppCard>

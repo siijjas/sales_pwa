@@ -8,7 +8,7 @@ const STORAGE_KEY = 'sales-app-theme';
 // Surface colors that match --c-elevated so the mobile browser chrome blends in.
 const THEME_COLOR: Record<ResolvedTheme, string> = {
   light: '#ffffff',
-  dark: '#0f172a',
+  dark: '#121415',
 };
 
 function readStored(): ThemePreference {

@@ -1,7 +1,7 @@
 <template>
   <div class="relative">
     <select
-      :value="modelValue"
+      :value="modelValue ?? ''"
       :disabled="disabled"
       class="field-input appearance-none pr-11"
       @change="$emit('update:modelValue', ($event.target as HTMLSelectElement).value)"
@@ -16,6 +16,6 @@
 <script setup lang="ts">
 import AppIcon from './AppIcon.vue';
 
-defineProps<{ modelValue: string | number | null; placeholder?: string; disabled?: boolean }>();
+defineProps<{ modelValue?: string | number | null; placeholder?: string; disabled?: boolean }>();
 defineEmits<{ (e: 'update:modelValue', value: string): void }>();
 </script>

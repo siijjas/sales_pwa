@@ -202,11 +202,22 @@ export async function getSession(): Promise<UserSession> {
   return context;
 }
 
-export async function searchCustomers(txt: string): Promise<Customer[]> {
+export async function searchCustomers(txt: string, limit = 25): Promise<Customer[]> {
+  const text = txt.trim();
   const params = new URLSearchParams({
-    fields: JSON.stringify(['name', 'customer_name', 'customer_group', 'territory']),
-    filters: JSON.stringify(txt ? [['Customer', 'customer_name', 'like', `%${txt}%`]] : []),
-    page_length: '20',
+    fields: JSON.stringify(['name', 'customer_name', 'customer_group', 'territory', 'mobile_no']),
+    filters: JSON.stringify([['Customer', 'disabled', '=', 0]]),
+    ...(text
+      ? {
+          or_filters: JSON.stringify([
+            ['Customer', 'customer_name', 'like', `%${text}%`],
+            ['Customer', 'name', 'like', `%${text}%`],
+            ['Customer', 'mobile_no', 'like', `%${text}%`],
+          ]),
+        }
+      : {}),
+    order_by: 'customer_name asc',
+    page_length: String(limit),
     limit_start: '0',
   });
   const res = await fetch(`/api/resource/Customer?${params.toString()}`, {
@@ -215,6 +226,20 @@ export async function searchCustomers(txt: string): Promise<Customer[]> {
   });
   const data = await handleResponse(res);
   return (data.data || data.message || []) as Customer[];
+}
+
+/** One customer by ID, for screens reached by link (/customers/:name). */
+export async function getCustomer(name: string): Promise<Customer> {
+  const params = new URLSearchParams({
+    fields: JSON.stringify(['name', 'customer_name', 'customer_group', 'territory', 'mobile_no']),
+    filters: JSON.stringify([['Customer', 'name', '=', name]]),
+    page_length: '1',
+  });
+  const res = await fetch(`/api/resource/Customer?${params.toString()}`, { method: 'GET', credentials: 'include' });
+  const data = await handleResponse(res);
+  const row = (data.data || [])[0];
+  if (!row) throw new Error(`Customer ${name} was not found`);
+  return row as Customer;
 }
 
 export async function createCustomer(customerName: string, mobileNo?: string): Promise<Customer> {
@@ -735,6 +760,7 @@ export async function deleteInvoiceOption(name: string): Promise<void> {
 
 export interface RecentOrdersOptions {
   search?: string;
+  customer?: string;
   fromDate?: string;
   toDate?: string;
   limitStart?: number;
@@ -748,6 +774,7 @@ export async function recentOrders(owner: string, options?: RecentOrdersOptions)
   ];
   if (options?.fromDate) filters.push(['Sales Order', 'transaction_date', '>=', options.fromDate]);
   if (options?.toDate) filters.push(['Sales Order', 'transaction_date', '<=', options.toDate]);
+  if (options?.customer) filters.push(['Sales Order', 'customer', '=', options.customer]);
 
   const search = options?.search?.trim();
   const orFilters = search
@@ -928,6 +955,57 @@ export async function getPaymentEntry(name: string) {
   });
   const data = await handleResponse(res);
   return data.data;
+}
+
+export interface PaymentListRow {
+  name: string;
+  party: string;
+  party_name: string;
+  posting_date: string;
+  paid_amount: number;
+  mode_of_payment: string;
+  status: string;
+  docstatus: number;
+  creation: string;
+}
+
+export interface PaymentListOptions {
+  search?: string;
+  fromDate?: string;
+  toDate?: string;
+  customer?: string;
+  limitStart?: number;
+  pageLength?: number;
+}
+
+/** Payments the caller recorded (receipts only), newest first. */
+export async function listPayments(owner: string, options: PaymentListOptions = {}): Promise<PaymentListRow[]> {
+  const filters: any[] = [
+    ['Payment Entry', 'owner', '=', owner],
+    ['Payment Entry', 'payment_type', '=', 'Receive'],
+    ['Payment Entry', 'docstatus', '!=', 2],
+  ];
+  if (options.fromDate) filters.push(['Payment Entry', 'posting_date', '>=', options.fromDate]);
+  if (options.toDate) filters.push(['Payment Entry', 'posting_date', '<=', options.toDate]);
+  if (options.customer) filters.push(['Payment Entry', 'party', '=', options.customer]);
+  const search = options.search?.trim();
+  const orFilters = search
+    ? [
+        ['Payment Entry', 'party_name', 'like', `%${search}%`],
+        ['Payment Entry', 'name', 'like', `%${search}%`],
+      ]
+    : undefined;
+  const params = new URLSearchParams({
+    fields: JSON.stringify(['name', 'party', 'party_name', 'posting_date', 'paid_amount', 'mode_of_payment', 'status', 'docstatus', 'creation']),
+    filters: JSON.stringify(filters),
+    ...(orFilters ? { or_filters: JSON.stringify(orFilters) } : {}),
+    order_by: 'creation desc',
+    page_length: String(options.pageLength ?? 20),
+    limit_start: String(options.limitStart ?? 0),
+  });
+  const res = await fetch(`/api/resource/Payment Entry?${params.toString()}`, { method: 'GET', credentials: 'include' });
+  const data = await handleResponse(res);
+  return (data.data || []) as PaymentListRow[];
 }
 
 export async function getDriverStockDashboard(forceRefresh = false): Promise<DriverStockDashboard> {

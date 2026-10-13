@@ -3,11 +3,15 @@
     <span v-if="prefix" class="tnum pointer-events-none absolute left-4 text-sm font-semibold text-muted">{{ prefix }}</span>
     <AppIcon v-if="icon" :name="icon" :size="18" class="pointer-events-none absolute left-4 text-subtle" />
     <input
-      :value="modelValue"
+      :value="modelValue ?? ''"
       :type="type"
       :inputmode="inputmode"
       :placeholder="placeholder"
       :disabled="disabled"
+      :autocomplete="autocomplete"
+      :min="min"
+      :max="max"
+      :step="step"
       class="field-input"
       :class="[
         prefix ? 'pl-14' : '',
@@ -29,13 +33,17 @@ import AppIcon from './AppIcon.vue';
 
 const props = withDefaults(
   defineProps<{
-    modelValue: string | number | null;
+    modelValue?: string | number | null;
     type?: string;
-    inputmode?: string;
+    inputmode?: 'none' | 'text' | 'decimal' | 'numeric' | 'tel' | 'search' | 'email' | 'url';
     placeholder?: string;
     prefix?: string;
     icon?: string;
     disabled?: boolean;
+    autocomplete?: string;
+    min?: number | string;
+    max?: number | string;
+    step?: number | string;
   }>(),
   { type: 'text' },
 );

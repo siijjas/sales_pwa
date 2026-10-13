@@ -1,0 +1,2 @@
+import{d as e,c as a,w as t,_ as s,o as n,a as i,u as o,b as r}from"./index-DY0O3_hw.js";const p=e({__name:"SaleCustomerView",setup(c){return(_,l)=>(n(),a(s,{back:"",title:"SaleCustomer"},{default:t(()=>[i(o(r),{icon:"inbox",title:"Being rebuilt",description:"This screen is part of the UI rebuild and lands in the next phase."})]),_:1}))}});export{p as default};
+//# sourceMappingURL=SaleCustomerView-QvQsgsxV.js.map

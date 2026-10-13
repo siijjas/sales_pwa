@@ -317,6 +317,7 @@ export interface Customer {
   customer_name: string;
   customer_group: string;
   territory: string;
+  mobile_no?: string | null;
   image?: string;
 }
 

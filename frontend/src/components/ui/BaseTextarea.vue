@@ -1,6 +1,6 @@
 <template>
   <textarea
-    :value="modelValue"
+    :value="modelValue ?? ''"
     :rows="rows"
     :placeholder="placeholder"
     :disabled="disabled"
@@ -10,7 +10,7 @@
 </template>
 
 <script setup lang="ts">
-withDefaults(defineProps<{ modelValue: string; placeholder?: string; rows?: number; disabled?: boolean }>(), {
+withDefaults(defineProps<{ modelValue?: string | null; placeholder?: string; rows?: number; disabled?: boolean }>(), {
   rows: 3,
 });
 defineEmits<{ (e: 'update:modelValue', value: string): void }>();

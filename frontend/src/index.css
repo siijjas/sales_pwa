@@ -83,6 +83,14 @@
 
   html {
     -webkit-tap-highlight-color: transparent;
+    /* Phones with a notch: let the canvas colour run under the status bar. */
+    background: rgb(var(--c-background));
+  }
+
+  /* Native date pickers and number inputs pick up the theme instead of the OS default. */
+  input[type='date'],
+  input[type='number'] {
+    color-scheme: inherit;
   }
 
   body {
@@ -132,6 +140,20 @@
 
   .skeleton {
     @apply animate-pulse rounded-2xl bg-card-muted;
+  }
+
+  /* Small inline numeric field used inside cards (discount, allocation). */
+  .field-inline {
+    @apply tnum w-24 rounded-xl bg-card-muted px-3 py-2 text-right text-sm font-semibold text-foreground
+           shadow-[inset_0_0_0_1px_rgb(var(--c-line))] focus:shadow-[inset_0_0_0_1.5px_rgb(var(--c-primary))] focus:outline-none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 }
 

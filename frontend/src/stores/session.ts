@@ -1,5 +1,9 @@
 import { defineStore } from 'pinia';
-import type { UserSession, Item, CartLine, Customer, SalesOrderItem, Capabilities } from '../types';
+import type { UserSession, Capabilities } from '../types';
+import * as api from '../api/frappe';
+import { useSaleStore } from './sale';
+import { useReturnStore } from './returns';
+import { useShiftStore } from './shift';
 
 // A manager with no profile keeps the historical behaviour (see utils._capabilities).
 const DEFAULT_CAPABILITIES: Capabilities = {
@@ -19,15 +23,10 @@ const DEFAULT_CAPABILITIES: Capabilities = {
   shows_customer_balance: true,
   blind_shift_close: false,
 };
-import * as api from '../api/frappe';
 
 interface State {
   session: UserSession | null;
-  cart: CartLine[];
-  returnCart: CartLine[];
   loadingSession: boolean;
-  customer: Customer | null;
-  currentOrderName: string | null;
   currencyCode: string | null;
   currencySymbol: string | null;
 }
@@ -35,31 +34,16 @@ interface State {
 export const useSessionStore = defineStore('session', {
   state: (): State => ({
     session: null,
-    cart: [],
-    returnCart: [],
     loadingSession: true,
-    customer: null,
-    currentOrderName: null,
     currencyCode: null,
     currencySymbol: null,
   }),
   getters: {
-    cartCount: (state) => state.cart.reduce((sum, line) => sum + line.qty, 0),
-    cartTotal: (state) =>
-      state.cart.reduce(
-        (sum, line) => sum + line.qty * (line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0),
-        0,
-      ),
-    returnCartCount: (state) => state.returnCart.reduce((sum, line) => sum + line.qty, 0),
-    returnCartTotal: (state) =>
-      state.returnCart.reduce(
-        (sum, line) => sum + line.qty * (line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0),
-        0,
-      ),
     currencyDisplay: (state) => state.currencySymbol || state.currencyCode || '₹',
     driverConfig: (state) => state.session?.driver_config || null,
     isManager: (state) => Boolean(state.session?.is_manager),
     isDriver: (state) => Boolean(state.session?.is_driver),
+    firstName: (state) => state.session?.full_name?.split(' ')[0] || '',
     capabilities: (state): Capabilities =>
       state.session?.capabilities || state.session?.driver_config?.capabilities || DEFAULT_CAPABILITIES,
     isFieldSales(): boolean {
@@ -72,12 +56,37 @@ export const useSessionStore = defineStore('session', {
     canOrderWithoutStock(): boolean {
       return this.capabilities.is_field_sales || Boolean(this.driverConfig?.allow_sale_without_stock);
     },
+    /** Managers are exempt from the profile's staff controls; a missing profile means "allowed". */
+    allowRateChange(): boolean {
+      return this.isManager || this.driverConfig?.allow_rate_change !== false;
+    },
+    allowDiscountChange(): boolean {
+      return this.isManager || this.driverConfig?.allow_discount_change !== false;
+    },
+    maxDiscountPercent(): number {
+      return this.isManager ? 0 : Number(this.driverConfig?.max_discount_percent) || 0;
+    },
+    canCreateCustomer(): boolean {
+      return this.isManager || this.capabilities.can_create_customer !== false;
+    },
+    showsCustomerBalance(): boolean {
+      return this.isManager || this.capabilities.shows_customer_balance !== false;
+    },
+    canCreditSale(): boolean {
+      return this.isManager || this.capabilities.can_credit_sale !== false;
+    },
+    /** What the app is for this person: a van, a field team, or fleet management. */
+    workspaceLabel(): string {
+      if (this.isManager && !this.driverConfig) return 'Manager';
+      return this.driverConfig?.profile_name || (this.isFieldSales ? 'Field Sales' : 'Van Sales');
+    },
   },
   actions: {
     async bootstrap() {
       try {
         this.session = await api.getSession();
         await this.fetchCurrency();
+        this.hydrateDrafts();
       } catch (e) {
         this.session = null;
       } finally {
@@ -87,41 +96,27 @@ export const useSessionStore = defineStore('session', {
     async login(username: string, password: string) {
       this.session = await api.login(username, password);
       await this.fetchCurrency();
+      this.hydrateDrafts();
     },
-    async logout() {
+    hydrateDrafts() {
+      const user = this.session?.user || null;
+      useSaleStore().hydrate(user);
+      useReturnStore().hydrate(user);
+      useShiftStore().reset();
+    },
+    async logout(): Promise<string | null> {
+      let warning: string | null = null;
       try {
         await api.logout();
       } catch (e: any) {
-        // show logout error but still clear state
-        alert(e?.message || 'Logout failed on server, clearing local session.');
+        warning = e?.message || 'The server did not confirm the sign-out; the local session was cleared.';
       } finally {
         this.session = null;
-        this.cart = [];
-        this.returnCart = [];
-        this.customer = null;
-        this.currentOrderName = null;
+        useSaleStore().hydrate(null);
+        useReturnStore().hydrate(null);
+        useShiftStore().reset();
       }
-    },
-    setCustomer(customer: Customer | null) {
-      this.customer = customer;
-    },
-    setCurrentOrder(name: string | null) {
-      this.currentOrderName = name;
-    },
-    setCartFromOrder(items: SalesOrderItem[]) {
-      this.cart = items.map((line) => ({
-        item: {
-          item_code: line.item_code,
-          item_name: line.item_name,
-          description: '',
-          stock_uom: line.stock_uom || '',
-          item_group: '',
-          price_list_rate: line.rate,
-          standard_rate: line.rate,
-        },
-        qty: line.qty,
-        rate: line.rate
-      }));
+      return warning;
     },
     async fetchCurrency() {
       try {
@@ -131,77 +126,6 @@ export const useSessionStore = defineStore('session', {
       } catch (_e) {
         // keep defaults
       }
-    },
-    addToCart(item: Item) {
-      const idx = this.cart.findIndex((line) => line.item.item_code === item.item_code);
-      if (idx > -1) {
-        this.cart[idx].qty += 1;
-      } else {
-        this.cart.push({
-          item,
-          qty: 1,
-          rate: item.price_list_rate ?? item.standard_rate
-        });
-      }
-    },
-    setQty(item: Item, qty: number) {
-      const idx = this.cart.findIndex((line) => line.item.item_code === item.item_code);
-      if (qty <= 0) {
-        if (idx > -1) this.cart.splice(idx, 1);
-        return;
-      }
-      if (idx > -1) {
-        this.cart[idx].qty = qty;
-      } else {
-        this.cart.push({ item, qty, rate: item.price_list_rate ?? item.standard_rate });
-      }
-    },
-    updateQty(itemCode: string, delta: number) {
-      const idx = this.cart.findIndex((line) => line.item.item_code === itemCode);
-      if (idx === -1) return;
-      let newQty = this.cart[idx].qty + delta;
-      // A line that somehow holds a fraction of a whole-number item snaps to a whole unit.
-      if (this.cart[idx].item.must_be_whole_number) newQty = Math.round(newQty);
-      if (newQty <= 0) {
-        this.cart.splice(idx, 1);
-      } else {
-        this.cart[idx].qty = newQty;
-      }
-    },
-    updateRate(itemCode: string, newRate: number) {
-      const idx = this.cart.findIndex((line) => line.item.item_code === itemCode);
-      if (idx > -1) {
-        this.cart[idx].rate = newRate;
-      }
-    },
-    clearCart() {
-      this.cart = [];
-      this.currentOrderName = null;
-    },
-    addToReturnCart(item: Item) {
-      const idx = this.returnCart.findIndex((line) => line.item.item_code === item.item_code);
-      if (idx > -1) {
-        this.returnCart[idx].qty += 1;
-      } else {
-        this.returnCart.push({
-          item,
-          qty: 1,
-          rate: item.price_list_rate ?? item.standard_rate
-        });
-      }
-    },
-    updateReturnQty(itemCode: string, delta: number) {
-      const idx = this.returnCart.findIndex((line) => line.item.item_code === itemCode);
-      if (idx === -1) return;
-      const newQty = this.returnCart[idx].qty + delta;
-      if (newQty <= 0) {
-        this.returnCart.splice(idx, 1);
-      } else {
-        this.returnCart[idx].qty = newQty;
-      }
-    },
-    clearReturnCart() {
-      this.returnCart = [];
     },
   },
 });

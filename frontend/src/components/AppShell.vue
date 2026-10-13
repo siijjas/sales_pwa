@@ -1,73 +1,63 @@
 <template>
-  <div class="flex min-h-screen flex-col bg-background text-foreground">
-    <!-- Top header — borderless, separated by elevation -->
-    <header
-      class="sticky top-0 z-50 flex items-center justify-between bg-elevated/92 px-4 py-2.5 pt-safe shadow-[0_1px_0_rgb(var(--c-line)),0_4px_14px_-10px_rgb(23_26_27/0.25)] backdrop-blur-md lg:px-6"
-    >
-      <div class="flex items-center gap-2.5">
-        <div class="flex h-[38px] w-[38px] items-center justify-center rounded-xl bg-primary text-primary-fg shadow-btn">
-          <AppIcon :name="store.isFieldSales ? 'users' : 'truck'" :size="20" />
-        </div>
-        <div class="min-w-0">
-          <h1 class="truncate text-[15px] font-bold leading-tight tracking-tight">{{ store.isFieldSales ? 'Field Sales' : 'Van Sales' }}</h1>
-          <p class="truncate text-[11px] font-medium text-muted">
-            {{ store.driverConfig?.van_warehouse || store.driverConfig?.delivery_route || store.driverConfig?.profile_name || store.session?.full_name || 'Workspace' }}
-          </p>
-        </div>
+  <div class="flex min-h-dvh flex-col bg-background text-foreground" :style="{ '--tabbar-h': showTabs ? '72px' : '0px' }">
+    <!-- Offline notice: the app is online-only, so say so instead of failing silently. -->
+    <Transition name="fade">
+      <div v-if="!isOnline" class="fixed inset-x-0 top-0 z-[90] bg-warning px-4 pb-2 pt-safe text-center text-[12px] font-bold text-warning-fg">
+        <span class="inline-block pt-2">No connection. Changes cannot be saved until you are back online.</span>
       </div>
-      <div class="flex items-center gap-2">
-        <div
-          class="flex items-center gap-1.5 rounded-full px-2.5 py-[5px]"
-          :class="isOnline ? 'bg-success/14' : 'bg-warning/16'"
-        >
-          <span class="block h-1.5 w-1.5 rounded-full" :class="isOnline ? 'bg-success' : 'bg-warning'" />
-          <span class="text-[10px] font-bold uppercase tracking-[0.06em]" :class="isOnline ? 'text-success' : 'text-warning'">
-            {{ isOnline ? 'Online' : 'Offline' }}
-          </span>
-        </div>
-        <ThemeToggle />
-      </div>
-    </header>
+    </Transition>
 
-    <!-- Main content -->
-    <main class="w-full min-w-0 flex-1 pb-[84px] lg:pb-0 lg:pl-[88px]">
+    <!-- Rail: tablet and desktop -->
+    <aside
+      class="fixed inset-y-0 left-0 z-40 hidden w-[84px] flex-col items-center bg-elevated pb-4 pt-safe shadow-[1px_0_0_rgb(var(--c-line))] md:flex"
+    >
+      <RouterLink :to="{ name: 'home' }" class="mt-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-fg shadow-btn" aria-label="Home">
+        <AppIcon :name="brandIcon" :size="22" />
+      </RouterLink>
+      <nav class="mt-6 flex w-full flex-1 flex-col items-center gap-1">
+        <RouterLink
+          v-for="item in nav.primary"
+          :key="item.name"
+          :to="item.to"
+          class="group flex w-[68px] flex-col items-center gap-1 rounded-2xl py-2 text-[10.5px] font-semibold transition"
+          :class="isActive(item.names) ? 'bg-primary-soft text-primary' : 'text-subtle hover:bg-card-muted hover:text-foreground'"
+        >
+          <AppIcon :name="item.icon" :size="21" :stroke-width="isActive(item.names) ? 2.3 : 2" />
+          {{ item.label }}
+        </RouterLink>
+      </nav>
+      <ThemeToggle class="mb-2" />
+      <button class="flex w-[68px] flex-col items-center gap-1 rounded-2xl py-2 text-[10.5px] font-semibold text-subtle transition hover:text-danger" @click="logout">
+        <AppIcon name="logout" :size="20" />
+        Sign out
+      </button>
+    </aside>
+
+    <main class="w-full min-w-0 flex-1 md:pl-[84px]" :style="{ paddingBottom: 'calc(var(--tabbar-h) + env(safe-area-inset-bottom))' }">
       <slot />
     </main>
 
-    <!-- Bottom tab bar (mobile) / left rail (desktop) -->
+    <!-- Tabs: phone -->
     <nav
-      class="fixed bottom-0 left-0 right-0 z-40 flex h-[76px] items-stretch justify-around bg-elevated/94 pb-safe pt-2 backdrop-blur-md
-             shadow-[0_-1px_0_rgb(var(--c-line)),0_-10px_26px_-16px_rgb(23_26_27/0.3)]
-             lg:top-0 lg:right-auto lg:h-screen lg:w-[88px] lg:flex-col lg:justify-start lg:gap-1 lg:pb-4 lg:pt-20"
+      v-if="showTabs"
+      class="fixed bottom-0 left-0 right-0 z-40 flex h-[calc(72px+env(safe-area-inset-bottom))] items-start justify-around bg-elevated/95 pb-safe pt-1.5 backdrop-blur-md shadow-[0_-1px_0_rgb(var(--c-line))] md:hidden"
     >
       <RouterLink
-        v-for="item in navItems"
+        v-for="item in nav.primary"
         :key="item.name"
         :to="item.to"
-        class="group flex flex-1 flex-col items-center justify-start gap-[3px] transition lg:flex-none lg:py-2.5"
-        :class="isActive(item.names) ? 'text-primary' : 'text-subtle hover:text-foreground'"
+        class="group flex min-w-0 flex-1 flex-col items-center gap-[3px] py-1 text-[10.5px]"
+        :class="isActive(item.names) ? 'font-bold text-primary' : 'font-medium text-subtle'"
       >
-        <span
-          class="flex h-8 w-[54px] items-center justify-center rounded-xl transition duration-150 ease-emphasis lg:w-12"
-          :class="isActive(item.names) ? 'bg-primary-soft' : 'group-active:scale-90'"
-        >
-          <AppIcon :name="item.icon" :size="21" :stroke-width="isActive(item.names) ? 2.3 : 2" />
+        <span class="flex h-8 w-[52px] items-center justify-center rounded-xl transition duration-150 ease-emphasis" :class="isActive(item.names) ? 'bg-primary-soft' : 'group-active:scale-90'">
+          <AppIcon :name="item.icon" :size="22" :stroke-width="isActive(item.names) ? 2.3 : 2" />
         </span>
-        <span class="text-[10px]" :class="isActive(item.names) ? 'font-bold' : 'font-medium'">{{ item.label }}</span>
+        <span class="truncate">{{ item.label }}</span>
       </RouterLink>
-
-      <div class="hidden lg:mt-auto lg:block" />
-
-      <button
-        class="group flex flex-1 flex-col items-center justify-start gap-[3px] text-subtle transition hover:text-danger lg:flex-none lg:py-2.5"
-        @click="logout"
-      >
-        <span class="flex h-8 w-[54px] items-center justify-center rounded-xl transition group-active:scale-90 lg:w-12">
-          <AppIcon name="logout" :size="21" />
-        </span>
-        <span class="text-[10px] font-medium">Logout</span>
-      </button>
     </nav>
+
+    <ToastHost />
+    <ConfirmDialog />
   </div>
 </template>
 
@@ -75,12 +65,19 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue';
 import { RouterLink, useRoute, useRouter } from 'vue-router';
 import { useSessionStore } from '../stores/session';
-import AppIcon from './ui/AppIcon.vue';
-import ThemeToggle from './ui/ThemeToggle.vue';
+import { useNavigation } from '../navigation';
+import { useToast } from '../composables/useToast';
+import { AppIcon, ThemeToggle, ToastHost, ConfirmDialog } from './ui';
 
 const store = useSessionStore();
 const route = useRoute();
 const router = useRouter();
+const toast = useToast();
+
+const nav = computed(() => useNavigation());
+const brandIcon = computed(() => (store.isManager && !store.driverConfig ? 'activity' : store.isFieldSales ? 'users' : 'truck'));
+// Flows (sale steps, shift open/close) hide the tabs so the primary action owns the bottom edge.
+const showTabs = computed(() => route.meta.tabs !== false);
 
 const isOnline = ref(navigator.onLine);
 const handleOnline = () => (isOnline.value = true);
@@ -94,47 +91,24 @@ onUnmounted(() => {
   window.removeEventListener('offline', handleOffline);
 });
 
-type NavItem = { name: string; names: string[]; label: string; to: { name: string }; icon: string };
-
-const navItems = computed<NavItem[]>(() => {
-  const items: NavItem[] = [
-    { name: 'dashboard', names: ['dashboard'], label: 'Home', to: { name: 'dashboard' }, icon: 'home' },
-    {
-      name: 'history',
-      names: ['history', 'order-detail', 'payment-detail', 'daily-log'],
-      label: 'Activity',
-      to: { name: 'history' },
-      icon: 'receipt',
-    },
-  ];
-
-  if (store.driverConfig && store.capabilities.can_view_stock) {
-    items.push({
-      name: 'stock-dashboard',
-      names: ['stock-dashboard', 'stock-transfer'],
-      label: 'Stock',
-      to: { name: 'stock-dashboard' },
-      icon: 'boxes',
-    });
-  } else if (!store.isManager && store.capabilities.shows_customer_balance) {
-    items.push({ name: 'ledger', names: ['ledger'], label: 'Ledger', to: { name: 'ledger' }, icon: 'ledger' });
-  }
-
-  if (store.isManager) {
-    items.push({ name: 'reports', names: ['reports'], label: 'Reports', to: { name: 'reports' }, icon: 'list' });
-    items.push({ name: 'sales-profiles', names: ['sales-profiles'], label: 'Profiles', to: { name: 'sales-profiles' }, icon: 'user' });
-    items.push({ name: 'settings', names: ['settings'], label: 'Settings', to: { name: 'settings' }, icon: 'settings' });
-  }
-
-  return items;
-});
-
 function isActive(names: string[]) {
   return names.includes(String(route.name || ''));
 }
 
 async function logout() {
-  await store.logout();
+  const warning = await store.logout();
+  if (warning) toast.warning('Signed out locally', { message: warning });
   router.push({ name: 'login' });
 }
 </script>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>

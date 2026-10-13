@@ -32,7 +32,7 @@
     </script>
     <script type="module" src="/src/main.ts"></script>
     <script>
-      // Disable PWA caching: unregister any existing service workers and avoid new registrations
+      // The app is online-only: drop any service worker left over from older builds.
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.getRegistrations().then((regs) => {
           regs.forEach((reg) => reg.unregister().catch(() => {}));

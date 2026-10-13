@@ -971,6 +971,48 @@ def _build_sales_invoice(so, config: dict | None, option: dict | None, defer_del
 	return sinv
 
 
+def _order_taxes_differ(so, option: dict | None) -> bool:
+	"""Would invoicing with this option leave the order taxed differently from the
+	invoice? True when the option's template is not the one on the order, or the
+	option means "no tax" while the order carries tax rows."""
+	if not option:
+		return False
+	template = option.get("taxes_and_charges") or None
+	if (so.taxes_and_charges or None) != template:
+		return True
+	return not template and bool(so.taxes)
+
+
+def _align_order_taxes(so, option: dict) -> bool:
+	"""Rewrite the submitted order's tax rows to the option's template so the order's
+	grand total stays equal to the invoice raised from it.
+
+	Done the way ERPNext's own "Update Items" edits a submitted Sales Order
+	(update_child_qty_rate): bypass the update-after-submit field check, recompute
+	the totals and the payment schedule, and save. Taxes on an order carry no
+	ledger postings, so there is nothing else to reverse. Runs in the same
+	transaction as the invoice, so a failure in either rolls back both.
+	"""
+	if not _order_taxes_differ(so, option):
+		return False
+	from erpnext.controllers.accounts_controller import get_taxes_and_charges
+
+	template = option.get("taxes_and_charges") or None
+	so.flags.ignore_validate_update_after_submit = True
+	so.flags.ignore_permissions = True
+	so.taxes_and_charges = template
+	so.set("taxes", [])
+	if template:
+		so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", template))
+	so.run_method("calculate_taxes_and_totals")
+	so.run_method("set_total_in_words")
+	so.run_method("set_gross_profit")
+	so.run_method("set_payment_schedule")
+	so.save()
+	so.notify_update()
+	return True
+
+
 def _proposed_invoice_name(sinv) -> str | None:
 	"""The number the invoice would most likely get: the series' next counter value,
 	read without consuming it. Only a proposal — another invoice saved in between, or
@@ -1048,6 +1090,9 @@ def preview_sales_invoice(sales_order: str, invoice_option: str | None = None):
 		"disable_rounded_total": _coerce_check(sinv.disable_rounded_total),
 		"short_items": short_items,
 		"allow_sale_without_stock": allow_without_stock,
+		# The order is re-taxed to the option on confirm so its total matches the invoice.
+		"order_grand_total": flt(so.grand_total),
+		"order_taxes_will_update": _order_taxes_differ(so, option),
 	}
 
 
@@ -1063,6 +1108,8 @@ def create_sales_invoice(
 
 	`invoice_option` names a Sales Invoice Option (numbering series + tax template)
 	from the staff member's profile; see preview_sales_invoice() for what it yields.
+	When the option taxes differently from the order, the order's tax rows are
+	rewritten to the option's template first, so order and invoice totals agree.
 
 	By default the invoice is left outstanding (a credit sale, collected later
 	via create_payment_entry()). Pass mark_as_paid=1 with a mode_of_payment to
@@ -1104,6 +1151,9 @@ def create_sales_invoice(
 		if not (config and config.get("allow_sale_without_stock")):
 			frappe.throw("Selling without van stock is not enabled on your Sales Profile.", frappe.PermissionError)
 		defer_delivery = bool(_van_stock_shortages(so, van_warehouse))
+
+	if option:
+		_align_order_taxes(so, option)
 
 	sinv = _build_sales_invoice(so, config, option, defer_delivery)
 

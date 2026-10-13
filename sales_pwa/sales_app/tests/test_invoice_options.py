@@ -5,6 +5,7 @@ Run with: bench run-tests --site <site> --module sales_pwa.sales_app.tests.test_
 """
 
 import frappe
+from frappe.utils import flt
 
 from sales_pwa.sales_app.invoice_option import list_invoice_options, resolve_invoice_option, save_invoice_option
 from sales_pwa.sales_app.sales import create_sales_invoice, create_sales_order, preview_sales_invoice, submit_sales_order
@@ -100,6 +101,32 @@ class TestInvoiceOptions(base.TestShiftAndAccessRegressions):
 		so = self._submitted_order()
 		preview = preview_sales_invoice(so)
 		self.assertEqual(preview["invoice_option"]["name"], self.option["name"])
+
+	def test_option_retaxes_the_order_to_match_the_invoice(self):
+		template = frappe.db.get_value(
+			"Sales Taxes and Charges Template", {"company": self.company, "disabled": 0}, "name"
+		)
+		if not template:
+			self.skipTest("No Sales Taxes and Charges Template on this company")
+		frappe.set_user("Administrator")
+		taxed = save_invoice_option(
+			{"option_name": f"{TEST_PREFIX} Taxed", "naming_series": self.series[0], "taxes_and_charges": template}
+		)
+		self._enable_on_profile(taxed["name"], default=taxed["name"])
+		so = self._submitted_order()
+		before = frappe.db.get_value("Sales Order", so, "grand_total")
+
+		preview = preview_sales_invoice(so, taxed["name"])
+		self.assertTrue(preview["order_taxes_will_update"])
+		self.assertEqual(preview["order_grand_total"], before)
+
+		name = create_sales_invoice(so, invoice_option=taxed["name"])
+		order = frappe.get_doc("Sales Order", so)
+		inv = frappe.get_doc("Sales Invoice", name)
+		self.assertEqual(order.taxes_and_charges, template)
+		self.assertEqual(order.grand_total, inv.grand_total)
+		self.assertEqual(order.docstatus, 1)
+		self.assertEqual(sum(flt(r.payment_amount) for r in order.payment_schedule), order.rounded_total or order.grand_total)
 
 	# ─── parent's tests are not re-run here ────────────────────────────────
 

@@ -420,6 +420,9 @@ export interface InvoicePreview {
   disable_rounded_total: boolean;
   short_items: InvoiceStockShortage[];
   allow_sale_without_stock: boolean;
+  /** The order is re-taxed to the option on confirm, so its total matches the invoice. */
+  order_grand_total: number;
+  order_taxes_will_update: boolean;
 }
 
 export interface CartLine {

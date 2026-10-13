@@ -192,6 +192,11 @@
         </div>
 
         <AppAlert
+          v-if="preview.order_taxes_will_update"
+          tone="info"
+          :message="`The order's taxes will be updated to match this option, so its total changes from ${currency} ${fmt(preview.order_grand_total)} to ${currency} ${fmt(preview.grand_total)}.`"
+        />
+        <AppAlert
           v-if="preview.short_items.length"
           :tone="preview.allow_sale_without_stock ? 'warning' : 'danger'"
           :title="preview.allow_sale_without_stock ? 'Not enough stock' : 'Not enough stock to invoice'"

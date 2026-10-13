@@ -85,6 +85,22 @@ def _default_cash_mode(cash_modes: set[str], user: str) -> str:
 	return "Cash"
 
 
+def _drawer_mode(modes: list[str], cash_modes: set[str], user: str) -> str:
+	"""The Mode of Payment that is the driver's cash drawer: expenses and deposits are
+	paid out of it, so its expected amount is what the driver counts against.
+
+	The Sales Profile's `default_cash_mode` (or its first allowed cash mode) wins, even
+	when the drawer took no collections on the shift. Only a profile with neither
+	falls back to whichever cash-type mode the shift saw first, then to "Cash". More
+	than one Mode of Payment can be of type Cash (a drawer and a wallet app, say), and
+	the order collections arrive in must not decide which one the fuel came out of.
+	"""
+	preferred = _default_cash_mode(cash_modes, user)
+	if preferred in cash_modes:
+		return preferred
+	return next((m for m in modes if m in cash_modes or m == "Cash"), preferred)
+
+
 def _find_open_shift(user: str, today_only: bool = True) -> str | None:
 	"""The user's open Sales Shift Opening.
 
@@ -414,16 +430,15 @@ def _compute_closing(opening: dict) -> dict:
 
 	cash_modes = _cash_modes()
 	modes = list(dict.fromkeys(list(opening_floats) + list(collections)))
-	if not any(m in cash_modes or m == "Cash" for m in modes):
-		# Ensure a cash row exists so expenses have somewhere to land. Prefer the
-		# driver's own allowed cash mode (e.g. "Van - 01 - Cash") over the generic
-		# "Cash" literal: a driver restricted via User Permissions to their own
-		# Mode of Payment can't even reference the generic "Cash" record, and
-		# doing so silently fails doc-level permission checks on submit.
-		modes.insert(0, _default_cash_mode(cash_modes, user))
-
-	# Expenses and deposits are paid out of the cash drawer — deduct from the first cash mode.
-	cash_row_mode = next((m for m in modes if m in cash_modes or m == "Cash"), None)
+	cash_row_mode = _drawer_mode(modes, cash_modes, user)
+	if cash_row_mode not in modes:
+		# Ensure the drawer row exists so expenses have somewhere to land even when
+		# nothing was collected in it. Prefer the driver's own allowed cash mode
+		# (e.g. "Van - 01 - Cash") over the generic "Cash" literal: a driver
+		# restricted via User Permissions to their own Mode of Payment can't even
+		# reference the generic "Cash" record, and doing so silently fails
+		# doc-level permission checks on submit.
+		modes.insert(0, cash_row_mode)
 
 	rows = []
 	for mode in modes:
@@ -447,6 +462,7 @@ def _compute_closing(opening: dict) -> dict:
 	return {
 		"period_start": str(start),
 		"period_end": str(end),
+		"cash_mode": cash_row_mode,
 		"rows": rows,
 		"total_sales": total_sales,
 		"net_total": net_total,

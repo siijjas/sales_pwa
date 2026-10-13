@@ -18,7 +18,7 @@ import frappe
 from frappe.utils import cint, flt, now_datetime
 
 from sales_pwa.sales_app.doctype.sales_shift_closing.sales_shift_closing import variance_status
-from sales_pwa.sales_app.shift import _cash_modes, _compute_closing, _find_open_shift, _serialize_opening, _variance_tolerance
+from sales_pwa.sales_app.shift import _cash_modes, _compute_closing, _drawer_mode, _find_open_shift, _serialize_opening, _variance_tolerance
 from sales_pwa.sales_app.utils import _is_manager, _require_van_user
 
 
@@ -118,6 +118,7 @@ def _build_report(
 	transactions: list[dict],
 	taxes: list[dict] | None = None,
 	draft_orders: list[dict] | None = None,
+	cash_mode: str | None = None,
 ) -> dict:
 	"""Assemble the report shape the summary and closing report share, from a shift's
 	transaction references.
@@ -244,11 +245,8 @@ def _build_report(
 		]
 
 	# The drawer mode expenses and deposits were deducted from (see shift._compute_closing).
-	cash_modes = _cash_modes()
-	cash_mode = next(
-		(r["mode_of_payment"] for r in reconciliation if r["mode_of_payment"] in cash_modes or r["mode_of_payment"] == "Cash"),
-		None,
-	)
+	if cash_mode is None:
+		cash_mode = _drawer_mode([r["mode_of_payment"] for r in reconciliation], _cash_modes(), header["driver"])
 
 	return {
 		"report_type": report_type,
@@ -326,6 +324,7 @@ def build_shift_summary(opening_doc) -> dict:
 		computed["transactions"],
 		taxes=computed["taxes"],
 		draft_orders=computed["draft_orders"],
+		cash_mode=computed["cash_mode"],
 	)
 
 

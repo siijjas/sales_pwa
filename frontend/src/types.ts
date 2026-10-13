@@ -18,6 +18,8 @@ export type ProfileType = 'Van Sales' | 'Field Sales';
  */
 export interface Capabilities {
   is_field_sales: boolean;
+  /** Van Sales with its own warehouse (loaded from the main one). Off: sells from the main warehouse. */
+  has_van_warehouse: boolean;
   can_invoice: boolean;
   can_deliver: boolean;
   can_return: boolean;
@@ -44,8 +46,11 @@ export interface DriverConfig {
   profile_type?: ProfileType;
   company: string;
   /** Van Sales only. Field Sales profiles carry neither warehouse. */
+  separate_van_warehouse?: boolean;
   source_warehouse: string | null;
   van_warehouse: string | null;
+  /** What orders, invoices and returns run against: the van warehouse, or the main one for a van without its own. */
+  selling_warehouse?: string | null;
   /** Field Sales only: catalog qty is read from here for display. */
   stock_warehouse?: string | null;
   delivery_route?: string;
@@ -225,6 +230,7 @@ export interface SalesProfile {
   default_cash_mode?: string;
   selling_price_list?: string;
   currency?: string;
+  separate_van_warehouse: boolean;
   source_warehouse: string | null;
   van_warehouse: string | null;
   stock_warehouse?: string | null;
@@ -455,7 +461,8 @@ export interface DriverStockItem {
 
 export interface DriverStockDashboard {
   warehouse: string;
-  source_warehouse: string;
+  /** Null for a van that sells straight from the main warehouse (nothing is loaded). */
+  source_warehouse: string | null;
   company: string;
   low_stock_threshold: number;
   generated_at: string;

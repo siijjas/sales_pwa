@@ -5,7 +5,7 @@ from erpnext.stock.doctype.batch.batch import get_batch_qty as get_batch_qty_for
 from sales_pwa.sales_app.utils import (
 	_get_driver_config, _coerce_check, _to_float, _default_company,
 	_coerce_list, _driver_stock_cache_key, DRIVER_CACHE_TTL, _require_van_user,
-	_require_capability,
+	_require_capability, _selling_warehouse,
 )
 
 def _set_driver_stock_cache(user: str, payload: dict):
@@ -42,6 +42,10 @@ def _parse_stock_transfer_lines(items):
 	return parsed_items
 
 def _get_stock_snapshot(config: dict):
+	# The van warehouse, or the Main Warehouse for a van that sells straight from it.
+	# In the latter case there is no separate source to report (nothing is loaded).
+	warehouse = _selling_warehouse(config)
+	source_warehouse = config.get("source_warehouse") if config.get("van_warehouse") else None
 	rows = frappe.db.sql(
 		"""
 		select
@@ -62,7 +66,7 @@ def _get_stock_snapshot(config: dict):
 			and (bin.actual_qty != 0 or bin.reserved_qty != 0 or bin.projected_qty != 0)
 		order by item.item_name asc
 		""",
-		{"warehouse": config["van_warehouse"]},
+		{"warehouse": warehouse},
 		as_dict=1,
 	)
 
@@ -88,8 +92,8 @@ def _get_stock_snapshot(config: dict):
 		)
 
 	return {
-		"warehouse": config["van_warehouse"],
-		"source_warehouse": config["source_warehouse"],
+		"warehouse": warehouse,
+		"source_warehouse": source_warehouse,
 		"company": config["company"],
 		"low_stock_threshold": threshold,
 		"generated_at": now_datetime().isoformat(),
@@ -117,12 +121,12 @@ def get_driver_stock_dashboard(force_refresh: int = 0):
 		if cached:
 			return cached
 
-	# Unlike create_sales_return(), there is no sensible fallback here — a van stock
-	# snapshot is meaningless without a van warehouse — so this still requires a
+	# Unlike create_sales_return(), there is no sensible fallback here — a stock
+	# snapshot is meaningless without a selling warehouse — so this still requires a
 	# profile. It just says so in terms the caller can act on, rather than surfacing
 	# the bare "No active driver configuration found".
 	config = _get_driver_config(user=user, required=False)
-	if not config:
+	if not config or not _selling_warehouse(config):
 		frappe.throw(
 			"Van stock is only available to a driver assigned to an active Sales Profile. "
 			"Ask a manager to assign you to one."

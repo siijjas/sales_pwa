@@ -69,14 +69,23 @@
 
         <!-- Warehouses -->
         <FormSection :title="isFieldSales ? 'Stock display & routing' : 'Warehouses & routing'" icon="boxes">
+          <ToggleRow
+            v-if="!isFieldSales"
+            v-model="form.separate_van_warehouse"
+            label="Van has its own warehouse (stock is loaded into it from the main warehouse)"
+            class="mb-4"
+          />
+          <p v-if="!isFieldSales && !form.separate_van_warehouse" class="mb-4 text-xs text-muted">
+            This van sells straight from the main warehouse: orders, invoices, returns and the stock dashboard use it, and stock loading is hidden.
+          </p>
           <div class="grid gap-4 md:grid-cols-2">
             <template v-if="!isFieldSales">
-              <FormField label="Main warehouse" required>
-                <BaseSelect v-model="form.source_warehouse" placeholder="Select source warehouse">
+              <FormField :label="form.separate_van_warehouse ? 'Main warehouse' : 'Main (selling) warehouse'" required>
+                <BaseSelect v-model="form.source_warehouse" placeholder="Select main warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
               </FormField>
-              <FormField label="Van warehouse" required>
+              <FormField v-if="form.separate_van_warehouse" label="Van warehouse" required>
                 <BaseSelect v-model="form.van_warehouse" placeholder="Select van warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
@@ -142,8 +151,8 @@
           <div class="grid gap-2 md:grid-cols-2">
             <ToggleRow v-model="form.allow_rate_change" label="Allow modifying item rates" />
             <ToggleRow v-model="form.allow_discount_change" label="Allow modifying discounts" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.allow_sale_without_stock" label="Allow selling items not in van stock" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.hide_unavailable_items" label="Hide items not in van stock from the catalog" />
+            <ToggleRow v-if="!isFieldSales" v-model="form.allow_sale_without_stock" label="Allow selling items not in stock" />
+            <ToggleRow v-if="!isFieldSales" v-model="form.hide_unavailable_items" label="Hide items not in stock from the catalog" />
             <ToggleRow v-if="!isFieldSales" v-model="form.allow_credit_sale" label="Allow credit sales (invoice now, collect later)" />
             <ToggleRow v-if="!isFieldSales" v-model="form.allow_return" label="Allow returns" />
             <ToggleRow v-model="form.show_customer_balance" label="Show customer balance and ledger" />
@@ -360,6 +369,7 @@ const defaultForm = (): Partial<SalesProfile> => ({
   profile_type: 'Van Sales',
   company: '',
   is_active: true,
+  separate_van_warehouse: true,
   source_warehouse: '',
   van_warehouse: '',
   stock_warehouse: '',
@@ -469,11 +479,10 @@ function setProfileType(type: string) {
 const isValid = computed(() => {
   if (!form.value.profile_name || !form.value.company) return false;
   if (isFieldSales.value) return true;
-  return (
-    !!form.value.source_warehouse &&
-    !!form.value.van_warehouse &&
-    form.value.source_warehouse !== form.value.van_warehouse
-  );
+  if (!form.value.source_warehouse) return false;
+  // Without a separate van warehouse the main warehouse is the selling warehouse.
+  if (!form.value.separate_van_warehouse) return true;
+  return !!form.value.van_warehouse && form.value.source_warehouse !== form.value.van_warehouse;
 });
 
 function isDriverAssigned(username: string): boolean {

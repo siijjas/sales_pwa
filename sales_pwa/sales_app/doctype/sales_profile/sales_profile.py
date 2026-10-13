@@ -29,8 +29,11 @@ class SalesProfile(Document):
 		self._validate_one_active_profile_per_driver()
 
 	def _validate_profile_type(self):
-		"""Van Sales needs both warehouses (the app loads, sells from and returns into
-		the van). Field Sales has no van: the warehouses are cleared so nothing
+		"""Van Sales sells from a warehouse: either its own van warehouse, loaded from
+		the Main Warehouse (separate_van_warehouse on), or the Main Warehouse itself
+		when the van has no warehouse of its own (off — nothing to load, so the
+		stock-transfer tools switch off and the Main Warehouse becomes the selling
+		warehouse). Field Sales has no van: the warehouses are cleared so nothing
 		downstream can accidentally treat the profile as a van, and the optional
 		stock_warehouse is only ever read for display."""
 		self.profile_type = self.profile_type or "Van Sales"
@@ -49,15 +52,26 @@ class SalesProfile(Document):
 			return
 
 		self.stock_warehouse = None
-		if not self.source_warehouse or not self.van_warehouse:
-			frappe.throw("A Van Sales profile needs both a Main Warehouse and a Van Warehouse")
-		if self.source_warehouse == self.van_warehouse:
-			frappe.throw("Main Warehouse and Van Warehouse must be different")
+		if not self.source_warehouse:
+			frappe.throw("A Van Sales profile needs a Main Warehouse")
+		if self.separate_van_warehouse:
+			if not self.van_warehouse:
+				frappe.throw("A Van Sales profile with a separate van warehouse needs a Van Warehouse")
+			if self.source_warehouse == self.van_warehouse:
+				frappe.throw("Main Warehouse and Van Warehouse must be different")
+		else:
+			self.van_warehouse = None
 		if not self.use_shifts:
 			self.require_open_shift = 0
 
 	def is_field_sales(self) -> bool:
 		return (self.profile_type or "Van Sales") == "Field Sales"
+
+	@property
+	def selling_warehouse(self) -> str | None:
+		"""The warehouse orders, invoices and returns run against: the van warehouse,
+		or the Main Warehouse for a van without one. None for Field Sales."""
+		return self.van_warehouse or self.source_warehouse
 
 	def _validate_drivers_are_enabled(self):
 		"""Reject a disabled User: they can never log in, so the assignment does

@@ -1,8 +1,8 @@
 <template>
   <WorkspacePage
     eyebrow="Stock monitor"
-    :title="dashboard?.warehouse || driverConfig?.van_warehouse || 'Van warehouse'"
-    description="Live van stock with low-stock alerts."
+    :title="dashboard?.warehouse || sellingWarehouse || 'Van warehouse'"
+    description="Live stock with low-stock alerts."
     width="default"
   >
     <template #actions>
@@ -25,8 +25,8 @@
       <AppCard v-if="dashboard" padding="sm" class="space-y-3">
         <div class="flex items-center justify-between gap-3 px-1">
           <div>
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">Source warehouse</p>
-            <p class="text-sm font-bold text-foreground">{{ dashboard.source_warehouse }}</p>
+            <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">{{ dashboard.source_warehouse ? 'Source warehouse' : 'Warehouse' }}</p>
+            <p class="text-sm font-bold text-foreground">{{ dashboard.source_warehouse || dashboard.warehouse }}</p>
           </div>
           <div class="text-right">
             <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">Low threshold</p>
@@ -80,6 +80,10 @@ const CACHE_KEY = 'sales-app-stock-cache';
 
 const store = useSessionStore();
 const driverConfig = computed(() => store.driverConfig);
+// The van warehouse, or the main warehouse for a van that sells straight from it.
+const sellingWarehouse = computed(
+  () => driverConfig.value?.selling_warehouse || driverConfig.value?.van_warehouse || driverConfig.value?.source_warehouse || null,
+);
 const dashboard = ref<DriverStockDashboard | null>(null);
 const loading = ref(true);
 const error = ref('');
@@ -104,7 +108,7 @@ function readCachedSnapshot() {
 }
 
 async function refresh(forceRefresh = false) {
-  if (!driverConfig.value?.van_warehouse) {
+  if (!sellingWarehouse.value) {
     dashboard.value = null;
     error.value = 'No active sales profile is assigned to this user.';
     offlineSnapshot.value = false;

@@ -88,6 +88,19 @@ PROFILE_TYPE_VAN = "Van Sales"
 PROFILE_TYPE_FIELD = "Field Sales"
 
 
+def _selling_warehouse(config: dict | None) -> str | None:
+	"""The warehouse a staff member's orders, invoices and returns run against.
+
+	A van with its own warehouse (Sales Profile.separate_van_warehouse) sells from
+	that; a van without one sells straight from the Main Warehouse it would
+	otherwise be loaded from. Field Sales profiles carry neither, so None: ERPNext
+	then falls back to the item/company default warehouse.
+	"""
+	if not config:
+		return None
+	return config.get("selling_warehouse") or config.get("van_warehouse") or config.get("source_warehouse") or None
+
+
 def _capabilities(config: dict | None) -> dict:
 	"""What the app lets this staff member do, derived from their Sales Profile.
 
@@ -99,6 +112,7 @@ def _capabilities(config: dict | None) -> dict:
 	if not config:
 		return {
 			"is_field_sales": False,
+			"has_van_warehouse": False,
 			"can_invoice": True,
 			"can_deliver": True,
 			"can_return": True,
@@ -114,15 +128,20 @@ def _capabilities(config: dict | None) -> dict:
 			"blind_shift_close": False,
 		}
 	is_field = (config.get("profile_type") or PROFILE_TYPE_VAN) == PROFILE_TYPE_FIELD
+	has_van_warehouse = not is_field and bool(config.get("van_warehouse"))
 	uses_shifts = _coerce_check(config.get("use_shifts", True))
 	return {
 		"is_field_sales": is_field,
+		"has_van_warehouse": has_van_warehouse,
 		# Field Sales takes orders and collects payments only; invoicing, delivery and
 		# returns are back-office work, and there is no van to load or count.
 		"can_invoice": not is_field,
 		"can_deliver": not is_field,
 		"can_return": not is_field and _coerce_check(config.get("allow_return", True)),
-		"can_load_stock": not is_field,
+		# Loading moves stock Main Warehouse -> van warehouse, so a van that sells
+		# straight from the Main Warehouse has nothing to load. It can still see
+		# that warehouse's stock.
+		"can_load_stock": has_van_warehouse,
 		"can_view_stock": not is_field,
 		"uses_shifts": uses_shifts,
 		"requires_open_shift": uses_shifts and _coerce_check(config.get("require_open_shift")),

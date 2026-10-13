@@ -155,6 +155,7 @@ def list_van_profiles():
 			"profile_name",
 			"profile_type",
 			"company",
+			"separate_van_warehouse",
 			"source_warehouse",
 			"van_warehouse",
 			"stock_warehouse",
@@ -250,6 +251,7 @@ def list_van_profiles():
 		# Coerce booleans
 		row.profile_type = row.profile_type or "Van Sales"
 		for check_field in (
+			"separate_van_warehouse",
 			"allow_rate_change", "allow_discount_change", "allow_sale_without_stock", "use_shifts", "require_open_shift", "validate_stock_on_save",
 			"allow_offline_stock_dashboard", "ignore_pricing_rule", "disable_rounded_total",
 			"allow_expense", "allow_cash_deposit", "require_cash_movement_remarks",
@@ -275,6 +277,9 @@ def save_van_profile(payload):
 	doc.profile_name = data.get("profile_name")
 	doc.profile_type = data.get("profile_type") or "Van Sales"
 	doc.company = data.get("company") or _default_company()
+	# Default on: existing vans keep loading into their own warehouse. Off means the
+	# van sells straight from source_warehouse; the controller clears van_warehouse.
+	doc.separate_van_warehouse = 1 if _coerce_check(data.get("separate_van_warehouse", True)) else 0
 	doc.source_warehouse = data.get("source_warehouse") or None
 	doc.van_warehouse = data.get("van_warehouse") or None
 	doc.stock_warehouse = data.get("stock_warehouse") or None
@@ -466,8 +471,12 @@ def _build_van_profile_payload(doc) -> dict:
 		"profile_name": doc.profile_name,
 		"profile_type": doc.profile_type or "Van Sales",
 		"company": doc.company,
+		"separate_van_warehouse": _coerce_check(doc.separate_van_warehouse),
 		"source_warehouse": doc.source_warehouse,
 		"van_warehouse": doc.van_warehouse,
+		# What orders, invoices and returns run against: the van warehouse, or the
+		# Main Warehouse for a van without one. None for Field Sales.
+		"selling_warehouse": doc.van_warehouse or doc.source_warehouse,
 		"stock_warehouse": doc.stock_warehouse,
 		"delivery_route": doc.delivery_route,
 		"default_cash_mode": doc.default_cash_mode,

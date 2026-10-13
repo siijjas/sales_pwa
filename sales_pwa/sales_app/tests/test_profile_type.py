@@ -60,7 +60,7 @@ class TestProfileType(base.TestShiftAndAccessRegressions):
 	def test_van_sales_requires_both_warehouses(self):
 		doc = self._profile()
 		doc.van_warehouse = None
-		with self.assertRaisesRegex(frappe.ValidationError, "both a Main Warehouse and a Van Warehouse"):
+		with self.assertRaisesRegex(frappe.ValidationError, "needs a Van Warehouse"):
 			doc.save(ignore_permissions=True)
 
 	def test_field_sales_clears_warehouses_and_stock_controls(self):
@@ -172,4 +172,100 @@ class TestProfileType(base.TestShiftAndAccessRegressions):
 		pass
 
 	def test_driver_can_run_full_shift_and_sales_cycle(self):
+		pass
+
+
+class TestSharedWarehouseVan(TestProfileType):
+	"""A Van Sales profile with separate_van_warehouse off: the van sells straight from
+	the Main Warehouse, so there is nothing to load but everything else still works."""
+
+	def _make_shared_warehouse_van(self):
+		doc = self._profile()
+		doc.profile_type = "Van Sales"
+		doc.separate_van_warehouse = 0
+		doc.source_warehouse = self.source_warehouse
+		doc.van_warehouse = self.van_warehouse  # must be cleared by validate()
+		doc.save(ignore_permissions=True)
+		frappe.cache.delete_value(_driver_cache_key(self.driver_user))
+		return doc
+
+	def _restore_van_profile(self):
+		doc = self._profile()
+		doc.separate_van_warehouse = 1
+		doc.save(ignore_permissions=True)
+		super()._restore_van_profile()
+
+	def test_shared_warehouse_van_clears_van_warehouse(self):
+		doc = self._make_shared_warehouse_van()
+		doc.reload()
+		self.assertIsNone(doc.van_warehouse)
+		self.assertEqual(doc.source_warehouse, self.source_warehouse)
+		self.assertEqual(doc.selling_warehouse, self.source_warehouse)
+
+	def test_shared_warehouse_van_still_needs_main_warehouse(self):
+		doc = self._profile()
+		doc.separate_van_warehouse = 0
+		doc.source_warehouse = None
+		with self.assertRaisesRegex(frappe.ValidationError, "needs a Main Warehouse"):
+			doc.save(ignore_permissions=True)
+
+	def test_separate_van_warehouse_still_needs_van_warehouse(self):
+		doc = self._profile()
+		doc.separate_van_warehouse = 1
+		doc.van_warehouse = None
+		with self.assertRaisesRegex(frappe.ValidationError, "needs a Van Warehouse"):
+			doc.save(ignore_permissions=True)
+
+	def test_capabilities_without_van_warehouse(self):
+		caps = _capabilities({"profile_type": "Van Sales", "source_warehouse": "X", "van_warehouse": None})
+		self.assertFalse(caps["has_van_warehouse"])
+		self.assertFalse(caps["can_load_stock"])
+		self.assertTrue(caps["can_view_stock"] and caps["can_invoice"] and caps["can_return"])
+
+		caps = _capabilities({"profile_type": "Van Sales", "source_warehouse": "X", "van_warehouse": "Y"})
+		self.assertTrue(caps["has_van_warehouse"] and caps["can_load_stock"])
+
+	def test_shared_warehouse_van_sells_from_main_warehouse(self):
+		self._make_shared_warehouse_van()
+		frappe.set_user(self.driver_user)
+		ctx = get_app_context()
+		self.assertEqual(ctx["driver_config"]["selling_warehouse"], self.source_warehouse)
+		self.assertFalse(ctx["capabilities"]["can_load_stock"])
+
+		so = create_sales_order(self.customer_allowed, [{"item_code": self.item_code, "qty": 1, "rate": 10}])
+		self.assertEqual(frappe.db.get_value("Sales Order", so["name"], "set_warehouse"), self.source_warehouse)
+
+		dashboard = get_driver_stock_dashboard(force_refresh=1)
+		self.assertEqual(dashboard["warehouse"], self.source_warehouse)
+		self.assertIsNone(dashboard["source_warehouse"])
+
+		with self.assertRaisesRegex(frappe.PermissionError, "does not allow you to load stock"):
+			search_transfer_items("")
+
+	# Parent-class tests run once in TestProfileType; blank them here.
+	def test_existing_profiles_default_to_van_sales(self):
+		pass
+
+	def test_van_sales_requires_both_warehouses(self):
+		pass
+
+	def test_field_sales_clears_warehouses_and_stock_controls(self):
+		pass
+
+	def test_invalid_profile_type_rejected(self):
+		pass
+
+	def test_capabilities_for_each_type(self):
+		pass
+
+	def test_app_context_carries_capabilities(self):
+		pass
+
+	def test_field_sales_can_order_but_not_invoice_return_or_load(self):
+		pass
+
+	def test_profile_without_shifts_cannot_open_one_and_is_never_blocked(self):
+		pass
+
+	def test_field_sales_with_shifts_still_enforces_open_shift(self):
 		pass

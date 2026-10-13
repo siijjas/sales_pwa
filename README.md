@@ -16,7 +16,7 @@ bench install-app sales_pwa
 
 The app serves two kinds of field staff from one PWA, chosen per **Sales Profile** (Settings → Sales Profiles in the app, or the Sales Profile doctype):
 
-- **Van Sales** — drivers with stock on board: orders, invoicing, delivery, returns, van loading, stock dashboard, and cash shifts.
+- **Van Sales** — drivers with stock on board: orders, invoicing, delivery, returns, van loading, stock dashboard, and cash shifts. By default each van has its own warehouse, loaded from the main warehouse; switch off **Separate Van Warehouse** on the profile for a van that sells straight from the main warehouse (stock loading is then hidden and orders, invoices, returns and the stock dashboard use the main warehouse).
 - **Field Sales** — order takers without a van: orders and payments only; the back office invoices and delivers. An optional stock warehouse gives them read-only quantities. Shifts are optional.
 
 Shifts work like POS Awesome's: an opening float per payment mode, expenses and cash deposits to the office recorded from the drawer (each posted as a Journal Entry), and a closing that counts every mode against the expected amount. Closings are aggregated by the shift's time window (driver + creation time), never by stamping ERPNext documents. A per-profile **variance tolerance** flags closings that are off (it never blocks); managers can close or reopen any shift.

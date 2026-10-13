@@ -16,6 +16,7 @@
   "selling_price_list",
   "currency",
   "section_warehouses",
+  "separate_van_warehouse",
   "source_warehouse",
   "van_warehouse",
   "stock_warehouse",
@@ -141,13 +142,22 @@
    "label": "Warehouses"
   },
   {
+   "default": "1",
+   "depends_on": "eval:doc.profile_type != \"Field Sales\"",
+   "description": "On: stock is loaded from the Main Warehouse into the van's own warehouse and sold from there. Off: the van has no warehouse of its own and sells straight from the Main Warehouse (no stock loading).",
+   "fieldname": "separate_van_warehouse",
+   "fieldtype": "Check",
+   "label": "Separate Van Warehouse"
+  },
+  {
    "fieldname": "source_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Main Warehouse",
    "options": "Warehouse",
    "depends_on": "eval:doc.profile_type != \"Field Sales\"",
-   "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\""
+   "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\"",
+   "description": "The warehouse the van is loaded from. Without a separate van warehouse this is also the warehouse the van sells from."
   },
   {
    "fieldname": "van_warehouse",
@@ -155,8 +165,8 @@
    "in_list_view": 1,
    "label": "Van Warehouse",
    "options": "Warehouse",
-   "depends_on": "eval:doc.profile_type != \"Field Sales\"",
-   "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\""
+   "depends_on": "eval:doc.profile_type != \"Field Sales\" && doc.separate_van_warehouse",
+   "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\" && doc.separate_van_warehouse"
   },
   {
    "depends_on": "eval:doc.profile_type == \"Field Sales\"",
@@ -271,7 +281,7 @@
   },
   {
    "default": "0",
-   "description": "Let drivers add out-of-stock items to orders and submit invoices that take the van warehouse into negative stock.",
+   "description": "Let staff add out-of-stock items to orders and submit invoices that take the selling warehouse into negative stock.",
    "fieldname": "allow_sale_without_stock",
    "fieldtype": "Check",
    "label": "Allow Sale Without Stock",
@@ -283,7 +293,7 @@
    "label": "Hide Items Not In Stock",
    "default": "0",
    "depends_on": "eval:doc.profile_type != \"Field Sales\"",
-   "description": "Catalog only lists items with stock in the van warehouse."
+   "description": "Catalog only lists items with stock in the selling warehouse (the van warehouse, or the Main Warehouse when the van has none)."
   },
   {
    "fieldname": "allow_return",

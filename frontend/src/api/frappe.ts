@@ -305,9 +305,11 @@ export async function getCompanyCurrencyInfo(): Promise<{ currency: string | nul
 async function getDefaultWarehouse(): Promise<string | null> {
   if (cachedDefaultWarehouse !== null) return cachedDefaultWarehouse;
   const context = await getSession().catch(() => null);
-  // Van Sales reads catalog stock from the van; Field Sales from the profile's
-  // display-only stock warehouse (if one is set).
-  const profileWarehouse = context?.driver_config?.van_warehouse || context?.driver_config?.stock_warehouse;
+  // Van Sales reads catalog stock from its selling warehouse (the van, or the main
+  // warehouse for a van without its own); Field Sales from the profile's display-only
+  // stock warehouse (if one is set).
+  const cfg = context?.driver_config;
+  const profileWarehouse = cfg?.selling_warehouse || cfg?.van_warehouse || cfg?.source_warehouse || cfg?.stock_warehouse;
   if (profileWarehouse) {
     cachedDefaultWarehouse = profileWarehouse;
     return cachedDefaultWarehouse;

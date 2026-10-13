@@ -7,6 +7,7 @@ const DEFAULT_CAPABILITIES: Capabilities = {
   can_invoice: true,
   can_deliver: true,
   can_return: true,
+  has_van_warehouse: false,
   can_load_stock: false,
   can_view_stock: false,
   uses_shifts: true,

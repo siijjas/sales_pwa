@@ -12,6 +12,7 @@ from sales_pwa.sales_app.utils import (
 	_is_manager,
 	_get_driver_config,
 	_require_capability,
+	_selling_warehouse,
 )
 
 
@@ -286,14 +287,16 @@ def _apply_order_payload(doc, customer, items, discount_percent, discount_amount
 	doc.order_type = doc.order_type or "Sales"
 	doc.company = doc.company or config.get("company") or _default_company()
 
-	# Sell from the driver's own van. Neither the old client-built document nor the
-	# first version of this endpoint set a warehouse, so every line fell through to the
-	# item/company default — typically the source warehouse. That reserved stock in the
-	# wrong place and disagreed with create_sales_invoice(), which does bill against the
-	# van warehouse, so the invoice could then fail stock validation for an item that is
-	# sitting in the van but not in the default warehouse.
-	if config.get("van_warehouse"):
-		doc.set_warehouse = config["van_warehouse"]
+	# Sell from the driver's own warehouse (the van, or the Main Warehouse for a van
+	# without one). Neither the old client-built document nor the first version of this
+	# endpoint set a warehouse, so every line fell through to the item/company default.
+	# That reserved stock in the wrong place and disagreed with create_sales_invoice(),
+	# which does bill against the selling warehouse, so the invoice could then fail
+	# stock validation for an item that is sitting in the van but not in the default
+	# warehouse.
+	selling_warehouse = _selling_warehouse(config)
+	if selling_warehouse:
+		doc.set_warehouse = selling_warehouse
 
 	price_list = _resolve_price_list(config, customer)
 	if price_list:
@@ -867,9 +870,9 @@ def deliver_pending_items(sales_order: str):
 		sinv = frappe.get_doc("Sales Invoice", name)
 		if sinv.update_stock or sinv.is_return:
 			continue
-		warehouse = sinv.set_warehouse or config.get("van_warehouse")
+		warehouse = sinv.set_warehouse or _selling_warehouse(config)
 		if not warehouse:
-			frappe.throw(f"No van warehouse to deliver {sinv.name} from.")
+			frappe.throw(f"No warehouse to deliver {sinv.name} from.")
 		dn = _deliver_available_stock(sinv, warehouse)
 		if dn:
 			delivered.append(dn)
@@ -893,7 +896,7 @@ def get_invoice_stock_shortages(sales_order: str):
 	config = _get_driver_config(required=False) or {}
 	return {
 		"allow_sale_without_stock": bool(config.get("allow_sale_without_stock")),
-		"short_items": _van_stock_shortages(so, config.get("van_warehouse")),
+		"short_items": _van_stock_shortages(so, _selling_warehouse(config)),
 	}
 
 
@@ -932,7 +935,7 @@ def create_sales_invoice(
 	so = _get_invoiceable_order(sales_order)
 
 	config = _get_driver_config(required=False)
-	van_warehouse = config.get("van_warehouse") if config else None
+	van_warehouse = _selling_warehouse(config)
 
 	# Re-checked here rather than trusted from the client: the flag only means "the
 	# driver saw the warning", the Sales Profile decides whether it is allowed at all.
@@ -1040,10 +1043,10 @@ def create_sales_return(customer: str, items):
 	from sales_pwa.sales_app.inventory import _parse_stock_transfer_lines
 
 	# Managers pass _require_van_user() without being assigned to a Sales Profile, so the
-	# van warehouse is optional here — same fallback as create_sales_invoice_from_order().
+	# selling warehouse is optional here — same fallback as create_sales_invoice_from_order().
 	# Without it ERPNext resolves the item/company default warehouse.
 	config = _get_driver_config(required=False)
-	van_warehouse = config.get("van_warehouse") if config else None
+	van_warehouse = _selling_warehouse(config)
 	lines = items if isinstance(items, list) else _parse_stock_transfer_lines(items)
 	_check_return_validity(customer, lines, config)
 

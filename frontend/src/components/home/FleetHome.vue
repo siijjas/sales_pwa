@@ -1,7 +1,7 @@
 <template>
-  <WorkspacePage eyebrow="Fleet" :title="`${greeting}${store.firstName ? `, ${store.firstName}` : ''}`" :subtitle="longDate(new Date())" width="wide">
+  <WorkspacePage eyebrow="Manager" title="Fleet" :subtitle="`${greeting}${store.firstName ? `, ${store.firstName}` : ''} · ${longDate(new Date())}`" width="wide">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="refresh" :loading="loading" @click="load">Refresh</AppButton>
+      <AppButton variant="secondary" size="sm" icon="refresh" :loading="loading" aria-label="Refresh" @click="load" />
     </template>
 
     <div class="space-y-6">

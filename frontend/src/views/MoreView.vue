@@ -29,11 +29,10 @@
       <section>
         <SectionHeader title="App" />
         <AppCard padding="none" class="divide-y divide-line">
-          <ListRow icon="moon" tone="neutral" title="Appearance" :subtitle="`Currently ${preference === 'system' ? 'following the device' : preference}`">
-            <template #trailing>
-              <SegmentedControl :model-value="preference" :options="[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Auto' }]" class="w-[190px]" @update:model-value="(v: string) => setPreference(v as any)" />
-            </template>
-          </ListRow>
+          <div class="px-4 py-3">
+            <ListRow icon="moon" tone="neutral" title="Appearance" :subtitle="`Currently ${preference === 'system' ? 'following the device' : preference}`" dense class="!px-0 !py-0" />
+            <SegmentedControl :model-value="preference" :options="[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Follow device' }]" class="mt-3" @update:model-value="(v: string) => setPreference(v as any)" />
+          </div>
           <ListRow interactive icon="logout" tone="danger" title="Sign out" @click="logout" />
         </AppCard>
       </section>

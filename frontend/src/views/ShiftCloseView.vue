@@ -55,7 +55,7 @@
               {{ diff(row) > 0 ? '+' : '−' }}{{ currency }} {{ money(Math.abs(diff(row))) }}
             </span>
           </div>
-          <div class="grid gap-2 text-xs" :class="summary.blind ? 'grid-cols-2' : 'grid-cols-3'">
+          <div class="grid gap-2 text-xs" :class="summary.blind ? 'grid-cols-1' : 'grid-cols-2'">
             <div class="rounded-xl bg-card px-2 py-1.5 text-center">
               <p class="text-muted">Opening</p>
               <p class="tnum font-semibold text-foreground">{{ money(row.opening_amount) }}</p>
@@ -64,10 +64,10 @@
               <p class="text-muted">Expected</p>
               <p class="tnum font-semibold text-foreground">{{ money(row.expected_amount ?? 0) }}</p>
             </div>
-            <div>
-              <p class="mb-0.5 text-muted">Counted</p>
-              <BaseInput v-model="row.closing_amount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" min="0" step="0.01" />
-            </div>
+          </div>
+          <div>
+            <p class="mb-1 text-xs font-semibold text-muted">Counted</p>
+            <BaseInput v-model="row.closing_amount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" min="0" step="0.01" />
           </div>
         </div>
 

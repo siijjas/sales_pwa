@@ -217,7 +217,7 @@ export async function searchCustomers(txt: string, limit = 25): Promise<Customer
         }
       : {}),
     order_by: 'customer_name asc',
-    page_length: String(limit),
+    limit_page_length: String(limit),
     limit_start: '0',
   });
   const res = await fetch(`/api/resource/Customer?${params.toString()}`, {
@@ -233,7 +233,7 @@ export async function getCustomer(name: string): Promise<Customer> {
   const params = new URLSearchParams({
     fields: JSON.stringify(['name', 'customer_name', 'customer_group', 'territory', 'mobile_no']),
     filters: JSON.stringify([['Customer', 'name', '=', name]]),
-    page_length: '1',
+    limit_page_length: '1',
   });
   const res = await fetch(`/api/resource/Customer?${params.toString()}`, { method: 'GET', credentials: 'include' });
   const data = await handleResponse(res);
@@ -417,7 +417,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
     fields: JSON.stringify(['name as item_code', 'item_name', 'description', 'stock_uom', 'image', 'item_group', 'standard_rate']),
     filters: JSON.stringify(filters.map((f) => ['Item', ...f])),
     ...(or_filters ? { or_filters: JSON.stringify(or_filters.map((f) => ['Item', ...f])) } : {}),
-    page_length: '40',
+    limit_page_length: '40',
   });
 
   const res = await fetch(`/api/resource/Item?${params.toString()}`, {
@@ -455,7 +455,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
       const priceParams = new URLSearchParams({
         fields: JSON.stringify(['item_code', 'price_list_rate']),
         filters: JSON.stringify(filters),
-        page_length: String(codes.length),
+        limit_page_length: String(codes.length),
       });
       const priceRes = await fetch(`/api/resource/Item Price?${priceParams.toString()}`, {
         method: 'GET',
@@ -511,7 +511,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
       const binParams = new URLSearchParams({
         fields: JSON.stringify(['item_code', 'actual_qty']),
         filters: JSON.stringify(filters),
-        page_length: String(Math.max(codes.length, 20)),
+        limit_page_length: String(Math.max(codes.length, 20)),
       });
       const binRes = await fetch(`/api/resource/Bin?${binParams.toString()}`, {
         method: 'GET',
@@ -798,7 +798,7 @@ export async function recentOrders(owner: string, options?: RecentOrdersOptions)
     filters: JSON.stringify(filters),
     ...(orFilters ? { or_filters: JSON.stringify(orFilters) } : {}),
     order_by: 'creation desc',
-    page_length: String(options?.pageLength ?? 20),
+    limit_page_length: String(options?.pageLength ?? 20),
     limit_start: String(options?.limitStart ?? 0),
   });
   const res = await fetch(`/api/resource/Sales Order?${params.toString()}`, {
@@ -821,7 +821,7 @@ export async function findDraftOrder(customer: string, owner?: string): Promise<
     fields: JSON.stringify(['name']),
     filters: JSON.stringify(filters),
     order_by: 'creation desc',
-    page_length: '1',
+    limit_page_length: '1',
   });
   const res = await fetch(`/api/resource/Sales Order?${params.toString()}`, {
     method: 'GET',
@@ -1000,7 +1000,7 @@ export async function listPayments(owner: string, options: PaymentListOptions = 
     filters: JSON.stringify(filters),
     ...(orFilters ? { or_filters: JSON.stringify(orFilters) } : {}),
     order_by: 'creation desc',
-    page_length: String(options.pageLength ?? 20),
+    limit_page_length: String(options.pageLength ?? 20),
     limit_start: String(options.limitStart ?? 0),
   });
   const res = await fetch(`/api/resource/Payment Entry?${params.toString()}`, { method: 'GET', credentials: 'include' });

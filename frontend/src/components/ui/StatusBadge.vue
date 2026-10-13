@@ -4,7 +4,7 @@
     :class="toneClass"
   >
     <span v-if="dot" class="h-1.5 w-1.5 rounded-full bg-current" />
-    <slot>{{ label }}</slot>
+    <slot>{{ label ?? status }}</slot>
   </span>
 </template>
 

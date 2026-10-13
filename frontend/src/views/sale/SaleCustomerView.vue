@@ -101,7 +101,7 @@ const continueSubtitle = computed(() =>
   sale.lines.length ? `${plural(sale.lines.length, 'item')} · ${store.currencyDisplay} ${money(sale.subtotal)}` : 'No items yet',
 );
 
-const subtitleFor = (c: Customer) => [c.name, c.mobile_no].filter(Boolean).join(' · ');
+const subtitleFor = (c: Customer) => [c.name !== c.customer_name ? c.name : '', c.territory, c.mobile_no].filter(Boolean).join(' · ');
 
 let timer = 0;
 const load = async () => {

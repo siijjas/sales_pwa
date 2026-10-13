@@ -78,7 +78,7 @@ const error = ref('');
 
 const subtitle = computed(() => (loading.value && !customers.value.length ? undefined : plural(customers.value.length, 'customer') + (search.value ? ' matching' : '')));
 
-const rowSubtitle = (c: Customer) => [c.name, c.mobile_no].filter(Boolean).join(' · ');
+const rowSubtitle = (c: Customer) => [c.name !== c.customer_name ? c.name : '', c.territory, c.mobile_no].filter(Boolean).join(' · ');
 
 let timer = 0;
 let requestSeq = 0;

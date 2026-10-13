@@ -1,10 +1,29 @@
 import { defineStore } from 'pinia';
-import type { UserSession, Item, CartLine, Customer, SalesOrderItem } from '../types';
+import type { UserSession, Item, CartLine, Customer, SalesOrderItem, Capabilities } from '../types';
+
+// A manager with no profile keeps the historical behaviour (see utils._capabilities).
+const DEFAULT_CAPABILITIES: Capabilities = {
+  is_field_sales: false,
+  can_invoice: true,
+  can_deliver: true,
+  can_return: true,
+  can_load_stock: false,
+  can_view_stock: false,
+  uses_shifts: true,
+  requires_open_shift: false,
+  can_credit_sale: true,
+  can_create_customer: true,
+  can_close_shift: true,
+  can_cancel_cash_movement: true,
+  shows_customer_balance: true,
+  blind_shift_close: false,
+};
 import * as api from '../api/frappe';
 
 interface State {
   session: UserSession | null;
   cart: CartLine[];
+  returnCart: CartLine[];
   loadingSession: boolean;
   customer: Customer | null;
   currentOrderName: string | null;
@@ -16,6 +35,7 @@ export const useSessionStore = defineStore('session', {
   state: (): State => ({
     session: null,
     cart: [],
+    returnCart: [],
     loadingSession: true,
     customer: null,
     currentOrderName: null,
@@ -29,7 +49,28 @@ export const useSessionStore = defineStore('session', {
         (sum, line) => sum + line.qty * (line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0),
         0,
       ),
+    returnCartCount: (state) => state.returnCart.reduce((sum, line) => sum + line.qty, 0),
+    returnCartTotal: (state) =>
+      state.returnCart.reduce(
+        (sum, line) => sum + line.qty * (line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0),
+        0,
+      ),
     currencyDisplay: (state) => state.currencySymbol || state.currencyCode || '₹',
+    driverConfig: (state) => state.session?.driver_config || null,
+    isManager: (state) => Boolean(state.session?.is_manager),
+    isDriver: (state) => Boolean(state.session?.is_driver),
+    capabilities: (state): Capabilities =>
+      state.session?.capabilities || state.session?.driver_config?.capabilities || DEFAULT_CAPABILITIES,
+    isFieldSales(): boolean {
+      return this.capabilities.is_field_sales;
+    },
+    usesShifts(): boolean {
+      return this.capabilities.uses_shifts;
+    },
+    /** Field Sales never sells from a warehouse, so catalog stock is information only. */
+    canOrderWithoutStock(): boolean {
+      return this.capabilities.is_field_sales || Boolean(this.driverConfig?.allow_sale_without_stock);
+    },
   },
   actions: {
     async bootstrap() {
@@ -44,6 +85,7 @@ export const useSessionStore = defineStore('session', {
     },
     async login(username: string, password: string) {
       this.session = await api.login(username, password);
+      await this.fetchCurrency();
     },
     async logout() {
       try {
@@ -54,6 +96,7 @@ export const useSessionStore = defineStore('session', {
       } finally {
         this.session = null;
         this.cart = [];
+        this.returnCart = [];
         this.customer = null;
         this.currentOrderName = null;
       }
@@ -100,6 +143,18 @@ export const useSessionStore = defineStore('session', {
         });
       }
     },
+    setQty(item: Item, qty: number) {
+      const idx = this.cart.findIndex((line) => line.item.item_code === item.item_code);
+      if (qty <= 0) {
+        if (idx > -1) this.cart.splice(idx, 1);
+        return;
+      }
+      if (idx > -1) {
+        this.cart[idx].qty = qty;
+      } else {
+        this.cart.push({ item, qty, rate: item.price_list_rate ?? item.standard_rate });
+      }
+    },
     updateQty(itemCode: string, delta: number) {
       const idx = this.cart.findIndex((line) => line.item.item_code === itemCode);
       if (idx === -1) return;
@@ -119,6 +174,31 @@ export const useSessionStore = defineStore('session', {
     clearCart() {
       this.cart = [];
       this.currentOrderName = null;
+    },
+    addToReturnCart(item: Item) {
+      const idx = this.returnCart.findIndex((line) => line.item.item_code === item.item_code);
+      if (idx > -1) {
+        this.returnCart[idx].qty += 1;
+      } else {
+        this.returnCart.push({
+          item,
+          qty: 1,
+          rate: item.price_list_rate ?? item.standard_rate
+        });
+      }
+    },
+    updateReturnQty(itemCode: string, delta: number) {
+      const idx = this.returnCart.findIndex((line) => line.item.item_code === itemCode);
+      if (idx === -1) return;
+      const newQty = this.returnCart[idx].qty + delta;
+      if (newQty <= 0) {
+        this.returnCart.splice(idx, 1);
+      } else {
+        this.returnCart[idx].qty = newQty;
+      }
+    },
+    clearReturnCart() {
+      this.returnCart = [];
     },
   },
 });

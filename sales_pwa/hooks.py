@@ -1,7 +1,7 @@
 app_name = "sales_pwa"
-app_title = "Sales App"
+app_title = "Van Sale"
 app_publisher = "me"
-app_description = "App for Sales Order"
+app_description = "Van sale application"
 app_email = "me@me.com"
 app_license = "mit"
 
@@ -13,10 +13,10 @@ app_license = "mit"
 # Each item in the list will be shown as an app in the apps page
 # add_to_apps_screen = [
 # 	{
-# 		"name": "sales_pwa",
+# 		"name": "van_sale",
 # 		"logo": "/assets/sales_pwa/logo.png",
-# 		"title": "Sales App",
-# 		"route": "/sales_pwa",
+# 		"title": "Van Sale",
+# 		"route": "/sales",
 # 		"has_permission": "sales_pwa.api.permission.has_app_permission"
 # 	}
 # ]
@@ -25,15 +25,15 @@ app_license = "mit"
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/sales_pwa/css/sales_pwa.css"
-# app_include_js = "/assets/sales_pwa/js/sales_pwa.js"
+# app_include_css = "/assets/sales_pwa/css/van_sale.css"
+# app_include_js = "/assets/sales_pwa/js/van_sale.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/sales_pwa/css/sales_pwa.css"
-# web_include_js = "/assets/sales_pwa/js/sales_pwa.js"
+# web_include_css = "/assets/sales_pwa/css/van_sale.css"
+# web_include_js = "/assets/sales_pwa/js/van_sale.js"
 
 # include custom scss in every website theme (without file extension ".scss")
-# website_theme_scss = "sales_pwa/public/scss/website"
+# website_theme_scss = "van_sale/public/scss/website"
 
 # include js, css files in header of web form
 # webform_include_js = {"doctype": "public/js/doctype.js"}
@@ -51,7 +51,7 @@ app_license = "mit"
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "sales_pwa/public/icons.svg"
+# app_include_icons = "van_sale/public/icons.svg"
 
 # Home Pages
 # ----------
@@ -60,9 +60,9 @@ app_license = "mit"
 # home_page = "login"
 
 # website user home page (by Role)
-# role_home_page = {
-# 	"Role": "home_page"
-# }
+role_home_page = {
+	"Van Sales Driver": "/sales"
+}
 
 # Generators
 # ----------
@@ -75,55 +75,82 @@ app_license = "mit"
 
 # add methods and filters to jinja environment
 # jinja = {
-# 	"methods": "sales_pwa.utils.jinja_methods",
-# 	"filters": "sales_pwa.utils.jinja_filters"
+# 	"methods": "van_sale.utils.jinja_methods",
+# 	"filters": "van_sale.utils.jinja_filters"
 # }
 
 # Installation
 # ------------
 
-# before_install = "sales_pwa.install.before_install"
-# after_install = "sales_pwa.install.after_install"
+# before_install = "van_sale.install.before_install"
+# after_install = "van_sale.install.after_install"
 
 # Uninstallation
 # ------------
 
-# before_uninstall = "sales_pwa.uninstall.before_uninstall"
-# after_uninstall = "sales_pwa.uninstall.after_uninstall"
+# before_uninstall = "van_sale.uninstall.before_uninstall"
+# after_uninstall = "van_sale.uninstall.after_uninstall"
 
 # Integration Setup
 # ------------------
 # To set up dependencies/integrations with other apps
 # Name of the app being installed is passed as an argument
 
-# before_app_install = "sales_pwa.utils.before_app_install"
-# after_app_install = "sales_pwa.utils.after_app_install"
+# before_app_install = "van_sale.utils.before_app_install"
+# after_app_install = "van_sale.utils.after_app_install"
 
 # Integration Cleanup
 # -------------------
 # To clean up dependencies/integrations with other apps
 # Name of the app being uninstalled is passed as an argument
 
-# before_app_uninstall = "sales_pwa.utils.before_app_uninstall"
-# after_app_uninstall = "sales_pwa.utils.after_app_uninstall"
+# before_app_uninstall = "van_sale.utils.before_app_uninstall"
+# after_app_uninstall = "van_sale.utils.after_app_uninstall"
 
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
 
-# notification_config = "sales_pwa.notifications.get_notification_config"
+# notification_config = "van_sale.notifications.get_notification_config"
+
+# Fixtures — ship the Van Sales Driver role with the app so it is created on install
+fixtures = [
+	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Van Sales Driver"]]]
+	}
+]
 
 # Permissions
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"Van EOD Report": "sales_pwa.permissions.get_van_eod_report_permission_query_conditions",
+	"Van Expense Log": "sales_pwa.permissions.get_van_expense_log_permission_query_conditions",
+	"Van Profile": "sales_pwa.permissions.get_van_profile_permission_query_conditions",
+	"Van Shift Opening": "sales_pwa.permissions.get_van_shift_opening_permission_query_conditions",
+	"Van Shift Closing": "sales_pwa.permissions.get_van_shift_closing_permission_query_conditions",
+	"Van Cash Movement": "sales_pwa.permissions.get_van_cash_movement_permission_query_conditions",
+}
+
+has_permission = {
+	"Van EOD Report": "sales_pwa.permissions.has_van_eod_report_permission",
+	"Van Expense Log": "sales_pwa.permissions.has_van_expense_log_permission",
+	"Van Profile": "sales_pwa.permissions.has_van_profile_permission",
+	"Van Shift Opening": "sales_pwa.permissions.has_van_shift_opening_permission",
+	"Van Shift Closing": "sales_pwa.permissions.has_van_shift_closing_permission",
+	"Van Cash Movement": "sales_pwa.permissions.has_van_cash_movement_permission",
+}
+
+# Run after every bench migrate to ensure Custom DocPerm entries exist for the
+# Van Sales Driver role on the standard ERPNext doctypes the PWA uses via REST.
+after_migrate = ["sales_pwa.van_sale.setup.setup_van_sales_driver_permissions"]
+
+# Lets the "Van Shift Summary" / "Van Shift Closing Report" print formats build their data.
+jinja = {
+	"methods": ["sales_pwa.van_sale.shift_report.get_shift_report_for_print"],
+}
 
 # DocType Class
 # ---------------
@@ -137,52 +164,54 @@ app_license = "mit"
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+# Cache invalidation for Van Profile is handled by the VanProfile DocType class
+# (on_update / on_trash in sales_pwa/van_sale/van_sale/doctype/van_profile/van_profile.py).
+# No doc_events hook needed here.
 
 # Scheduled Tasks
 # ---------------
 
+scheduler_events = {
+	# Managers get a Notification Log (desk bell + email per their settings) listing
+	# every shift still open from an earlier day.
+	"daily": ["sales_pwa.van_sale.tasks.notify_stale_shifts"],
+}
+
 # scheduler_events = {
 # 	"all": [
-# 		"sales_pwa.tasks.all"
+# 		"van_sale.tasks.all"
 # 	],
 # 	"daily": [
-# 		"sales_pwa.tasks.daily"
+# 		"van_sale.tasks.daily"
 # 	],
 # 	"hourly": [
-# 		"sales_pwa.tasks.hourly"
+# 		"van_sale.tasks.hourly"
 # 	],
 # 	"weekly": [
-# 		"sales_pwa.tasks.weekly"
+# 		"van_sale.tasks.weekly"
 # 	],
 # 	"monthly": [
-# 		"sales_pwa.tasks.monthly"
+# 		"van_sale.tasks.monthly"
 # 	],
 # }
 
 # Testing
 # -------
 
-# before_tests = "sales_pwa.install.before_tests"
+# before_tests = "van_sale.install.before_tests"
 
 # Overriding Methods
 # ------------------------------
 #
 # override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "sales_pwa.event.get_events"
+# 	"frappe.desk.doctype.event.event.get_events": "van_sale.event.get_events"
 # }
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
 # override_doctype_dashboards = {
-# 	"Task": "sales_pwa.task.get_dashboard_data"
+# 	"Task": "van_sale.task.get_dashboard_data"
 # }
 
 # exempt linked doctypes from being automatically cancelled
@@ -196,13 +225,13 @@ app_license = "mit"
 
 # Request Events
 # ----------------
-# before_request = ["sales_pwa.utils.before_request"]
-# after_request = ["sales_pwa.utils.after_request"]
+# before_request = ["van_sale.utils.before_request"]
+# after_request = ["van_sale.utils.after_request"]
 
 # Job Events
 # ----------
-# before_job = ["sales_pwa.utils.before_job"]
-# after_job = ["sales_pwa.utils.after_job"]
+# before_job = ["van_sale.utils.before_job"]
+# after_job = ["van_sale.utils.after_job"]
 
 # User Data Protection
 # --------------------
@@ -232,7 +261,7 @@ app_license = "mit"
 # --------------------------------
 
 # auth_hooks = [
-# 	"sales_pwa.auth.validate"
+# 	"van_sale.auth.validate"
 # ]
 
 # Automatically update python controller files with type annotations for this app.

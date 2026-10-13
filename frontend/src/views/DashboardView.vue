@@ -1,146 +1,240 @@
 <template>
-  <div class="min-h-full bg-gray-50">
-    <div class="px-4 py-4">
-      <div class="flex items-center justify-between mb-3">
-        <div>
-          <p class="text-xs text-gray-500">Welcome</p>
-          <h2 class="text-lg font-semibold text-gray-900">{{ session?.full_name }}</h2>
-        </div>
-        <div class="flex items-center gap-2">
-          <button class="bg-gray-100 text-gray-800 text-sm px-3 py-2 rounded-lg" @click="logout">
-            Logout
-          </button>
+  <WorkspacePage width="default">
+    <ManagerDashboard v-if="store.isManager" :greeting="greeting" :first-name="firstName">
+      <AppAlert v-if="setupMessage" tone="warning" :message="setupMessage" />
+      <AppAlert v-if="shiftNotice" tone="warning" :title="shiftNotice.title" :message="shiftNotice.body" />
+      <QuickActions :actions="actions" />
+    </ManagerDashboard>
+
+    <div v-else class="space-y-6">
+      <!-- Greeting + hero collection KPI — flat brand slab, identical in both themes -->
+      <div class="relative overflow-hidden rounded-3xl bg-[#0D3F41] p-5 text-white shadow-raised md:p-6">
+        <div class="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-primary/15"></div>
+        <div class="relative">
+          <p class="text-[13px] font-medium text-white/72">{{ greeting }}{{ firstName ? `, ${firstName}` : '' }}</p>
+          <p class="mt-3.5 text-[11px] font-bold uppercase tracking-[0.1em] text-[#5FD6D0]">Collected today</p>
+          <p class="tnum mt-1 text-[38px] font-semibold leading-none tracking-tightest md:text-5xl">
+            {{ currency }} {{ fmt(dailySummary?.payments.total) }}
+          </p>
+          <div class="mt-3 flex items-center gap-2.5 text-[13px] font-medium text-white/80">
+            <span>{{ dailySummary?.payments.count || 0 }} payments</span>
+            <span class="text-white/40">·</span>
+            <span>{{ dailySummary?.sales_orders.count || 0 }} orders</span>
+            <span v-if="driverConfig?.delivery_route" class="text-white/40">·</span>
+            <span v-if="driverConfig?.delivery_route">{{ driverConfig.delivery_route }}</span>
+          </div>
+          <div v-if="activeShift" class="mt-3.5 inline-flex items-center gap-2 rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold">
+            <span class="h-[7px] w-[7px] rounded-full" :class="activeShift.is_stale ? 'bg-warning' : 'bg-success'"></span>
+            {{ activeShift.is_stale ? `Unclosed shift from ${shiftDay(activeShift.shift_date)}` : `Shift open${shiftSince ? ` since ${shiftSince}` : ''}` }}
+          </div>
         </div>
       </div>
 
-      <div class="grid grid-cols-2 gap-3 mb-6">
-        <button 
-          class="bg-blue-600 text-white text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
-          @click="$router.push({ name: 'customers', query: { redirect: 'order' } })"
-        >
-          <span>+ New Order</span>
-        </button>
-        <button 
-          class="bg-emerald-600 text-white text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
-          @click="$router.push({ name: 'customers', query: { redirect: 'payment' } })"
-        >
-          <span>+ New Payment</span>
-        </button>
-        <button 
-          class="bg-white border border-gray-200 text-gray-700 text-sm px-3 py-3 rounded-xl font-semibold shadow-sm flex flex-col items-center justify-center gap-1" 
-          @click="$router.push({ name: 'ledger' })"
-        >
-          <span>Customer Ledger</span>
-        </button>
+      <AppAlert v-if="setupMessage" tone="warning" :message="setupMessage" />
+      <AppAlert v-if="shiftNotice" tone="warning" :title="shiftNotice.title" :message="shiftNotice.body" />
 
-      </div>
+      <QuickActions :actions="actions" />
 
-      <div class="mb-6">
-        <p class="text-xs font-semibold text-gray-600 uppercase mb-3">Today's Overview</p>
+      <!-- This shift so far (open, non-stale shift only) -->
+      <section v-if="shiftSummary">
+        <div class="mb-3 flex items-center justify-between">
+          <p class="text-xs font-bold uppercase tracking-wider text-muted">This shift so far</p>
+          <button class="text-xs font-semibold text-primary" @click="router.push({ name: 'shift-summary' })">Full summary</button>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <KpiTile label="Sales" :value="`${currency} ${fmt(shiftSummary.totals.total_sales)}`" :sub="`${shiftSummary.totals.sales_orders_count} orders`" icon="cart" tone="primary" />
+          <KpiTile label="Collected" :value="`${currency} ${fmt(shiftSummary.totals.total_collections)}`" :sub="`${shiftSummary.totals.payments_count} payments`" icon="wallet" tone="success" />
+          <KpiTile label="Cash in hand" :value="`${currency} ${fmt(shiftSummary.totals.expected_cash)}`" :sub="shiftSummary.draft_orders.length ? `${shiftSummary.draft_orders.length} draft${shiftSummary.draft_orders.length === 1 ? '' : 's'} pending` : `Float ${currency} ${fmt(shiftSummary.totals.total_opening_float)}`" icon="banknote" tone="info" />
+        </div>
+      </section>
+
+      <!-- Today's performance -->
+      <section>
+        <p class="mb-3 text-xs font-bold uppercase tracking-wider text-muted">Today's performance</p>
         <div class="grid grid-cols-2 gap-3">
-          <div 
-            class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform cursor-pointer"
+          <KpiTile
+            label="Sales"
+            :value="dailySummary?.sales_orders.count || 0"
+            :sub="`${currency} ${fmt(dailySummary?.sales_orders.total)}`"
+            icon="cart"
+            tone="primary"
+            interactive
             @click="$router.push({ name: 'daily-log', params: { type: 'orders' } })"
-          >
-            <div class="flex items-center gap-2 mb-1">
-              <span class="p-1.5 bg-blue-50 text-blue-600 rounded-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-              </span>
-              <p class="text-xs text-gray-500 font-medium">Orders</p>
-            </div>
-            <div class="mt-2">
-              <p class="text-lg font-bold text-gray-900">{{ dailySummary?.sales_orders.count || 0 }}</p>
-              <p class="text-xs text-gray-400 font-medium">{{ currency }} {{ (dailySummary?.sales_orders.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</p>
-            </div>
-          </div>
-          <div 
-            class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 active:scale-[0.98] transition-transform cursor-pointer"
+          />
+          <KpiTile
+            label="Collections"
+            :value="dailySummary?.payments.count || 0"
+            :sub="`${currency} ${fmt(dailySummary?.payments.total)}`"
+            icon="wallet"
+            tone="success"
+            interactive
             @click="$router.push({ name: 'daily-log', params: { type: 'payments' } })"
+          />
+        </div>
+      </section>
+
+      <!-- Recent activity -->
+      <section>
+        <div class="mb-3 flex items-center justify-between">
+          <p class="text-xs font-bold uppercase tracking-wider text-muted">Recent activity</p>
+          <button class="text-xs font-semibold text-primary" @click="$router.push({ name: 'history' })">View all</button>
+        </div>
+        <SkeletonList v-if="loading" :rows="3" />
+        <EmptyState v-else-if="!orders.length" icon="receipt" title="No orders yet today" description="New orders you create will show up here." />
+        <div v-else class="space-y-2.5">
+          <AppCard
+            v-for="order in orders"
+            :key="order.name"
+            padding="sm"
+            interactive
+            @click="openOrder(order.name)"
           >
-            <div class="flex items-center gap-2 mb-1">
-              <span class="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
-              </span>
-              <p class="text-xs text-gray-500 font-medium">Payments</p>
+            <div class="flex items-center justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate font-semibold text-foreground">{{ order.customer_name }}</p>
+                <p class="mt-0.5 text-xs text-muted">{{ order.name }}</p>
+              </div>
+              <div class="text-right">
+                <p class="tnum text-sm font-bold text-foreground">{{ currency }} {{ fmt(order.grand_total) }}</p>
+                <StatusBadge class="mt-1" :status="order.status" :dot="false" />
+              </div>
             </div>
-            <div class="mt-2">
-              <p class="text-lg font-bold text-gray-900">{{ dailySummary?.payments.count || 0 }}</p>
-              <p class="text-xs text-gray-400 font-medium">{{ currency }} {{ (dailySummary?.payments.total || 0).toLocaleString(undefined, { minimumFractionDigits: 2 }) }}</p>
-            </div>
-          </div>
+          </AppCard>
         </div>
-      </div>
-
-      <div class="mb-4">
-        <p class="text-xs font-semibold text-gray-600 uppercase">Recent Orders</p>
-      </div>
-
-      <div v-if="loading" class="space-y-3">
-        <div class="h-20 bg-white rounded-xl shadow-sm animate-pulse" />
-        <div class="h-20 bg-white rounded-xl shadow-sm animate-pulse" />
-      </div>
-      <div v-else-if="orders.length === 0" class="text-sm text-gray-500 bg-white rounded-xl p-4 shadow-sm">
-        No orders yet. Create one to get started.
-      </div>
-      <div v-else class="space-y-3">
-        <div
-          v-for="order in orders"
-          :key="order.name"
-          class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 cursor-pointer"
-          role="button"
-          @click="openOrder(order.name)"
-        >
-          <div class="flex justify-between items-center">
-            <div>
-              <p class="font-semibold text-gray-900">{{ order.customer_name }}</p>
-              <p class="text-xs text-gray-500">{{ order.name }} • {{ order.transaction_date }}</p>
-            </div>
-            <span class="text-xs font-bold bg-gray-100 text-gray-800 px-2 py-1 rounded-full uppercase">{{ order.status }}</span>
-          </div>
-          <div class="mt-2 text-sm font-semibold text-gray-900">
-            {{ currency }} {{ order.grand_total?.toLocaleString(undefined, { minimumFractionDigits: 2 }) }}
-          </div>
-        </div>
-      </div>
+      </section>
     </div>
-  </div>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useSessionStore } from '../stores/session';
 import * as api from '../api/frappe';
-import type { SalesOrder } from '../types';
+import type { SalesOrder, ActiveShift, ShiftReport } from '../types';
+import WorkspacePage from '../components/WorkspacePage.vue';
+import ManagerDashboard from '../components/ManagerDashboard.vue';
+import QuickActions, { type QuickAction } from '../components/QuickActions.vue';
+import { AppCard, AppAlert, KpiTile, StatusBadge, SkeletonList, EmptyState } from '../components/ui';
 
 const store = useSessionStore();
 const router = useRouter();
+const route = useRoute();
 const session = computed(() => store.session);
+const driverConfig = computed(() => store.driverConfig);
 const currency = computed(() => store.currencyDisplay);
+
+const firstName = computed(() => session.value?.full_name?.split(' ')[0] || '');
+const greeting = computed(() => {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+});
+
+const setupMessage = computed(() => {
+  if (driverConfig.value) return '';
+  if (route.query.setup === 'driver-profile') {
+    return session.value?.is_manager
+      ? 'Create and activate a driver profile before opening stock tools.'
+      : 'Your account has no active driver profile yet. Ask a manager to assign one before using stock tools.';
+  }
+  return '';
+});
+
+// A shift left open from an earlier day has to be closed first; with the Van Profile's
+// require_open_shift, selling also waits for today's shift. The server enforces the
+// same rule (shift.require_open_shift) — this just gets the driver there sooner.
+const caps = computed(() => store.capabilities);
+const requireShift = computed(() => caps.value.requires_open_shift);
+const needsShift = computed(() => requireShift.value && (!activeShift.value || !!activeShift.value.is_stale));
+const shiftNotice = computed(() => {
+  if (loading.value) return null;
+  if (activeShift.value?.is_stale) {
+    return {
+      title: `Your shift from ${shiftDay(activeShift.value.shift_date)} was never closed`,
+      body: requireShift.value
+        ? 'Close it, then open today\'s shift to start selling.'
+        : 'Close it now so that day\'s cash is reconciled. You can\'t open a new shift until you do.',
+    };
+  }
+  if (requireShift.value && !activeShift.value) {
+    return { title: 'Open your shift to start selling', body: 'Orders, payments, returns and expenses need an open shift.' };
+  }
+  return null;
+});
+const gated = (go: () => void) => () => {
+  if (!needsShift.value) return go();
+  router.push({ name: activeShift.value?.is_stale ? 'shift-close' : 'shift-open' });
+};
+
+const actions = computed(() => {
+  const list: QuickAction[] = [
+    { label: 'New Order', icon: 'cart', accent: 'bg-primary/12 text-primary', go: gated(() => router.push({ name: 'customers', query: { redirect: 'order' } })) },
+    { label: 'Payment', icon: 'wallet', accent: 'bg-success/12 text-success', go: gated(() => router.push({ name: 'customers', query: { redirect: 'payment' } })) },
+  ];
+  // Capabilities come from the Van Profile type: Field Sales staff take orders and
+  // collect payments only (no van to load, nothing to return into, shifts optional).
+  if (driverConfig.value ? caps.value.can_load_stock : store.isManager) {
+    list.push({ label: 'Load Stock', icon: 'truck', accent: 'bg-warning/15 text-warning', go: () => router.push({ name: 'stock-transfer' }) });
+  }
+  if (caps.value.can_return) {
+    list.push({ label: 'Return', icon: 'rotate-ccw', accent: 'bg-danger/12 text-danger', go: gated(() => router.push({ name: 'customers', query: { redirect: 'return' } })) });
+  }
+  if (caps.value.uses_shifts) {
+    list.push({ label: 'Cash Out', icon: 'banknote', accent: 'bg-info/12 text-info', go: gated(() => router.push({ name: 'expenses' })) });
+    if (activeShift.value) {
+      // Van Profile.allow_driver_close_shift off: only a manager closes this shift.
+      if (caps.value.can_close_shift) {
+        list.push({ label: 'Close Shift', icon: 'check-circle', accent: 'bg-primary/12 text-primary', go: () => router.push({ name: 'shift-close' }) });
+      }
+    } else {
+      list.push({ label: 'Open Shift', icon: 'play-circle', accent: 'bg-success/12 text-success', go: () => router.push({ name: 'shift-open' }) });
+    }
+    list.push({ label: 'Shift Reports', icon: 'activity', accent: 'bg-info/12 text-info', go: () => router.push({ name: 'shift-reports' }) });
+  } else if (caps.value.shows_customer_balance) {
+    list.push({ label: 'Ledger', icon: 'ledger', accent: 'bg-info/12 text-info', go: () => router.push({ name: 'customers', query: { redirect: 'ledger' } }) });
+  }
+  if (store.isManager) {
+    list.push({ label: 'Reports', icon: 'list', accent: 'bg-primary/12 text-primary', go: () => router.push({ name: 'reports' }) });
+  }
+  return list;
+});
+
 const orders = ref<SalesOrder[]>([]);
 const dailySummary = ref<{ sales_orders: { count: number; total: number }; payments: { count: number; total: number } } | null>(null);
+const activeShift = ref<ActiveShift | null>(null);
+const shiftSummary = ref<ShiftReport | null>(null);
 const loading = ref(true);
+
+const fmt = (n?: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const shiftDay = (s: string) =>
+  new Date(`${s}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+const shiftSince = computed(() => {
+  const ts = activeShift.value?.period_start;
+  if (!ts) return '';
+  const d = new Date(ts.replace(' ', 'T'));
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+});
 
 onMounted(async () => {
   if (!session.value) return;
   try {
-    const [ordersData, summaryData] = await Promise.all([
+    const [ordersData, summaryData, shiftData] = await Promise.all([
       api.recentOrders(session.value.user),
-      api.getDailySummary()
+      api.getDailySummary(),
+      caps.value.uses_shifts ? api.getActiveShift().catch(() => null) : Promise.resolve(null),
     ]);
     orders.value = ordersData;
     dailySummary.value = summaryData;
+    activeShift.value = shiftData;
   } finally {
     loading.value = false;
   }
+  // The running shift figures load after the page is up; a stale shift's numbers
+  // belong on its closing screen, not here.
+  if (activeShift.value && !activeShift.value.is_stale) {
+    shiftSummary.value = await api.getShiftSummary().catch(() => null);
+  }
 });
 
-const openOrder = (name: string) => {
-  router.push({ name: 'order-detail', params: { name } });
-};
-
-const logout = async () => {
-  await store.logout();
-  router.push({ name: 'login' });
-};
+const openOrder = (name: string) => router.push({ name: 'order-detail', params: { name } });
 </script>

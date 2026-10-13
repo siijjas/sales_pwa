@@ -1,77 +1,135 @@
 <template>
-  <div class="flex flex-col h-full bg-gray-50">
-    <div class="px-4 py-3 bg-white border-b flex items-center gap-2 sticky top-0">
-      <button class="text-sm text-gray-600" @click="$router.back()">Back</button>
-      <div class="flex-1">
-        <p class="text-xs text-gray-500">Customer</p>
-        <p class="text-sm font-semibold text-gray-900 truncate">{{ customerName }}</p>
+  <WorkspacePage back :title="customerName ? 'Catalog' : 'Catalog'" :description="customerName ? `Ordering for ${customerName}` : 'Select items'" width="default">
+    <div class="space-y-4 pb-28">
+      <div class="sticky top-[60px] z-30 -mx-1 px-1 pb-1">
+        <SearchBar v-model="search" placeholder="Search catalog…" />
       </div>
-    </div>
 
-    <div class="px-4 py-3">
-      <input
-        v-model="search"
-        class="w-full bg-white border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
-        placeholder="Search items"
-      />
-    </div>
+      <AppAlert v-if="error" tone="danger" :message="error" />
+      <SkeletonList v-if="loading" :rows="6" height="5rem" />
+      <EmptyState v-else-if="!items.length" icon="package" title="No items found" description="Adjust your search to find products." />
 
-    <div class="flex-1 overflow-y-auto px-4 pb-24">
-      <div v-if="loading" class="space-y-3">
-        <div class="h-24 bg-white rounded-xl shadow-sm animate-pulse" />
-        <div class="h-24 bg-white rounded-xl shadow-sm animate-pulse" />
+      <div v-else class="space-y-2.5">
+        <AppCard v-for="item in items" :key="item.item_code" padding="sm">
+          <div class="flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <p class="font-semibold leading-tight text-foreground">{{ item.item_name }}</p>
+              <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                <span class="tnum font-bold text-foreground">
+                  <template v-if="itemPrice(item) !== null">{{ currency }} {{ itemPrice(item)?.toFixed(2) }}</template>
+                  <span v-else class="font-medium text-subtle">N/A</span>
+                </span>
+                <span class="text-subtle">•</span>
+                <span class="text-muted">{{ item.item_code }}</span>
+                <button
+                  type="button"
+                  class="flex h-6 w-6 items-center justify-center rounded-full text-subtle transition hover:bg-card-muted hover:text-foreground"
+                  aria-label="View sales history"
+                  @click="openHistory(item)"
+                >
+                  <AppIcon name="clock" :size="14" />
+                </button>
+              </div>
+              <div class="mt-1.5">
+                <StatusBadge v-if="hasQty(item) && item.actual_qty! <= 0" tone="danger" :dot="false">Out of stock</StatusBadge>
+                <StatusBadge v-else-if="hasQty(item) && item.actual_qty! < 5" tone="warning" :dot="false">Only {{ item.actual_qty }} left</StatusBadge>
+                <StatusBadge v-else-if="hasQty(item)" tone="success" :dot="false">{{ item.actual_qty }} available</StatusBadge>
+              </div>
+            </div>
+
+            <!-- In-cart badge (tap to edit) -->
+            <button
+              v-if="getQty(item.item_code) > 0"
+              type="button"
+              class="flex shrink-0 items-center gap-1.5 rounded-2xl bg-primary/10 px-3 py-2 text-sm font-bold text-primary transition active:scale-95"
+              @click="openSheet(item)"
+            >
+              <span class="tnum">× {{ getQty(item.item_code) }}</span>
+              <AppIcon name="edit" :size="14" />
+            </button>
+
+            <!-- Add button -->
+            <AppButton
+              v-else
+              variant="secondary"
+              size="sm"
+              icon="plus"
+              :disabled="!allowWithoutStock && hasQty(item) && item.actual_qty! <= 0"
+              @click="openSheet(item)"
+            >
+              Add
+            </AppButton>
+          </div>
+        </AppCard>
       </div>
-      <div v-else class="space-y-3">
-        <div v-if="error" class="bg-red-50 text-red-700 text-sm p-3 rounded-lg border border-red-200">
-          {{ error }}
-        </div>
-        <div
-          v-for="item in items"
-          :key="item.item_code"
-          class="bg-white rounded-xl border border-gray-100 p-3 shadow-sm flex justify-between items-center"
+
+      <!-- Floating cart bar -->
+      <StickyBar v-if="cartCount">
+        <button
+          class="focus-ring flex w-full items-center justify-between gap-3 rounded-2xl bg-primary px-4 py-1.5 text-primary-fg"
+          @click="$router.push({ name: 'cart' })"
         >
-          <div>
-            <p class="font-semibold text-gray-900">{{ item.item_name }}</p>
-            <p class="text-xs text-gray-500">{{ item.item_code }}</p>
-            <p class="text-sm font-bold text-gray-900 mt-1">
-              <span v-if="itemPrice(item) !== null">{{ currency }} {{ itemPrice(item)?.toFixed(2) }}</span>
-              <span v-else class="text-xs font-semibold text-gray-500">Price unavailable</span>
-            </p>
-            <p v-if="hasQty(item) && item.actual_qty! <= 0" class="text-xs font-semibold text-red-600">Out of stock</p>
-            <p v-else-if="hasQty(item) && item.actual_qty! < 5" class="text-xs text-orange-600">
-              Only {{ item.actual_qty }} left
-            </p>
-            <p v-else-if="hasQty(item)" class="text-xs text-gray-600">Available: {{ item.actual_qty }}</p>
-          </div>
-          <div class="flex items-center gap-2">
-            <button class="px-3 py-2 bg-gray-100 rounded-lg" @click="update(item.item_code, -1)">-</button>
-            <span class="w-8 text-center font-semibold">{{ getQty(item.item_code) }}</span>
-            <button class="px-3 py-2 bg-blue-600 text-white rounded-lg" @click="add(item)">+</button>
-          </div>
-        </div>
-      </div>
+          <span class="flex items-center gap-3">
+            <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 text-sm font-bold">{{ cartCount }}</span>
+            <span class="text-left">
+              <span class="block text-[11px] font-semibold uppercase tracking-wide opacity-80">Cart total</span>
+              <span class="tnum block text-lg font-bold leading-tight">{{ currency }} {{ total }}</span>
+            </span>
+          </span>
+          <span class="flex items-center gap-1 text-base font-bold">Checkout <AppIcon name="arrow-right" :size="18" /></span>
+        </button>
+      </StickyBar>
     </div>
 
-    <div v-if="cartCount" class="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
-      <div class="max-w-md mx-auto flex items-center justify-between">
-        <div>
-          <p class="text-xs text-gray-500">Cart</p>
-          <p class="font-bold text-gray-900">₹ {{ total }}</p>
+    <QtyInputSheet
+      v-model="sheetOpen"
+      :title="selectedItem?.item_name || ''"
+      :subtitle="selectedItem?.item_code"
+      :price="selectedItem ? `${currency} ${itemPrice(selectedItem)?.toFixed(2)}` : undefined"
+      :max-qty="!allowWithoutStock && selectedItem?.actual_qty !== undefined ? selectedItem.actual_qty : undefined"
+      :initial-qty="selectedItem ? getQty(selectedItem.item_code) : 0"
+      :step="0.5"
+      :confirm-label="selectedItem && getQty(selectedItem.item_code) > 0 ? 'Update qty' : 'Add to order'"
+      @confirm="onQtyConfirmed"
+    />
+
+    <BottomSheet v-model="historyOpen" :title="historyItem ? historyItem.item_name : 'Sales history'">
+      <div class="space-y-3">
+        <p class="text-xs font-semibold uppercase tracking-wide text-muted">
+          Previous rate for {{ customerName || 'this customer' }}
+        </p>
+        <SkeletonList v-if="historyLoading" :rows="4" height="3.5rem" />
+        <EmptyState
+          v-else-if="!historyRows.length"
+          icon="clock"
+          title="No previous sales"
+          :description="`${customerName || 'This customer'} hasn't been sold this item before.`"
+        />
+        <div v-else class="divide-y divide-line">
+          <div v-for="row in historyRows" :key="row.sales_order" class="flex items-center justify-between gap-3 py-3">
+            <div class="min-w-0">
+              <p class="truncate font-semibold text-foreground">{{ row.sales_order }}</p>
+              <p class="mt-0.5 text-xs text-muted">{{ row.transaction_date }}</p>
+            </div>
+            <div class="shrink-0 text-right">
+              <p class="tnum text-sm font-bold text-foreground">{{ currency }} {{ row.rate.toFixed(2) }}</p>
+              <p class="tnum text-xs text-muted">qty {{ row.qty }}</p>
+            </div>
+          </div>
         </div>
-        <button class="bg-blue-700 text-white px-4 py-2 rounded-lg" @click="$router.push({ name: 'cart' })">
-          View Cart
-        </button>
       </div>
-    </div>
-  </div>
+    </BottomSheet>
+  </WorkspacePage>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
-import type { Item } from '../types';
+import type { Item, ItemSalesHistoryRow } from '../types';
 import { useSessionStore } from '../stores/session';
+import WorkspacePage from '../components/WorkspacePage.vue';
+import { AppCard, AppAlert, AppIcon, SearchBar, StatusBadge, SkeletonList, EmptyState, StickyBar, AppButton, QtyInputSheet, BottomSheet } from '../components/ui';
 
 const store = useSessionStore();
 const route = useRoute();
@@ -81,18 +139,32 @@ const customerNameParam = route.query.customer_name as string | undefined;
 
 const search = ref('');
 const items = ref<Item[]>([]);
+// Van Profile.hide_unavailable_items: only what the van actually holds is listed.
+// Field Sales never sells from a warehouse, so it always sees the full catalog.
+const hideUnavailable = computed(() => !store.isManager && !store.isFieldSales && Boolean(store.driverConfig?.hide_unavailable_items));
 const loading = ref(true);
 const error = ref('');
 const currency = computed(() => store.currencyDisplay);
-
 const cartCount = computed(() => store.cartCount);
 const total = computed(() => store.cartTotal.toFixed(2));
+// Van Profile override: out-of-stock items can still be ordered; create_sales_invoice()
+// then bills them without moving stock and delivers only what the van holds. Field Sales
+// staff never sell from a warehouse, so for them the qty shown is information only.
+const allowWithoutStock = computed(() => store.canOrderWithoutStock);
+
+const sheetOpen = ref(false);
+const selectedItem = ref<Item | null>(null);
+
+const historyOpen = ref(false);
+const historyItem = ref<Item | null>(null);
+const historyRows = ref<ItemSalesHistoryRow[]>([]);
+const historyLoading = ref(false);
 
 const loadItems = async () => {
   loading.value = true;
   error.value = '';
   try {
-    items.value = await api.listItems(search.value, store.customer?.name);
+    items.value = await api.listItems(search.value, store.customer?.name, { hideUnavailable: hideUnavailable.value });
   } catch (e: any) {
     error.value = e?.message || 'Failed to load items';
   } finally {
@@ -109,10 +181,7 @@ onMounted(() => {
     return;
   }
   if (store.currentOrderName && store.cart.length === 0) {
-    // ensure existing order items are in cart when resuming
-    api.getSalesOrder(store.currentOrderName).then((order) => {
-      store.setCartFromOrder(order.items || []);
-    });
+    api.getSalesOrder(store.currentOrderName).then((order) => store.setCartFromOrder(order.items || []));
   }
   loadItems();
 });
@@ -121,20 +190,35 @@ watch(search, () => {
   clearTimeout(timer);
   timer = window.setTimeout(loadItems, 300);
 });
-
 let timer = window.setTimeout(() => {}, 0);
 
-function add(item: Item) {
-  if (item.actual_qty !== undefined && item.actual_qty <= 0) return;
-  store.addToCart(item);
+function openSheet(item: Item) {
+  if (!allowWithoutStock.value && hasQty(item) && item.actual_qty! <= 0 && getQty(item.item_code) === 0) return;
+  selectedItem.value = item;
+  sheetOpen.value = true;
 }
 
-function update(itemCode: string, delta: number) {
-  store.updateQty(itemCode, delta);
+function onQtyConfirmed(qty: number) {
+  if (!selectedItem.value) return;
+  store.setQty(selectedItem.value, qty);
 }
 
 function getQty(itemCode: string) {
   return store.cart.find((line) => line.item.item_code === itemCode)?.qty || 0;
+}
+
+async function openHistory(item: Item) {
+  historyItem.value = item;
+  historyOpen.value = true;
+  historyLoading.value = true;
+  historyRows.value = [];
+  try {
+    historyRows.value = await api.getItemSalesHistory(item.item_code, store.customer?.name);
+  } catch (_e) {
+    historyRows.value = [];
+  } finally {
+    historyLoading.value = false;
+  }
 }
 
 const customerName = computed(() => store.customer?.customer_name || customerNameParam || '');

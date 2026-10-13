@@ -1,6 +1,6 @@
-### Sales App
+### Van Sale
 
-App for Sales Order
+Van sales and field sales order app for ERPNext: a mobile PWA for drivers and sales reps with orders, payments, stock, returns and POS-style cash shifts.
 
 ### Installation
 
@@ -11,6 +11,34 @@ cd $PATH_TO_YOUR_BENCH
 bench get-app $URL_OF_THIS_REPO --branch develop
 bench install-app sales_pwa
 ```
+
+### Setup
+
+The app serves two kinds of field staff from one PWA, chosen per **Van Profile** (Settings → Van Profiles in the app, or the Van Profile doctype):
+
+- **Van Sales** — drivers with stock on board: orders, invoicing, delivery, returns, van loading, stock dashboard, and cash shifts.
+- **Field Sales** — order takers without a van: orders and payments only; the back office invoices and delivers. An optional stock warehouse gives them read-only quantities. Shifts are optional.
+
+Shifts work like POS Awesome's: an opening float per payment mode, expenses and cash deposits to the office recorded from the drawer (each posted as a Journal Entry), and a closing that counts every mode against the expected amount. Closings are aggregated by the shift's time window (driver + creation time), never by stamping ERPNext documents. A per-profile **variance tolerance** flags closings that are off (it never blocks); managers can close or reopen any shift.
+
+The profile also carries the POS-style staff controls: max discount %, the customer's own price list, zero rated items, credit sales, returns and their validity window, hiding out-of-stock items, customer balance visibility, creating customers (and duplicate names), blind cash counts, manager-only closing, and staff cancelling their own cash movements. All are enforced server-side; managers are exempt.
+
+After pulling changes, migrate and rebuild:
+
+```bash
+bench --site <your-site> migrate
+cd apps/sales_pwa/frontend && npm run build
+```
+
+Enable the bench scheduler on the site if it is not already: the daily `sales_pwa.van_sale.tasks.notify_stale_shifts` job notifies managers of shifts left open from earlier days.
+
+Tests run against a site with ERPNext set up:
+
+```bash
+bench --site <your-site> run-tests --app sales_pwa
+```
+
+See `PRD.md` for the full screen inventory, doctypes and API modules.
 
 ### Contributing
 
@@ -31,3 +59,4 @@ Pre-commit is configured to use the following tools for checking and formatting 
 ### License
 
 mit
+# van_sale

@@ -11,7 +11,7 @@ import OrderDetailView from '../views/OrderDetailView.vue';
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/login', name: 'login', component: LoginView },
+    { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
     { path: '/', name: 'dashboard', component: DashboardView },
     { path: '/customers', name: 'customers', component: CustomerSelectView },
     { path: '/items', name: 'items', component: ItemCatalogView },
@@ -19,9 +19,27 @@ const router = createRouter({
     { path: '/history', name: 'history', component: HistoryView },
     { path: '/orders/:name', name: 'order-detail', component: OrderDetailView },
     { path: '/payment', name: 'payment', component: () => import('../views/PaymentEntryView.vue') },
-    { path: '/ledger', name: 'ledger', component: () => import('../views/CustomerLedgerView.vue') },
+    { path: '/ledger', name: 'ledger', component: () => import('../views/CustomerLedgerView.vue'), meta: { capability: 'shows_customer_balance' } },
+    { path: '/stock', name: 'stock-dashboard', component: () => import('../views/DriverStockView.vue'), meta: { requiresDriverConfig: true, capability: 'can_view_stock' } },
+    { path: '/transfer', name: 'stock-transfer', component: () => import('../views/StockTransferView.vue'), meta: { requiresDriverConfig: true, capability: 'can_load_stock' } },
+    { path: '/driver-setup', name: 'driver-setup', redirect: { name: 'settings' } },
+    { path: '/settings', name: 'settings', component: () => import('../views/SettingsView.vue'), meta: { requiresManager: true } },
     { path: '/daily-log/:type', name: 'daily-log', component: () => import('../views/DailyLogView.vue') },
     { path: '/payment-detail/:name', name: 'payment-detail', component: () => import('../views/PaymentDetailView.vue') },
+    { path: '/expenses', name: 'expenses', component: () => import('../views/CashMovementView.vue'), meta: { capability: 'uses_shifts' } },
+    { path: '/return-items', name: 'return-items', component: () => import('../views/ReturnCatalogView.vue'), meta: { capability: 'can_return' } },
+    { path: '/return-cart', name: 'return-cart', component: () => import('../views/ReturnCartView.vue'), meta: { capability: 'can_return' } },
+    { path: '/shift/open', name: 'shift-open', component: () => import('../views/ShiftOpenView.vue'), meta: { capability: 'uses_shifts' } },
+    { path: '/shift/close', name: 'shift-close', component: () => import('../views/ShiftCloseView.vue'), meta: { capability: 'uses_shifts' } },
+    { path: '/reports', name: 'reports', component: () => import('../views/ReportsView.vue'), meta: { requiresManager: true } },
+    { path: '/shift/reports', name: 'shift-reports', component: () => import('../views/ShiftReportsView.vue') },
+    { path: '/shift/summary', name: 'shift-summary', component: () => import('../views/ShiftReportView.vue') },
+    { path: '/shift/closing-report/:name', name: 'closing-report', component: () => import('../views/ShiftReportView.vue') },
+    // Old X/Y report links.
+    { path: '/shift/report/x', redirect: (to) => ({ name: 'shift-summary', query: to.query }) },
+    { path: '/shift/report/y/:name', redirect: (to) => ({ name: 'closing-report', params: { name: to.params.name } }) },
+    { path: '/eod', redirect: { name: 'shift-close' } },
+    { path: '/van-profiles', name: 'van-profiles', component: () => import('../views/VanProfileView.vue'), meta: { requiresManager: true } },
   ],
 });
 
@@ -34,6 +52,21 @@ router.beforeEach(async (to, _from, next) => {
     return next({ name: 'login' });
   }
   if (to.name === 'login' && store.session) {
+    return next({ name: 'dashboard' });
+  }
+  if (to.meta.requiresDriverConfig && !store.driverConfig && !store.isManager) {
+    return next({ name: 'dashboard', query: { setup: 'driver-profile' } });
+  }
+  // Profile-type gating (Field Sales has no van stock, returns or, by default, shifts).
+  // Managers keep every screen: they close other people's shifts and inspect any van.
+  const capability = to.meta.capability as keyof typeof store.capabilities | undefined;
+  if (capability && store.driverConfig && !store.capabilities[capability] && !store.isManager) {
+    return next({ name: 'dashboard' });
+  }
+  if (to.meta.requiresManager && !store.session?.is_manager) {
+    return next({ name: 'dashboard' });
+  }
+  if (to.name === 'driver-setup' && !store.session?.is_manager) {
     return next({ name: 'dashboard' });
   }
   return next();

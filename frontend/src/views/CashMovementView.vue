@@ -85,19 +85,46 @@
         </div>
       </div>
     </div>
+
+    <!-- After a deposit: the drawer has been handed in, so this is the natural moment to close. -->
+    <BottomSheet v-model="closePromptOpen" title="Deposit recorded">
+      <div class="space-y-4">
+        <p class="text-sm text-muted">
+          <span class="tnum font-semibold text-foreground">{{ currency }} {{ fmt(lastDeposit?.amount) }}</span> deposited to the office on shift
+          <span class="font-semibold text-foreground">{{ ctx?.opening_shift }}</span>.
+          <template v-if="canCloseShift">Done for the day? Close your shift now to count the drawer against what is expected.</template>
+          <template v-else>Only a manager can close this shift. Let them know the cash has been handed in.</template>
+        </p>
+        <div class="grid gap-2" :class="canCloseShift ? 'grid-cols-2' : ''">
+          <AppButton variant="secondary" size="lg" block @click="closePromptOpen = false">{{ canCloseShift ? 'Not yet' : 'OK' }}</AppButton>
+          <AppButton v-if="canCloseShift" size="lg" block icon="check" @click="goCloseShift">Close shift</AppButton>
+        </div>
+      </div>
+    </BottomSheet>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
 import type { CashMovement, CashMovementContext, CashMovementType } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, FormField, BaseInput, BaseSelect, BaseTextarea, SkeletonList, EmptyState, KpiTile, StatusBadge, SegmentedControl } from '../components/ui';
+import { AppCard, AppButton, AppAlert, BottomSheet, FormField, BaseInput, BaseSelect, BaseTextarea, SkeletonList, EmptyState, KpiTile, StatusBadge, SegmentedControl } from '../components/ui';
 
 const store = useSessionStore();
+const router = useRouter();
 const currency = computed(() => store.currencyDisplay);
+
+// Prompt to close the shift once cash has been deposited to the office.
+const closePromptOpen = ref(false);
+const lastDeposit = ref<CashMovement | null>(null);
+const canCloseShift = computed(() => store.isManager || store.capabilities.can_close_shift);
+const goCloseShift = () => {
+  closePromptOpen.value = false;
+  router.push({ name: 'shift-close' });
+};
 
 const ctx = ref<CashMovementContext | null>(null);
 const loading = ref(true);
@@ -186,6 +213,10 @@ const submit = async () => {
     ctx.value!.movements.unshift(created);
     successMsg.value = `${created.movement_type} ${created.name} posted${created.journal_entry ? ` (${created.journal_entry})` : ''}.`;
     form.value = { ...form.value, amount: null, against_name: '', remarks: '' };
+    if (created.movement_type === 'Deposit') {
+      lastDeposit.value = created;
+      closePromptOpen.value = true;
+    }
   } catch (e: any) {
     error.value = e?.message || 'Failed to record the cash movement.';
   } finally {

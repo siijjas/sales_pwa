@@ -13,7 +13,7 @@
       <AppAlert v-if="offlineSnapshot" tone="warning" message="Showing the last cached snapshot — live data is unavailable." />
       <AppAlert v-if="error" tone="danger" :message="error" />
 
-      <AppAlert v-if="!driverConfig" tone="info" message="No active driver profile is assigned. Configure a profile before opening the stock dashboard." />
+      <AppAlert v-if="!driverConfig" tone="info" message="No active sales profile is assigned. Configure a profile before opening the stock dashboard." />
 
       <div v-if="dashboard" class="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile label="Items" :value="dashboard.summary.item_count" icon="package" tone="primary" />
@@ -76,7 +76,7 @@ import { useSessionStore } from '../stores/session';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, KpiTile, SearchBar, StatusBadge, SkeletonList, EmptyState } from '../components/ui';
 
-const CACHE_KEY = 'van-sale-driver-stock-cache';
+const CACHE_KEY = 'sales-app-stock-cache';
 
 const store = useSessionStore();
 const driverConfig = computed(() => store.driverConfig);
@@ -106,7 +106,7 @@ function readCachedSnapshot() {
 async function refresh(forceRefresh = false) {
   if (!driverConfig.value?.van_warehouse) {
     dashboard.value = null;
-    error.value = 'No active driver profile is assigned to this user.';
+    error.value = 'No active sales profile is assigned to this user.';
     offlineSnapshot.value = false;
     loading.value = false;
     return;

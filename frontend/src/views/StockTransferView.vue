@@ -145,7 +145,7 @@ const canSubmit = computed(() => {
 async function loadItems() {
   if (!driverConfig.value?.source_warehouse || !driverConfig.value?.van_warehouse) {
     searchResults.value = [];
-    error.value = 'Assign both source and van warehouses in Driver Profiles before creating a transfer.';
+    error.value = 'Assign both source and van warehouses in Sales Profiles before creating a transfer.';
     searchLoading.value = false;
     return;
   }

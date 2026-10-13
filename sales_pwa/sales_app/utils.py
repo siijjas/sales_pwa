@@ -23,11 +23,11 @@ def _is_manager(user: str | None = None) -> bool:
 
 
 def _driver_cache_key(user: str) -> str:
-	return f"van_sale:driver_config:{user}"
+	return f"sales_pwa:driver_config:{user}"
 
 
 def _driver_stock_cache_key(user: str) -> str:
-	return f"van_sale:driver_stock:{user}"
+	return f"sales_pwa:driver_stock:{user}"
 
 
 def _coerce_check(value):
@@ -77,7 +77,7 @@ def _get_driver_config(user: str | None = None, required: bool = True, use_cache
 
 	if not payload:
 		if required:
-			frappe.throw("No active driver configuration found for the current user")
+			frappe.throw("No active sales profile found for the current user")
 		return None
 
 	frappe.cache.set_value(_driver_cache_key(current_user), payload, expires_in_sec=DRIVER_CACHE_TTL)
@@ -167,7 +167,7 @@ def _ensure_driver_mode_allowed(mode_of_payment: str, user: str | None = None):
 	if allowed_modes is None:
 		return
 	if mode_of_payment not in allowed_modes:
-		frappe.throw(f"Mode of payment {mode_of_payment} is not allowed for this driver")
+		frappe.throw(f"Mode of payment {mode_of_payment} is not allowed for this user")
 
 
 def _manager_only():

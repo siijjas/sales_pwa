@@ -14,4 +14,4 @@ def execute():
 		where ifnull(profile_type, '') = ''"""
 	)
 	frappe.db.sql("""update `tabSales Profile` set use_shifts = 1 where ifnull(use_shifts, 0) = 0""")
-	frappe.cache.delete_keys("van_sale:driver_config:")
+	frappe.cache.delete_keys("sales_pwa:driver_config:")

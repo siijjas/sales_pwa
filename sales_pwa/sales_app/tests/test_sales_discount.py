@@ -16,7 +16,7 @@ from frappe.utils import nowdate
 
 from sales_pwa.sales_app.sales import create_sales_order, submit_sales_order
 
-TEST_PREFIX = "_Test Van Sale Discount"
+TEST_PREFIX = "_Test Sales App Discount"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -69,8 +69,8 @@ class TestSalesOrderDiscount(FrappeTestCase):
 
 		# Two drivers on two profiles: one with discounts disallowed (the default),
 		# one with them explicitly allowed.
-		cls.driver_no_discount = "_test_van_sale_discount_denied@example.com"
-		cls.driver_with_discount = "_test_van_sale_discount_allowed@example.com"
+		cls.driver_no_discount = "_test_sales_app_discount_denied@example.com"
+		cls.driver_with_discount = "_test_sales_app_discount_allowed@example.com"
 		for user in (cls.driver_no_discount, cls.driver_with_discount):
 			if not frappe.db.exists("User", user):
 				frappe.get_doc(

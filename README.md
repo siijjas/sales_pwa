@@ -1,4 +1,4 @@
-### Van Sale
+### Sales App
 
 Van sales and field sales order app for ERPNext: a mobile PWA for drivers and sales reps with orders, payments, stock, returns and POS-style cash shifts.
 
@@ -59,4 +59,4 @@ Pre-commit is configured to use the following tools for checking and formatting 
 ### License
 
 mit
-# van_sale
+# sales_pwa

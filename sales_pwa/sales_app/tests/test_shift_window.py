@@ -246,7 +246,7 @@ class TestShiftWindow(base.TestShiftAndAccessRegressions):
 
 	def test_daily_job_notifies_managers_of_stale_shifts(self):
 		frappe.set_user("Administrator")
-		manager = "_test_van_sale_manager@example.com"
+		manager = "_test_sales_app_manager@example.com"
 		if not frappe.db.exists("User", manager):
 			frappe.get_doc({
 				"doctype": "User",

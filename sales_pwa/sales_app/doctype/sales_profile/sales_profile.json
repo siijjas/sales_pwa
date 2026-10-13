@@ -169,12 +169,12 @@
   {
    "fieldname": "section_drivers",
    "fieldtype": "Section Break",
-   "label": "Assigned Drivers"
+   "label": "Assigned Staff"
   },
   {
    "fieldname": "assigned_drivers",
    "fieldtype": "Table",
-   "label": "Assigned Drivers",
+   "label": "Assigned Staff",
    "options": "Sales Profile Driver"
   },
   {
@@ -261,13 +261,13 @@
    "default": "0",
    "fieldname": "allow_rate_change",
    "fieldtype": "Check",
-   "label": "Allow Driver to Edit Rate"
+   "label": "Allow Staff to Edit Rate"
   },
   {
    "default": "0",
    "fieldname": "allow_discount_change",
    "fieldtype": "Check",
-   "label": "Allow Driver to Edit Discount"
+   "label": "Allow Staff to Edit Discount"
   },
   {
    "default": "0",

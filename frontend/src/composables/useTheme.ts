@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 export type ThemePreference = 'light' | 'dark' | 'system';
 export type ResolvedTheme = 'light' | 'dark';
 
-const STORAGE_KEY = 'vansale-theme';
+const STORAGE_KEY = 'sales-app-theme';
 
 // Surface colors that match --c-elevated so the mobile browser chrome blends in.
 const THEME_COLOR: Record<ResolvedTheme, string> = {

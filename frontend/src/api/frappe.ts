@@ -1103,27 +1103,27 @@ export function downloadPdf(doctype: string, name: string, format = 'Standard') 
 
 // ─── Sales Profile API ─────────────────────────────────────────────────────────
 
-export async function listVanProfiles(): Promise<import('../types').VanProfile[]> {
+export async function listSalesProfiles(): Promise<import('../types').SalesProfile[]> {
   const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.list_van_profiles', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
   });
   const data = await handleResponse(res);
-  return (data.message || []) as import('../types').VanProfile[];
+  return (data.message || []) as import('../types').SalesProfile[];
 }
 
-export async function getVanProfileOptions(): Promise<import('../types').VanProfileOptions> {
+export async function getSalesProfileOptions(): Promise<import('../types').SalesProfileOptions> {
   const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.get_van_profile_options', {
     method: 'GET',
     credentials: 'include',
     headers: defaultHeaders(),
   });
   const data = await handleResponse(res);
-  return data.message as import('../types').VanProfileOptions;
+  return data.message as import('../types').SalesProfileOptions;
 }
 
-export async function saveVanProfile(payload: Partial<import('../types').VanProfile>): Promise<import('../types').VanProfile> {
+export async function saveSalesProfile(payload: Partial<import('../types').SalesProfile>): Promise<import('../types').SalesProfile> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.save_van_profile', {
     method: 'POST',
@@ -1132,10 +1132,10 @@ export async function saveVanProfile(payload: Partial<import('../types').VanProf
     body: JSON.stringify({ payload: JSON.stringify(payload) }),
   });
   const data = await handleResponse(res);
-  return data.message as import('../types').VanProfile;
+  return data.message as import('../types').SalesProfile;
 }
 
-export async function deleteVanProfile(name: string): Promise<void> {
+export async function deleteSalesProfile(name: string): Promise<void> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.van_profile.delete_van_profile', {
     method: 'POST',

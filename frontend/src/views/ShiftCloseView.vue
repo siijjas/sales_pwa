@@ -9,7 +9,7 @@
         :title="closingTitle"
         :message="summary.is_stale
           ? 'This shift was never closed. It closes as that day: the figures below are that day\'s sales, collections and expenses. Count the cash that belongs to it.'
-          : 'You are closing this shift on the driver\'s behalf. The closing records that you closed it.'"
+          : 'You are closing this shift on their behalf. The closing records that you closed it.'"
       />
       <AppAlert
         v-if="summary.draft_orders.length"

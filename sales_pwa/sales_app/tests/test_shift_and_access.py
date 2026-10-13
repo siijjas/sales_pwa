@@ -1,4 +1,4 @@
-"""Regression tests for the Van Sale driver permission model.
+"""Regression tests for the Sales App permission model.
 
 These cover four real bugs found (and fixed) in production, all of which
 manifested only when exercised as an actual "Sales App User" user hitting
@@ -38,7 +38,7 @@ from sales_pwa.sales_app.sales import create_sales_order, submit_sales_order
 from sales_pwa.sales_app.shift import close_shift, open_shift
 from sales_pwa.sales_app.utils import _validate_customer_access
 
-TEST_PREFIX = "_Test Van Sale"
+TEST_PREFIX = "_Test Sales App"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -114,7 +114,7 @@ class TestShiftAndAccessRegressions(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-		cls.driver_user = "_test_van_sale_driver@example.com"
+		cls.driver_user = "_test_sales_app_driver@example.com"
 		if not frappe.db.exists("User", cls.driver_user):
 			frappe.get_doc(
 				{

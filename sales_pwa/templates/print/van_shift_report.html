@@ -44,8 +44,8 @@
 	</div>
 
 	<table class="meta">
-		<tr><td>Driver</td><td>{{ r.shift.driver_name or r.shift.driver }}</td></tr>
-		{%- if r.shift.van_profile %}<tr><td>Van</td><td>{{ r.shift.van_profile }}</td></tr>{% endif %}
+		<tr><td>Staff</td><td>{{ r.shift.driver_name or r.shift.driver }}</td></tr>
+		{%- if r.shift.van_profile %}<tr><td>Profile</td><td>{{ r.shift.van_profile }}</td></tr>{% endif %}
 		{%- if cur %}<tr><td>Currency</td><td>{{ cur }}</td></tr>{% endif %}
 		<tr><td>Shift date</td><td>{{ frappe.format_date(r.shift.shift_date) }}</td></tr>
 		<tr><td>Opened</td><td>{{ frappe.format(r.shift.period_start, {"fieldtype": "Datetime"}) if r.shift.period_start else "" }}</td></tr>

@@ -15,7 +15,7 @@ from frappe.tests.utils import FrappeTestCase
 from sales_pwa.sales_app.sales import create_customer
 from sales_pwa.sales_app.utils import _validate_customer_access
 
-TEST_PREFIX = "_Test Van Sale New Customer"
+TEST_PREFIX = "_Test Sales App New Customer"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -56,7 +56,7 @@ class TestCreateCustomer(FrappeTestCase):
 		territory_root = _root_group("Territory")
 		cls.territory = territory_root
 
-		cls.driver_user = "_test_van_sale_new_customer_driver@example.com"
+		cls.driver_user = "_test_sales_app_new_customer_driver@example.com"
 		if not frappe.db.exists("User", cls.driver_user):
 			frappe.get_doc(
 				{

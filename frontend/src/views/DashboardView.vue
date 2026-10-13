@@ -134,8 +134,8 @@ const setupMessage = computed(() => {
   if (driverConfig.value) return '';
   if (route.query.setup === 'driver-profile') {
     return session.value?.is_manager
-      ? 'Create and activate a driver profile before opening stock tools.'
-      : 'Your account has no active driver profile yet. Ask a manager to assign one before using stock tools.';
+      ? 'Create and activate a sales profile before opening stock tools.'
+      : 'Your account has no active sales profile yet. Ask a manager to assign one before using stock tools.';
   }
   return '';
 });

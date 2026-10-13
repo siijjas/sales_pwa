@@ -1,5 +1,5 @@
-const CACHE_NAME = 'van-sale-static-v1';
-const API_CACHE_NAME = 'van-sale-api-v1';
+const CACHE_NAME = 'sales-app-static-v1';
+const API_CACHE_NAME = 'sales-app-api-v1';
 const STATIC_ASSETS = ['/', '/index.html', '/manifest.webmanifest'];
 const CACHEABLE_API_PATTERNS = [
   '/api/method/sales_pwa.api.get_driver_stock_dashboard',

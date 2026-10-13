@@ -32,8 +32,8 @@
 
       <AppCard padding="sm">
         <dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-          <div><dt class="text-muted">Driver</dt><dd class="font-semibold text-foreground">{{ report.shift.driver_name || report.shift.driver }}</dd></div>
-          <div v-if="report.shift.van_profile"><dt class="text-muted">Van</dt><dd class="font-semibold text-foreground">{{ report.shift.van_profile }}</dd></div>
+          <div><dt class="text-muted">Staff</dt><dd class="font-semibold text-foreground">{{ report.shift.driver_name || report.shift.driver }}</dd></div>
+          <div v-if="report.shift.van_profile"><dt class="text-muted">Profile</dt><dd class="font-semibold text-foreground">{{ report.shift.van_profile }}</dd></div>
           <div><dt class="text-muted">Opened</dt><dd class="tnum font-semibold text-foreground">{{ formatDateTime(report.shift.period_start) }}</dd></div>
           <div><dt class="text-muted">{{ isSummary ? 'As of' : 'Closed' }}</dt><dd class="tnum font-semibold text-foreground">{{ formatDateTime(isSummary ? report.generated_at : report.shift.period_end) }}</dd></div>
           <div v-if="report.shift.closed_by"><dt class="text-muted">Closed by</dt><dd class="font-semibold text-foreground">{{ report.shift.closed_by_name || report.shift.closed_by }}</dd></div>

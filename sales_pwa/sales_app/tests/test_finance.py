@@ -18,7 +18,7 @@ from frappe.utils import nowdate
 from sales_pwa.sales_app.finance import create_payment_entry
 from sales_pwa.sales_app.sales import create_sales_order, submit_sales_order
 
-TEST_PREFIX = "_Test Van Sale Finance"
+TEST_PREFIX = "_Test Sales App Finance"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -93,7 +93,7 @@ class TestSalesOrderAdvancePayment(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-		cls.driver_user = "_test_van_sale_finance_driver@example.com"
+		cls.driver_user = "_test_sales_app_finance_driver@example.com"
 		if not frappe.db.exists("User", cls.driver_user):
 			frappe.get_doc(
 				{

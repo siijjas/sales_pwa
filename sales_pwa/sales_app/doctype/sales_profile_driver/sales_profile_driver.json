@@ -14,7 +14,7 @@
    "fieldname": "driver_user",
    "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Driver User",
+   "label": "Staff User",
    "options": "User",
    "reqd": 1
   },
@@ -23,7 +23,7 @@
    "fieldname": "driver_full_name",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Driver Name",
+   "label": "Staff Name",
    "read_only": 1
   }
  ],

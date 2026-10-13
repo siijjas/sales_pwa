@@ -15,7 +15,7 @@ class SalesProfile(Document):
 		seen_users = set()
 		for row in self.assigned_drivers or []:
 			if row.driver_user in seen_users:
-				frappe.throw(f"Driver {row.driver_user} is already assigned to this profile")
+				frappe.throw(f"User {row.driver_user} is already assigned to this profile")
 			seen_users.add(row.driver_user)
 
 		# Ensure no duplicate payment modes
@@ -66,7 +66,7 @@ class SalesProfile(Document):
 			if not row.driver_user:
 				continue
 			if not frappe.db.get_value("User", row.driver_user, "enabled"):
-				frappe.throw(f"User {row.driver_user} is disabled and cannot be assigned as a driver")
+				frappe.throw(f"User {row.driver_user} is disabled and cannot be assigned to a profile")
 
 	def _validate_one_active_profile_per_driver(self):
 		"""A driver may belong to at most one ACTIVE Sales Profile.
@@ -188,7 +188,7 @@ def _grant_driver_role(user: str):
 		user_doc.add_roles(DRIVER_ROLE)
 	except Exception as e:
 		frappe.log_error(
-			title="van_sale: driver role grant failed",
+			title="sales_pwa: role grant failed",
 			message=f"Could not assign '{DRIVER_ROLE}' to {user}: {e}",
 		)
 
@@ -211,7 +211,7 @@ def _revoke_driver_role_if_unassigned(user: str):
 		user_doc.remove_roles(DRIVER_ROLE)
 	except Exception as e:
 		frappe.log_error(
-			title="van_sale: driver role revoke failed",
+			title="sales_pwa: role revoke failed",
 			message=f"Could not remove '{DRIVER_ROLE}' from {user}: {e}",
 		)
 	finally:

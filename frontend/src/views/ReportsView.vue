@@ -24,15 +24,15 @@
         <FormField label="To">
           <BaseInput v-model="toDate" type="date" @update:model-value="preset = 'custom'" />
         </FormField>
-        <FormField label="Van">
+        <FormField label="Profile">
           <BaseSelect v-model="vanProfile">
-            <option value="">All vans</option>
+            <option value="">All profiles</option>
             <option v-for="v in fleet?.vans || []" :key="v.van_profile" :value="v.van_profile">{{ v.van_name }}</option>
           </BaseSelect>
         </FormField>
-        <FormField label="Driver">
+        <FormField label="Staff">
           <BaseSelect v-model="driver">
-            <option value="">All drivers</option>
+            <option value="">All staff</option>
             <option v-for="d in driverOptions" :key="d.driver" :value="d.driver">{{ d.driver_name }}</option>
           </BaseSelect>
         </FormField>
@@ -103,7 +103,7 @@
 
       <!-- ── Drivers ──────────────────────────────────────────── -->
       <template v-else-if="tab === 'drivers'">
-        <EmptyState v-if="!report.by_driver.length" icon="users" title="No drivers" description="No driver matches these filters." />
+        <EmptyState v-if="!report.by_driver.length" icon="users" title="No staff" description="No staff member matches these filters." />
         <AppCard v-for="d in report.by_driver" :key="d.driver" padding="lg" class="space-y-3">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -445,7 +445,7 @@ const print = () => {
     currency: currency.value,
     periodLabel: periodLabel.value,
     previousLabel: rangeLabel(report.value.period.previous_from, report.value.period.previous_to),
-    scope: [van || 'All vans', drv || 'All drivers'].join(' · '),
+    scope: [van || 'All profiles', drv || 'All staff'].join(' · '),
     formatDelta,
   });
 };

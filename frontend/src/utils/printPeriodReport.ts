@@ -31,7 +31,7 @@ function table(headers: string[], rows: (string | number)[][], opts: { numeric?:
 
 export function printPeriodReport(r: PeriodReport, o: PrintOptions) {
   const t = r.totals;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Van sales report · ${esc(o.periodLabel)}</title>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Sales report · ${esc(o.periodLabel)}</title>
 <style>
   @page { size: A4; margin: 14mm; }
   * { box-sizing: border-box; }
@@ -51,7 +51,7 @@ export function printPeriodReport(r: PeriodReport, o: PrintOptions) {
   tfoot td { font-weight: 700; border-top: 1px solid #333; border-bottom: none; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 </style></head><body>
-  <h1>Van sales report</h1>
+  <h1>Sales report</h1>
   <div class="meta">${esc(o.periodLabel)} · ${esc(o.scope)} · amounts in ${esc(o.currency)} · printed ${esc(new Date().toLocaleString())}</div>
 
   <div class="kpis">
@@ -75,9 +75,9 @@ export function printPeriodReport(r: PeriodReport, o: PrintOptions) {
     { numeric: [1, 2, 3] },
   )}
 
-  <h2>By driver</h2>
+  <h2>By staff</h2>
   ${table(
-    ['Driver', 'Van', 'Orders', 'Sales', 'Returns', 'Collected', 'Expenses', 'Net cash', 'Variance'],
+    ['Staff', 'Profile', 'Orders', 'Sales', 'Returns', 'Collected', 'Expenses', 'Net cash', 'Variance'],
     r.by_driver.map((d) => [esc(d.driver_name), esc(d.van_name), d.orders_count, num(d.sales), num(d.returns), num(d.collections), num(d.expenses), num(d.net_cash), num(d.variance)]),
     {
       numeric: [2, 3, 4, 5, 6, 7, 8],
@@ -129,7 +129,7 @@ export function printPeriodReport(r: PeriodReport, o: PrintOptions) {
 
   <h2>Closed shifts</h2>
   ${table(
-    ['Date', 'Driver', 'Shift', 'Sales', 'Collected', 'Expenses', 'Variance'],
+    ['Date', 'Staff', 'Shift', 'Sales', 'Collected', 'Expenses', 'Variance'],
     r.shifts.map((s) => [esc(day(s.shift_date)), esc(s.driver_name), esc(s.name), num(s.total_sales), num(s.total_collections), num(s.total_expenses), num(s.net_difference)]),
     { numeric: [3, 4, 5, 6] },
   )}

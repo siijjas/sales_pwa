@@ -541,7 +541,7 @@ def open_shift(balance_details, notes: str = None):
 		if not mode:
 			continue
 		if allowed is not None and mode not in allowed:
-			frappe.throw(f"Mode of payment {mode} is not allowed for this driver")
+			frappe.throw(f"Mode of payment {mode} is not allowed for this user")
 		doc.append(
 			"balance_details",
 			{"mode_of_payment": mode, "opening_amount": flt(row.get("opening_amount"))},

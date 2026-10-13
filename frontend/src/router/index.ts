@@ -39,7 +39,7 @@ const router = createRouter({
     { path: '/shift/report/x', redirect: (to) => ({ name: 'shift-summary', query: to.query }) },
     { path: '/shift/report/y/:name', redirect: (to) => ({ name: 'closing-report', params: { name: to.params.name } }) },
     { path: '/eod', redirect: { name: 'shift-close' } },
-    { path: '/van-profiles', name: 'van-profiles', component: () => import('../views/VanProfileView.vue'), meta: { requiresManager: true } },
+    { path: '/sales-profiles', name: 'sales-profiles', component: () => import('../views/SalesProfileView.vue'), meta: { requiresManager: true } },
   ],
 });
 

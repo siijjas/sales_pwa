@@ -17,7 +17,7 @@ from frappe.utils import nowdate
 
 from sales_pwa.sales_app.sales import create_sales_invoice, create_sales_order, get_daily_log, submit_sales_order
 
-TEST_PREFIX = "_Test Van Sale Daily Log"
+TEST_PREFIX = "_Test Sales App Daily Log"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -92,7 +92,7 @@ class TestDailyLogInvoiceStatus(FrappeTestCase):
 				}
 			).insert(ignore_permissions=True)
 
-		cls.driver_user = "_test_van_sale_daily_log_driver@example.com"
+		cls.driver_user = "_test_sales_app_daily_log_driver@example.com"
 		if not frappe.db.exists("User", cls.driver_user):
 			frappe.get_doc(
 				{

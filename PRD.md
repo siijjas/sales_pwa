@@ -1,8 +1,8 @@
-# Van Sale — Product Requirements Document
+# Sales App — Product Requirements Document
 
 ## 1. App Overview
 
-**Van Sale** is a mobile-first Progressive Web App (PWA) for ERPNext field sales. It serves two kinds of staff from one app, chosen per Sales Profile:
+**Sales App** is a mobile-first Progressive Web App (PWA) for ERPNext field sales. It serves two kinds of staff from one app, chosen per Sales Profile:
 
 - **Van Sales** — drivers who carry stock: take orders, invoice and deliver on the spot, take returns, load the van, collect payments, and run a cash shift with an opening float, expenses and deposits out of the drawer, and a counted-cash closing.
 - **Field Sales** — order takers with no van: take orders and collect payments, see read-only stock from a chosen warehouse, and leave invoicing, delivery and returns to the back office. Shifts are optional for them.
@@ -47,7 +47,7 @@ Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, 
 |------|-------------|
 | **System Manager** | Full admin — CRUD on all doctypes, all API endpoints, can delete records. |
 | **Sales Manager** | Operations manager — manage Sales Profiles, view all reports, close and reopen any shift, cancel cash movements. Cannot delete. |
-| **Sales App User** | Field staff (both profile types) — the role is assigned automatically to users on an active Sales Profile. Holds read-only DocPerms on Sales Order and on all van_sale documents; every write goes through a whitelisted endpoint that authorizes the caller (own data, own open shift, profile rules) and then bypasses DocPerms. Row-level isolation: own data only. |
+| **Sales App User** | Field staff (both profile types) — the role is assigned automatically to users on an active Sales Profile. Holds read-only DocPerms on Sales Order and on all Sales App documents; every write goes through a whitelisted endpoint that authorizes the caller (own data, own open shift, profile rules) and then bypasses DocPerms. Row-level isolation: own data only. |
 
 ---
 

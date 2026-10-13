@@ -66,7 +66,7 @@ def setup_sales_app_user_permissions():
 	"""
 	if not frappe.db.exists("Role", DRIVER_ROLE):
 		frappe.log_error(
-			title="van_sale setup",
+			title="sales_pwa setup",
 			message=f"Role '{DRIVER_ROLE}' not found — skipping permission setup. "
 			        "Run bench migrate again after the fixtures have been imported.",
 		)
@@ -86,7 +86,7 @@ def setup_sales_app_user_permissions():
 				update_permission_property(doctype, DRIVER_ROLE, 0, ptype, value)
 			except Exception as exc:
 				frappe.log_error(
-					title=f"van_sale: permission update failed",
+					title="sales_pwa: permission update failed",
 					message=f"Could not set {ptype}={value} on '{doctype}' "
 					        f"for role '{DRIVER_ROLE}': {exc}",
 				)

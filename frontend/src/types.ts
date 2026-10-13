@@ -90,7 +90,7 @@ export interface DriverConfig {
   capabilities?: Capabilities;
 }
 
-export interface VanProfileDriver {
+export interface SalesProfileDriver {
   driver_user: string;
   driver_full_name?: string;
 }
@@ -215,7 +215,7 @@ export interface CashMovementContext {
   movements: CashMovement[];
 }
 
-export interface VanProfile {
+export interface SalesProfile {
   name: string;
   profile_name: string;
   profile_type: ProfileType;
@@ -228,7 +228,7 @@ export interface VanProfile {
   source_warehouse: string | null;
   van_warehouse: string | null;
   stock_warehouse?: string | null;
-  assigned_drivers: VanProfileDriver[];
+  assigned_drivers: SalesProfileDriver[];
   allowed_payment_modes: string[];
   allowed_customer_groups: string[];
   taxes_and_charges?: string;
@@ -276,7 +276,7 @@ export interface VanProfile {
   capabilities?: Capabilities;
 }
 
-export interface VanProfileOptions {
+export interface SalesProfileOptions {
   warehouses: Array<{ name: string; company: string }>;
   payment_modes: PaymentMode[];
   routes: Array<{ name: string }>;

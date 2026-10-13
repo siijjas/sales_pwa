@@ -16,7 +16,7 @@ from frappe.utils import nowdate
 
 from sales_pwa.sales_app.sales import create_sales_order, get_item_sales_history, submit_sales_order
 
-TEST_PREFIX = "_Test Van Sale Item History"
+TEST_PREFIX = "_Test Sales App Item History"
 
 
 def _root_group(doctype: str) -> str | None:
@@ -70,8 +70,8 @@ class TestItemSalesHistory(FrappeTestCase):
 					}
 				).insert(ignore_permissions=True)
 
-		cls.driver_a = "_test_van_sale_history_driver_a@example.com"
-		cls.driver_b = "_test_van_sale_history_driver_b@example.com"
+		cls.driver_a = "_test_sales_app_history_driver_a@example.com"
+		cls.driver_b = "_test_sales_app_history_driver_b@example.com"
 		for user in (cls.driver_a, cls.driver_b):
 			if not frappe.db.exists("User", user):
 				frappe.get_doc(

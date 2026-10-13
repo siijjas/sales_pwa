@@ -20,7 +20,7 @@
       // Apply persisted theme before first paint to avoid a flash.
       (function () {
         try {
-          var p = localStorage.getItem('vansale-theme') || 'system';
+          var p = localStorage.getItem('sales-app-theme') || 'system';
           var dark = p === 'dark' || (p === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           var m = document.querySelector('meta[name="theme-color"]');
           if (dark) {

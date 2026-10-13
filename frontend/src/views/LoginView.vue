@@ -9,17 +9,17 @@
       <div class="space-y-7">
         <div class="flex items-center gap-3">
           <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-fg shadow-raised">
-            <AppIcon name="truck" :size="26" />
+            <AppIcon name="briefcase" :size="26" />
           </div>
-          <p class="text-[11px] font-bold uppercase tracking-[0.3em] text-primary">Van Sales</p>
+          <p class="text-[11px] font-bold uppercase tracking-[0.3em] text-primary">Sales App</p>
         </div>
         <div class="space-y-3">
           <h1 class="max-w-xl text-4xl font-bold tracking-tight text-foreground lg:text-5xl">
-            Your route, in one workspace.
+            Your sales day, in one workspace.
           </h1>
           <p class="max-w-md text-base leading-7 text-muted">
-            Orders, collections, van stock, returns, and end-of-day — built for the field. Sign in with your ERPNext
-            credentials to start your shift.
+            Orders, collections, stock, returns and shift close — built for van and field sales. Sign in with your
+            ERPNext credentials to start your day.
           </p>
         </div>
         <div class="grid max-w-md gap-3 sm:grid-cols-3">
@@ -70,9 +70,9 @@ const loading = ref(false);
 const error = ref('');
 
 const features = [
-  { label: 'Field Orders', icon: 'cart' },
+  { label: 'Orders', icon: 'cart' },
   { label: 'Collections', icon: 'wallet' },
-  { label: 'Van Stock', icon: 'boxes' },
+  { label: 'Stock & Returns', icon: 'boxes' },
 ];
 
 // Native inputs handle required; submit validates server-side.

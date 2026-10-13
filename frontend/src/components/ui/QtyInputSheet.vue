@@ -18,8 +18,8 @@
         <button
           type="button"
           class="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-3xl bg-card-muted text-foreground ring-1 ring-inset ring-line transition ease-emphasis active:scale-90 disabled:opacity-40"
-          :disabled="localQty <= step"
-          @click="localQty = roundQty(Math.max(step, localQty - step))"
+          :disabled="localQty <= increment"
+          @click="localQty = roundQty(Math.max(increment, localQty - increment))"
         >
           <AppIcon name="minus" :size="20" :stroke-width="2.2" />
         </button>
@@ -27,8 +27,8 @@
           ref="inputRef"
           v-model.number="localQty"
           type="number"
-          inputmode="decimal"
-          step="any"
+          :inputmode="wholeNumber ? 'numeric' : 'decimal'"
+          :step="wholeNumber ? 1 : 'any'"
           min="0"
           class="tnum h-[58px] w-full rounded-3xl border-0 bg-card-muted text-center text-2xl font-semibold text-foreground shadow-[inset_0_0_0_1.5px_rgb(var(--c-primary))] focus:outline-none focus:ring-0"
           @focus="($event.target as HTMLInputElement).select()"
@@ -38,13 +38,16 @@
           type="button"
           class="flex h-[58px] w-[58px] shrink-0 items-center justify-center rounded-3xl bg-primary text-primary-fg shadow-btn transition ease-emphasis active:scale-90 active:brightness-90 active:shadow-none disabled:opacity-40"
           :disabled="maxQty !== undefined && localQty >= maxQty"
-          @click="localQty = roundQty(localQty + step)"
+          @click="localQty = roundQty(localQty + increment)"
         >
           <AppIcon name="plus" :size="20" :stroke-width="2.2" />
         </button>
       </div>
 
-      <AppButton block size="lg" @click="confirm">
+      <p v-if="qtyError" class="text-center text-[13px] font-semibold text-danger">{{ qtyError }}</p>
+      <p v-else-if="wholeNumber" class="text-center text-xs text-muted">Sold in whole {{ uom || 'units' }} only.</p>
+
+      <AppButton block size="lg" :disabled="Boolean(qtyError)" @click="confirm">
         {{ confirmLabel || 'Confirm' }}
       </AppButton>
 
@@ -62,7 +65,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { computed, ref, watch, nextTick } from 'vue';
 import BottomSheet from './BottomSheet.vue';
 import AppButton from './AppButton.vue';
 import AppIcon from './AppIcon.vue';
@@ -76,9 +79,13 @@ const props = withDefaults(defineProps<{
   initialQty?: number;
   confirmLabel?: string;
   step?: number;
+  /** The item's UOM cannot be sold in fractions: step in ones and refuse decimals. */
+  wholeNumber?: boolean;
+  uom?: string;
 }>(), {
   initialQty: 0,
   step: 1,
+  wholeNumber: false,
 });
 
 const emit = defineEmits<{
@@ -92,6 +99,13 @@ const inputRef = ref<HTMLInputElement | null>(null);
 // regardless of the +/- button increment. Typing a fraction is still always
 // possible for items that do support it (e.g. Dozen).
 const localQty = ref(props.initialQty || 1);
+// +/- always move by a whole unit for whole-number items, whatever step the caller asked for.
+const increment = computed(() => (props.wholeNumber ? 1 : props.step));
+const qtyError = computed(() => {
+  const q = Number(localQty.value);
+  if (props.wholeNumber && Number.isFinite(q) && q !== Math.floor(q)) return `Enter a whole number of ${props.uom || 'units'}.`;
+  return '';
+});
 
 // Guard against floating-point drift (e.g. 0.1 + 0.2) when stepping.
 function roundQty(value: number) {
@@ -110,6 +124,7 @@ function close() {
 }
 
 function confirm() {
+  if (qtyError.value) return;
   const qty = localQty.value > 0 ? localQty.value : 1;
   emit('confirm', qty);
   close();

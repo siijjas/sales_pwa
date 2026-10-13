@@ -158,7 +158,9 @@ export const useSessionStore = defineStore('session', {
     updateQty(itemCode: string, delta: number) {
       const idx = this.cart.findIndex((line) => line.item.item_code === itemCode);
       if (idx === -1) return;
-      const newQty = this.cart[idx].qty + delta;
+      let newQty = this.cart[idx].qty + delta;
+      // A line that somehow holds a fraction of a whole-number item snaps to a whole unit.
+      if (this.cart[idx].item.must_be_whole_number) newQty = Math.round(newQty);
       if (newQty <= 0) {
         this.cart.splice(idx, 1);
       } else {

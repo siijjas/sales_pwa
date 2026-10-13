@@ -353,6 +353,28 @@ async function getCustomerPriceList(customer: string): Promise<string | null> {
   }
 }
 
+// Fetched once per session: UOMs that must be sold in whole units.
+let wholeNumberUoms: Promise<Set<string>> | null = null;
+export function getWholeNumberUoms(): Promise<Set<string>> {
+  if (!wholeNumberUoms) {
+    wholeNumberUoms = fetch('/api/method/sales_pwa.sales_app.inventory.get_whole_number_uoms', { credentials: 'include' })
+      .then(handleResponse)
+      .then((data) => new Set<string>(data.message || []))
+      .catch(() => {
+        wholeNumberUoms = null; // retry next time
+        return new Set<string>();
+      });
+  }
+  return wholeNumberUoms;
+}
+
+/** Stamp must_be_whole_number on catalog rows from their stock UOM. */
+export async function markWholeNumberItems<T extends { stock_uom: string; must_be_whole_number?: boolean }>(items: T[]): Promise<T[]> {
+  const uoms = await getWholeNumberUoms();
+  for (const item of items) item.must_be_whole_number = uoms.has(item.stock_uom);
+  return items;
+}
+
 export async function listItems(search?: string, customer?: string, opts: { hideUnavailable?: boolean } = {}): Promise<Item[]> {
   const filters = [['is_sales_item', '=', 1], ['disabled', '=', 0]];
   const or_filters = search
@@ -377,6 +399,7 @@ export async function listItems(search?: string, customer?: string, opts: { hide
   });
   const data = await handleResponse(res);
   const items = (data.data || data.message || []) as Item[];
+  await markWholeNumberItems(items);
 
   // Prefer the driver's own Sales Profile price list (their "special" pricing,
   // e.g. "For special customers") over the global Selling Settings default —

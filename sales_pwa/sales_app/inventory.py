@@ -132,6 +132,15 @@ def get_driver_stock_dashboard(force_refresh: int = 0):
 	return payload
 
 @frappe.whitelist()
+def get_whole_number_uoms() -> list[str]:
+	"""UOMs that cannot be sold in fractions (UOM.must_be_whole_number), so the catalog
+	can step and validate quantities in whole units. App users cannot read UOM
+	through /api/resource, hence this endpoint."""
+	_require_van_user()
+	return frappe.get_all("UOM", filters={"must_be_whole_number": 1}, pluck="name")
+
+
+@frappe.whitelist()
 def search_transfer_items(search: str | None = None, page_length: int = 20):
 	_require_van_user()
 	_require_capability("can_load_stock", "load stock")

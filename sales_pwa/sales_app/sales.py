@@ -245,7 +245,24 @@ def _coerce_order_lines(items):
 		out.append({"item_code": item_code, "qty": qty, "rate": flt(row.get("rate"))})
 	if not out:
 		frappe.throw("Add at least one item with a quantity before saving this order.")
+	_reject_fractional_whole_units(out)
 	return out
+
+
+def _reject_fractional_whole_units(lines: list[dict]) -> None:
+	"""Items sold in a whole-number UOM (Nos, Unit, Box, ...) cannot carry a fractional
+	quantity. The catalog enforces this too, but the order is built from whatever the
+	client sent, so the rule is checked here as well."""
+	for row in lines:
+		uom = frappe.get_cached_value("Item", row["item_code"], "stock_uom")
+		if not uom or not frappe.get_cached_value("UOM", uom, "must_be_whole_number"):
+			continue
+		if flt(row["qty"]) != int(flt(row["qty"])):
+			item_name = frappe.get_cached_value("Item", row["item_code"], "item_name") or row["item_code"]
+			frappe.throw(
+				f"{item_name} is sold in whole {uom} only. A quantity of {flt(row['qty'])} is not allowed.",
+				frappe.ValidationError,
+			)
 
 
 def _apply_order_payload(doc, customer, items, discount_percent, discount_amount):

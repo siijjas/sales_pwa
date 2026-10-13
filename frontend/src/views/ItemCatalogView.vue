@@ -84,11 +84,13 @@
     <QtyInputSheet
       v-model="sheetOpen"
       :title="selectedItem?.item_name || ''"
-      :subtitle="selectedItem?.item_code"
+      :subtitle="selectedItem ? `${selectedItem.item_code} · ${selectedItem.stock_uom}` : undefined"
       :price="selectedItem ? `${currency} ${itemPrice(selectedItem)?.toFixed(2)}` : undefined"
       :max-qty="!allowWithoutStock && selectedItem?.actual_qty !== undefined ? selectedItem.actual_qty : undefined"
       :initial-qty="selectedItem ? getQty(selectedItem.item_code) : 0"
-      :step="0.5"
+      :step="selectedItem?.must_be_whole_number ? 1 : 0.5"
+      :whole-number="Boolean(selectedItem?.must_be_whole_number)"
+      :uom="selectedItem?.stock_uom"
       :confirm-label="selectedItem && getQty(selectedItem.item_code) > 0 ? 'Update qty' : 'Add to order'"
       @confirm="onQtyConfirmed"
     />

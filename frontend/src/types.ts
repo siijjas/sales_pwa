@@ -314,6 +314,8 @@ export interface Item {
   item_name: string;
   description: string;
   stock_uom: string;
+  /** stock_uom is a whole-number UOM (Nos, Box, ...): no fractional quantities. */
+  must_be_whole_number?: boolean;
   image?: string;
   item_group: string;
   standard_rate?: number;

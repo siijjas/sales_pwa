@@ -53,269 +53,74 @@ Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, 
 
 ## 5. Screen Inventory
 
-### 5.1 Login Screen
-**Route:** `/login`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Authenticate the user against ERPNext credentials and bootstrap the session (user info, driver config, roles). |
-| **Key Elements** | App branding headline · Feature highlight cards (Orders, Payments, Profiles) · Username input · Password input · "Sign in" button · Error message banner |
-| **Functionality** | `POST` to Frappe login API → on success, store `UserSession` in Pinia (includes `driver_config`, `is_manager`, `is_driver`) and redirect to Dashboard. On failure, show inline error. |
-| **Navigation** | → **Dashboard** (on success). Authenticated users hitting `/login` are auto-redirected to Dashboard. |
-
----
+The app is organised around five tabs (phone) or a rail (tablet/desktop). Everyone gets **Home**, **Sell**, **Customers** and **More**; the fourth tab is **Stock** for a van with stock access, **Reports** for a manager without a profile, and **Activity** otherwise. **More** lists everything else the person may reach. Each job has one place: selling is a three-step flow, everything about a customer starts from the customer page, and the shift has its own area.
 
-### 5.2 Dashboard
-**Route:** `/` (home)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Central hub showing today's KPIs, the state of the shift, and one-tap access to every workflow the profile allows. |
-| **Key Elements** | Setup warning banner (if no profile) · Shift notice (unclosed shift from an earlier day, or "open your shift" when the profile requires one) · **Quick Actions grid** gated by capabilities (New Order, Payment, Ledger; Load Stock / Return for Van Sales; Open Shift / Close Shift, Cash Out, Shift Reports when the profile uses shifts) · **This shift so far** tiles on an open shift (sales, collected, cash in hand, pending drafts) · **Today's Performance** cards · **Recent Activity** list · Manager dashboard for managers (see 5.21) |
-| **Functionality** | On mount: parallel fetch `recentOrders()`, `getDailySummary()` and, when the profile uses shifts, `getActiveShift()`; then `getShiftSummary()` for an open, non-stale shift. Actions that need a shift send the driver to open or close one first. |
-| **Navigation** | → Customer Select (New Order / Payment / Return / Ledger) · → Stock Transfer · → Shift Open / Close · → Expenses & Deposits · → Shift Reports · → Order Detail · → Daily Log |
-
----
+### 5.1 Login
+**Route:** `/login` — username and password against ERPNext; on success the session (user, roles, driver config, capabilities) is stored and the app opens on Home (or on the page that was asked for).
 
-### 5.3 Customer Select
-**Route:** `/customers`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Search and pick a customer before entering the order, payment, ledger, or return workflow. Acts as a routing gateway. |
-| **Key Elements** | Back button · Search input (debounced 300ms) · Customer list (name, ID, territory badge) · Loading skeleton · "Current Action" info card explaining the downstream flow |
-| **Functionality** | Fetches customers via `searchCustomers(txt)` on mount and on search change. On selection, stores customer in Pinia and routes based on `redirect` query param: `order` → Item Catalog, `payment` → Payment Entry, `ledger` → Customer Ledger, `return` → Return Catalog. |
-| **Navigation** | → Item Catalog · → Payment Entry · → Customer Ledger · → Return Catalog · ← Back (previous screen) |
-
----
+### 5.2 Home
+**Route:** `/`
 
-### 5.4 Item Catalog
-**Route:** `/items`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Browse the product catalog, see real-time van stock and prices, and add items to the order cart. |
-| **Key Elements** | Back button · Sticky search bar with icon · Item list rows (name, code, price, stock badge — Out of Stock / Low / Available) · Per-item quantity stepper (+/−) · **Floating cart summary bar** (total + "Checkout (N)" button) |
-| **Functionality** | Loads items via `listItems(search, customer)` — returns items with `price_list_rate` and `actual_qty` from the van warehouse. Debounced search (300ms). Add button is disabled for out-of-stock items. Cart state is managed in Pinia (`addToCart`, `updateQty`). Resumes existing draft order items if `currentOrderName` is set. |
-| **Navigation** | → Cart View (via floating bar) · ← Customer Select |
-
----
+| Person | What it shows |
+|--------|---------------|
+| **Staff** | Greeting and shift chip (open since / unclosed / none) · a shift gate card when a shift must be opened or closed first · the **New sale** button and a **Resume sale** row when a draft is in progress (drafts survive refreshes) · shortcuts: Collect payment, Return, Load van, Cash out, Ledger (by capability) · **This shift** tiles on an open shift · **Today** tiles (orders, collected) · recent orders. |
+| **Manager without a profile** | **Fleet home**: today's collections, open/closed shift counts, shortcuts (New sale, Reports, Staff, Setup), fleet tiles, alerts (stale shifts, variances, drafts, trading without a shift) with close/report links, one card per staff member with Close Shift. |
 
-### 5.5 Cart / Review Order
-**Route:** `/cart`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Review, adjust quantities and prices, and confirm the order before submission. |
-| **Key Elements** | Customer info card · Item list with quantity stepper (+/−) and editable price chip · Subtotal / Tax / Grand Total breakdown · "Clear All" button · **Sticky "Confirm Order"** button · **Edit Price modal** (bottom sheet with override input and Apply/Cancel) |
-| **Functionality** | Tapping the price chip opens a bottom-sheet modal to override the unit rate (`updateRate`). On confirm: builds `itemsPayload`, calls `createSalesOrder()` or `updateSalesOrder()` (for existing drafts). On success, clears cart and navigates to History. Tax is pulled from the existing order detail if available. |
-| **Navigation** | → History (on submit) · → Item Catalog (Browse Catalog button) · ← Back |
-
----
+### 5.3 Sell (three steps)
+**Routes:** `/sell/customer` → `/sell/items` → `/sell/review` (tabs hidden; a step header shows progress)
 
-### 5.6 Order History
-**Route:** `/history`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | List recently created orders for quick review and follow-up. |
-| **Key Elements** | "New Order" button · Refresh button · Order cards (customer name, order ID, date, status pill, grand total) · Empty state · Loading skeleton |
-| **Functionality** | Fetches `recentOrders(user)` on mount. Each card is tappable → Order Detail. |
-| **Navigation** | → Order Detail · → Customer Select (New Order) |
-
----
+| Step | Detail |
+|------|--------|
+| **Customer** | Search (name, ID, mobile), New customer sheet (when the profile allows), "Continue with" the draft's customer. `?customer=` skips the step. |
+| **Items** | Price-list-aware catalog with stock badges and sales history per item, quantity sheet (whole-number UOMs step by one), running total bar. Editing a draft order shows which one. |
+| **Review** | Lines with quantity and editable price (when allowed), discount (percent or amount, capped by the profile), totals, then **Submit order** or **Submit & invoice**. The second opens the invoice sheet (below) on the freshly submitted order. Both end on the order page. |
 
-### 5.7 Order Detail
-**Route:** `/orders/:name`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Inspect a specific Sales Order — line items, totals, status — and perform actions (submit, edit, print). |
-| **Key Elements** | Order header (ID, customer, date, status pill, docstatus pill) · Grand Total · Company & Price List info · Items table (name, code, UOM, rate, qty, amount, delivery date) · **Action buttons**: Submit Order (draft only), Edit Items (draft), Add Items (draft), Print Receipt (submitted), Open in ERPNext, Reload |
-| **Functionality** | Fetches `getSalesOrder(name)`. Submit calls `submitSalesOrder()` then reloads. Edit Items pre-loads cart from order items and navigates to Cart. Add Items navigates to Item Catalog. Print Receipt calls `downloadPdf('Sales Order', name)`. Open in ERPNext opens `/app/sales-order/:name` in a new tab. |
-| **Navigation** | → Cart (Edit Items) · → Item Catalog (Add Items) · → ERPNext desk (external) · ← Back |
-
----
+The draft (customer, lines, discount, the draft order being edited) is kept per user in local storage.
 
-### 5.8 Payment Entry
-**Route:** `/payment`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Create a Payment Entry against a customer — the core receivable collection workflow. |
-| **Key Elements** | Customer card (with Change button) · **Customer Summary** banner (outstanding balance, last invoice, last payment) · Mode of Payment dropdown · Paid Amount input · **Allocation Type** toggle (Auto FIFO / Manual / Advance) · Outstanding Invoices list with checkboxes and editable allocation amounts · Invoice search (manual mode) · Sales Order list with radio buttons (advance mode) · Unallocated amount indicator · **Sticky "Confirm Payment"** button |
-| **Functionality** | On mount: fetches `getPaymentModes()`, `getOutstandingInvoices()`, `getSalesOrders()`, `getCustomerSummary()`. **Auto mode**: entering an amount triggers FIFO allocation across invoices sorted by posting date. **Manual mode**: tap invoices to select, edit allocation per invoice, paid amount auto-sums. **Advance mode**: optionally link to a Sales Order or leave unlinked. Submit calls `createPaymentEntry(customer, mode, amount, references, salesOrder)`. |
-| **Navigation** | → Customer Select (Change customer) · ← Back (on success or cancel) |
-
----
+### 5.4 Invoice sheet (shared)
+Opened from Review ("Submit & invoice") and from an order. Step 1: credit or paid now, mode of payment, and the invoice options that fit that payment rule (one option is pre-selected). Step 2: the proposed invoice number, lines, taxes and totals as ERPNext computes them, a note when the order is re-taxed to the option, and the stock shortage rule. Confirm creates the Sales Invoice (and the payment when paid now).
 
-### 5.9 Payment Detail
-**Route:** `/payment-detail/:name`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Read-only view of a submitted Payment Entry — amount, mode, allocation references. |
-| **Key Elements** | Customer name + status badge · Date + Mode grid · Amount Paid (large) · "Allocated To" list (reference doctype, name, allocated amount) · Print Receipt button |
-| **Functionality** | Fetches `getPaymentEntry(name)`. Print Receipt calls `downloadPdf('Payment Entry', name)`. |
-| **Navigation** | ← Back |
+### 5.5 Customers and the customer page
+**Routes:** `/customers` · `/customers/:name`
 
----
+The list searches by name, ID or mobile and can add a customer. The customer page is the hub for everything about one customer: balance and last invoice/payment (when the profile shows balances), actions **New sale**, **Collect payment**, **Return**, **Ledger**, the outstanding invoices and recent orders.
 
-### 5.10 Customer Ledger
-**Route:** `/ledger`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Review a customer's financial history — invoiced amounts, receipts, and running balance over a configurable period. |
-| **Key Elements** | Customer selector (with Change) · Period dropdown (Last Week / Month / 3 Months / 6 Months) · Opening Balance card · Invoiced vs. Received summary cards · Transaction list (icon per type, description, date, voucher number, debit/credit amount, running balance) · **Outstanding Balance** gradient card at bottom |
-| **Functionality** | Calls `getCustomerLedger(customer, from, to)` which returns `{ opening_balance, entries[] }`. Computes running balance per entry. Debit = Invoice (red), Credit = Payment (green). Period change triggers re-fetch via watcher. |
-| **Navigation** | → Customer Select (Change customer) · ← Back |
+### 5.6 Collect payment
+**Route:** `/customers/:name/collect` — amount and mode, then allocation: Auto (oldest invoices first), Manual (pick invoices and amounts) or Advance (optionally against a sales order). Ends back on the customer page.
 
----
+### 5.7 Customer ledger
+**Route:** `/customers/:name/ledger` — period chips, opening/invoiced/received tiles, transactions with running balance, outstanding balance.
 
-### 5.11 Daily Log
-**Route:** `/daily-log/:type` (type = `orders` | `payments`)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | View all of today's Sales Orders or Payment Entries in one place, with totals and mode-of-payment breakdown. |
-| **Key Elements** | Back button · **Payment Summary card** (total collection + per-mode breakdown grid — payments only) · Transaction cards (customer/party name, ID, status pill, mode-of-payment tag, date, amount) · Empty state |
-| **Functionality** | Calls `getDailyLog(doctype)`. Tapping a card navigates to Order Detail or Payment Detail depending on type. Status badges are color-coded (Draft, Submitted, Paid, etc.). |
-| **Navigation** | → Order Detail (orders) · → Payment Detail (payments) · ← Dashboard |
+### 5.8 Return
+**Routes:** `/customers/:name/return` → `/customers/:name/return/review` — pick items and quantities, review the credit, issue the credit note. Ends on the customer page.
 
----
+### 5.9 Activity
+**Route:** `/activity?tab=orders|payments` — orders and payments the person recorded, searchable with a date filter, paged. Opens the order page or the payment page.
 
-### 5.12 Driver Stock Dashboard
-**Route:** `/stock` (requires driver config)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Live view of all items in the driver's assigned van warehouse with low-stock alerts. |
-| **Key Elements** | Refresh button · Offline snapshot warning banner · Error banner · No-profile message · **Summary grid** (Items count, Low Stock count, Available Qty, Reserved Qty) · Source Warehouse + Low Threshold info · Search/filter input · Stock item cards (name, code, UOM, Available / Reserved / Projected quantities, "Low" badge) |
-| **Functionality** | Calls `getDriverStockDashboard(forceRefresh)`. Caches response in `localStorage` — if API fails, falls back to cached snapshot with warning. Search filters items client-side by name or code. Requires `driverConfig` (route guard redirects to Dashboard with setup prompt if missing). |
-| **Navigation** | ← Dashboard (via nav) |
-
----
+### 5.10 Order page
+**Route:** `/orders/:name` — status, customer (links to the customer page), items, totals. Draft: Edit (reopens the sale flow on it) and Submit. Submitted: Create invoice (invoice sheet), Deliver pending items once billed short of stock, Print, Collect payment. Field Sales sees that the back office invoices.
 
-### 5.13 Stock Transfer (Load Van)
-**Route:** `/transfer` (requires driver config)
+### 5.11 Payment page
+**Route:** `/payments/:name` — amount, date, mode, allocations, print, link to the customer.
 
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Build and submit a Material Transfer (Stock Entry) from the main warehouse to the van warehouse. |
-| **Key Elements** | From/To warehouse display · Optional remarks textarea · Search input for source items · Source item results (name, code, UOM, available qty, batch/serial indicators, Add button) · **Transfer Lines** list (qty input, batch dropdown, serial number textarea, Remove button, available qty) · **Sticky footer** (line count + Submit Transfer button) |
-| **Functionality** | Searches source warehouse items via `searchTransferItems(search)`. Adding an item calls `getTransferItemDetail(itemCode)` to get batch/serial info. Validates: qty > 0, qty ≤ available, batch selected if required, serial count matches qty. Submit calls `createStockTransfer(lines, remarks)` which creates a Stock Entry (Material Transfer). On success, clears lines and reloads source items. |
-| **Navigation** | ← Back |
+### 5.12 Stock
+**Routes:** `/stock` · `/stock/load` — live stock of the selling warehouse with low-stock alerts and search; **Load van** builds a Material Transfer from the main warehouse (batches and serials handled per item).
 
----
+### 5.13 Shift
+**Routes:** `/shift` · `/shift/open` · `/shift/close` · `/shift/cash` · `/shift/reports` · `/shift/summary` · `/shift/closing-report/:name`
 
-### 5.14 Return Catalog
-**Route:** `/return-items`
+The shift page shows the state (no shift / open since / unclosed from an earlier day) with the one action that fits, this shift's tiles and drafts, recent cash movements and the reports. Open declares the float per mode. Cash out records an expense or a deposit to the office (each a Journal Entry) and offers to close the shift after a deposit. Close counts every mode against the expected amount (or blind), flags the variance against the tolerance, lists drafts and activity outside the window, and opens the closing report. Managers close or reopen any shift from the fleet home or a report.
 
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Select items and quantities to return from a customer. |
-| **Key Elements** | Back button · Customer name display · Search input · Item cards (name, code, return credit rate, +/− stepper) · **Floating "View Return"** bar (return total + button) |
-| **Functionality** | Loads items via `listItems(search, customer)`. Uses separate `returnCart` in Pinia store (`addToReturnCart`, `updateReturnQty`). Price displayed is the credit rate. |
-| **Navigation** | → Return Cart (View Return) · ← Customer Select |
+### 5.14 Manager: Reports, Staff, Setup
+**Routes:** `/reports` · `/staff` · `/setup` · `/setup/invoice-options`
 
----
+Reports: any period compared with the previous one, by driver, items, customers, collections, expenses and closed shifts, printable. Staff: the Sales Profiles (type, warehouses, payment modes, cash accounts, staff controls, invoice options, assigned staff). Setup: invoice options (numbering series, tax template, payment rule), a link to Staff, appearance, and a short note on how access works.
 
-### 5.15 Return Cart
-**Route:** `/return-cart`
+### 5.15 More
+**Route:** `/more` — the rest of the navigation for this person (Activity, Stock, Shift, Reports, Staff, Setup), appearance and sign out.
 
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Review return quantities and process the credit note. |
-| **Key Elements** | Total Credit Issued card · Item count · Item list (name, code, unit price, line total, +/− stepper) · Error banner · **Sticky "Process Return Credit"** button |
-| **Functionality** | On submit: maps cart to `{ item_code, qty }[]` and calls `createSalesReturn(customer, items)`. Backend creates a Credit Note. On success, clears return cart and redirects to Customer Ledger to verify the credit. |
-| **Navigation** | → Customer Ledger (on success) · ← Return Catalog |
-
----
-
-### 5.16 Expenses & Deposits (Cash Movements)
-**Route:** `/expenses` (profile must use shifts)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Record cash leaving the drawer during an open shift: an **Expense** (fuel, tolls, a repair) or a **Deposit** of cash to the office. Each posts a Journal Entry. |
-| **Key Elements** | "No open shift" state with an Open Shift button · Expense / Deposit segmented control (per profile flags) · Amount (with the profile's max per movement) · Expense account select (restricted to the profile's allowed accounts, defaulting to its default expense account) · Paid to / Deposited with · Remarks (required if the profile says so) · Source → target account preview · This-shift list with KPI tiles (expenses, deposited), Journal Entry numbers, and a manager-only Cancel |
-| **Functionality** | `getCashMovementContext()` returns the rules, accounts and this shift's movements. `createCashMovement()` requires the caller's own open shift, validates the profile rules server-side (`Sales Cash Movement.validate`), freezes the accounts on the document and posts the Journal Entry on submit: Expense = debit expense account / credit drawer; Deposit = debit back-office cash account / credit drawer. The drawer account is the profile's Cash Drawer Account, else the Default Cash Mode's account for the company, else the company default cash account. `cancelCashMovement()` (managers) reverses the Journal Entry, only while the shift is still open. |
-| **Navigation** | → Shift Open (if none) · ← Dashboard |
-
----
-
-### 5.17 Shift Open
-**Route:** `/shift/open` (profile must use shifts)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Start the shift with an opening cash float per payment mode. |
-| **Functionality** | `openShift(balance_details, notes)` creates and submits a **Sales Shift Opening** with `period_start = now`. Refused while the driver has any open shift, including one from an earlier day ("stale"), which must be closed first. Only the profile's allowed payment modes are accepted. |
-
----
-
-### 5.18 Shift Close
-**Route:** `/shift/close` (`?opening=` lets a manager close a specific driver's shift)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Reconcile each payment mode and close the shift. |
-| **Key Elements** | Stale / closing-on-behalf banner · **Draft orders** warning listing unsubmitted orders made during the shift (links to each) · **Activity before this shift opened** notice (orders / payments on the shift's date created before it opened and claimed by no closing) · KPI tiles (sales with units and tax, collections, opening float, expected cash, expenses, deposits) · Per-mode reconciliation (opening, expected, counted input, difference) · Net variance panel with the tolerance status (Balanced / Within Tolerance / Exceeds Tolerance) · Notes · Sticky Close Shift |
-| **Functionality** | `getShiftClosingSummary()` recomputes everything server-side for the shift's window (driver + creation between `period_start` and now): submitted Sales Orders (sales, net, taxes, quantity), Sales Invoices (invoiced / returns), receive Payment Entries (collections per mode), Van Cash Movements linked to the shift (expenses, deposits) and legacy Van Expense Logs by date. Records already summed by another submitted closing are excluded. Expenses and deposits are deducted from the cash mode's expected amount. `closeShift()` stores all totals, the taxes table, the per-mode reconciliation, the variance tolerance and status, the number of drafts left, the frozen `transactions` list and `period_end`, then marks the opening Closed and links it to the closing. A stale shift closes as the day it was opened. Nothing blocks a close: variances and drafts are flagged only. |
-| **Navigation** | → Closing Report (on success) · ← Back |
-
----
-
-### 5.19 Shift Reports
-**Routes:** `/shift/reports` (list) · `/shift/summary` (open shift, `?opening=` for managers) · `/shift/closing-report/:name`
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | The **Shift Summary** is a read-only live snapshot of an open shift (it never closes it). The **Closing Report** is the final report of a closed shift, read from the Sales Shift Closing so it reprints identically. |
-| **Key Elements** | Header (driver, van, opened, closed / as of, closed by) · KPI tiles · Variance panel with status and tolerance · Sales breakdown (orders, net before tax with units, taxes, invoices, returns, net invoiced) · Taxes on orders by account and rate · Collections by mode · Cash reconciliation · Expenses and deposits with Journal Entry numbers · Items sold / returned · Draft orders (summary) or drafts-left note (closing) · Notes · Print (PDF via the "Sales Shift Summary" / "Sales Shift Closing Report" print formats) · **Reopen shift** (managers, closing report) |
-| **Functionality** | `getShiftSummary()`, `getClosingReport()`, `getShiftClosings()`; `reopenShift(closing)` cancels the closing, puts the opening back to Open with no end time, and is refused while the driver has another open shift. The shift then continues until closed again; the new closing spans from the original opening to the new close. Drivers see only their own shifts; managers see all. |
-
----
-
-### 5.20 Settings → Sales Profiles (Manager Only)
-**Routes:** `/settings`, `/van-profiles` (requires manager role)
-
-| Section | Detail |
-|---------|--------|
-| Identity | Profile name, **Profile type** (Van Sales / Field Sales), company, delivery route (Territory), active flag |
-| Warehouses | Van Sales: source warehouse and van warehouse (required, different). Field Sales: an optional read-only stock warehouse |
-| Drivers / customers / payments | Assigned staff (role is synced automatically), allowed customer groups, allowed payment modes, default cash mode |
-| Operational controls | Daily credit limit, low stock threshold, rate / discount changes, selling without van stock, **Use shifts**, **Require open shift**, **Variance tolerance**, strict stock validation, offline stock dashboard, pricing rules |
-| Staff controls (POS-profile style) | **Hide items not in van stock**, **Allow credit sales** (off: every invoice is paid when raised), **Allow returns** + **Return validity (days)**, **Show customer balance**, **Allow creating customers** + **Allow duplicate customer names**, **Staff can close their own shift** (off: managers only), **Blind cash count** (expected amounts hidden from the driver at close) |
-| Cash movements | Allow expenses, allow deposits, cash drawer account, back office cash account, max amount per movement, require remarks, **staff can cancel their own** (while the shift is open), allowed expense accounts, default expense account, cost center |
-| Pricing, print, accounting | Price list, currency, taxes template, discount basis, **Max discount %**, **Use the customer's price list**, **Allow zero rated items**, print format, letter head, income / expense / write-off accounts |
-
-Saving goes through `saveVanProfile()`; the profile controller validates the type-specific rules and clears the driver config cache.
-
-Every control is enforced server-side in the endpoint it concerns (`sales.py`, `shift.py`, `cash_movement.py`) and mirrored in the app through `capabilities` (`utils._capabilities`): `can_credit_sale`, `can_return`, `can_create_customer`, `can_close_shift`, `can_cancel_cash_movement`, `shows_customer_balance`, `blind_shift_close`. Managers are never bound by them.
-
----
-
-### 5.21 Manager Dashboard & Period Reports (Manager Only)
-**Routes:** `/` (dashboard component) · `/reports`
-
-| Aspect | Detail |
-|--------|--------|
-| **Dashboard** | Today across the fleet: open / closed shift counts, cash on open shifts, one card per staff member (shift status: open, closed, stale, none / "No shifts" for profiles without them; sales, collected, cash in hand or variance with its tolerance status, drafts left) with Close Shift, and an **alerts** list: stale shifts (with a close link), variances beyond tolerance, drafts left at close, trading without an open shift. |
-| **Period reports** | Any date range, optionally one driver or profile, compared with the preceding period of the same length: totals and comparison rows (sales, orders, returns, collections, expenses, deposits, net cash, variance), daily trend, per-driver split (incl. flagged shifts and drafts), items and item groups, customers, collections by mode, expenses by account, and the closed shifts of the period with their variance status. |
-| **Functionality** | `getManagerDashboard()`, `getPeriodReport()`, `getFleet()`. Attribution is by the user who created each document, the same rule the closing uses. |
-
----
-
-### 5.22 App Shell (Global Navigation)
-**Component:** `AppShell.vue` (wraps all authenticated views)
-
-| Aspect | Detail |
-|--------|--------|
-| **Purpose** | Persistent navigation frame — top header + bottom tab bar (mobile) / left rail (desktop). |
-| **Key Elements** | **Header**: "Van Sales" or "Field Sales" title by profile type, warehouse / user subtitle, online indicator · **Nav tabs**: Home, Activity, Stock (only with `can_view_stock`), Ledger, Settings (managers) · Logout |
-| **Functionality** | Tabs and quick actions are gated by the session's `capabilities`; the router redirects a driver away from any route whose `meta.capability` their profile lacks. |
+### 5.16 App shell
+`AppShell.vue` renders the tabs or rail from `navigation.ts`, the offline notice, the toast queue and the confirm dialog. Flows (sale steps, shift open/close, collect, return, load van) hide the tabs so the primary action owns the bottom edge. The router keeps every old path working through redirects.
 
 ---
 
@@ -323,53 +128,47 @@ Every control is enforced server-side in the endpoint it concerns (`sales.py`, `
 
 ```mermaid
 graph TD
-    Login["Login"] --> Dashboard["Dashboard"]
+    Login["Login"] --> Home["Home / Fleet"]
 
-    Dashboard --> CS_Order["Customer Select<br/>(redirect=order)"]
-    Dashboard --> CS_Payment["Customer Select<br/>(redirect=payment)"]
-    Dashboard --> CS_Return["Customer Select<br/>(redirect=return)"]
-    Dashboard --> StockTransfer["Stock Transfer"]
-    Dashboard --> ShiftOpen["Shift Open"]
-    Dashboard --> ShiftClose["Shift Close"]
-    Dashboard --> CashMovements["Expenses & Deposits"]
-    Dashboard --> ShiftReports["Shift Reports"]
-    Dashboard --> DailyLog["Daily Log"]
+    Home --> SellCustomer["Sell · Customer"]
+    SellCustomer --> SellItems["Sell · Items"]
+    SellItems --> SellReview["Sell · Review"]
+    SellReview -- "Submit order" --> Order["Order page"]
+    SellReview -- "Submit & invoice" --> InvoiceSheet["Invoice sheet"]
+    InvoiceSheet --> Order
+    Order --> InvoiceSheet
 
-    CS_Order --> Catalog["Item Catalog"]
-    Catalog --> Cart["Cart / Review"]
-    Cart --> History["Order History"]
+    Home --> Customers["Customers"]
+    Customers --> Customer["Customer page"]
+    Customer --> SellItems
+    Customer --> Collect["Collect payment"]
+    Customer --> Ledger["Ledger"]
+    Customer --> ReturnItems["Return · Items"]
+    ReturnItems --> ReturnReview["Return · Review"]
+    ReturnReview --> Customer
+    Collect --> Customer
 
-    CS_Payment --> Payment["Payment Entry"]
-    CS_Return --> ReturnCatalog["Return Catalog"]
-    ReturnCatalog --> ReturnCart["Return Cart"]
-    ReturnCart --> Ledger["Customer Ledger"]
+    Home --> Activity["Activity"]
+    Activity --> Order
+    Activity --> Payment["Payment page"]
 
-    History --> OrderDetail["Order Detail"]
-    DailyLog --> OrderDetail
-    DailyLog --> PaymentDetail["Payment Detail"]
-
-    ShiftClose --> ClosingReport["Closing Report"]
-    ShiftReports --> ShiftSummary["Shift Summary"]
+    Home --> Shift["Shift"]
+    Shift --> ShiftOpen["Open shift"]
+    Shift --> ShiftCash["Cash out"]
+    Shift --> ShiftClose["Close shift"]
+    ShiftClose --> ClosingReport["Closing report"]
+    Shift --> ShiftReports["Shift reports"]
+    ShiftReports --> ShiftSummary["Shift summary"]
     ShiftReports --> ClosingReport
-    ClosingReport -. manager reopen .-> ShiftSummary
 
-    subgraph Manager Only
-        Settings["Settings / Sales Profiles"]
-        ManagerDashboard["Manager Dashboard"]
-        Reports["Period Reports"]
-    end
+    Home --> Stock["Stock"]
+    Stock --> StockLoad["Load van"]
 
-    subgraph Van Sales only
-        StockDashboard["Stock Dashboard"]
-        StockTransfer
-        CS_Return
-    end
-
-    subgraph Profile uses shifts
-        ShiftOpen
-        ShiftClose
-        CashMovements
-        ShiftReports
+    subgraph Manager
+        Reports["Reports"]
+        Staff["Staff profiles"]
+        Setup["Setup"]
+        Setup --> InvoiceOptions["Invoice options"]
     end
 ```
 

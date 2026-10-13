@@ -1,7 +1,7 @@
 <template>
-  <WorkspacePage back eyebrow="Manager · invoicing" title="Invoice options" description="Named ways of raising an invoice: a numbering series plus a tax template. Enable them per Sales Profile." width="wide">
+  <WorkspacePage :back="{ name: 'setup' }" title="Invoice options" subtitle="Numbering series and tax template per option" width="wide">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="plus" @click="startNew">New</AppButton>
+      <AppButton size="sm" icon="plus" @click="startNew">New</AppButton>
     </template>
 
     <div class="grid gap-5 lg:grid-cols-[320px,1fr]">
@@ -41,36 +41,34 @@
         </button>
 
         <AppAlert v-if="errorMsg" tone="danger" title="Couldn't save option" :message="errorMsg" />
-        <AppAlert v-if="notice" tone="success" :message="notice" />
 
         <AppCard>
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Option name" required hint="What staff see when they pick it, e.g. VAT invoice, Export invoice.">
-              <BaseInput v-model="form.option_name" placeholder="e.g. VAT invoice" />
+              <BaseInput :model-value="form.option_name ?? ''" placeholder="e.g. VAT invoice" @update:model-value="(v) => (form.option_name = String(v))" />
             </FormField>
             <FormField label="Company" hint="Optional. Limits the tax template choice below.">
-              <BaseSelect v-model="form.company" placeholder="Any company">
+              <BaseSelect :model-value="form.company ?? ''" placeholder="Any company" @update:model-value="(v) => (form.company = v)">
                 <option v-for="c in choices.companies" :key="c.name" :value="c.name">{{ c.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Invoice numbering series" required hint="From the Sales Invoice naming series list (Desk → Settings → Naming Series).">
-              <BaseSelect v-model="form.naming_series" placeholder="Select series">
+              <BaseSelect :model-value="form.naming_series ?? ''" placeholder="Select series" @update:model-value="(v) => (form.naming_series = v)">
                 <option v-for="s in choices.naming_series" :key="s" :value="s">{{ s }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Taxes & charges template" hint="Leave empty to raise the invoice without taxes.">
-              <BaseSelect v-model="form.taxes_and_charges" placeholder="No tax">
+              <BaseSelect :model-value="form.taxes_and_charges ?? ''" placeholder="No tax" @update:model-value="(v) => (form.taxes_and_charges = v)">
                 <option v-for="t in filteredTemplates" :key="t.name" :value="t.name">{{ t.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Description" hint="Shown under the option when staff choose it." class="md:col-span-2">
-              <BaseTextarea v-model="form.description" :rows="2" placeholder="Optional" />
+              <BaseTextarea :model-value="form.description ?? ''" :rows="2" placeholder="Optional" @update:model-value="(v) => (form.description = v)" />
             </FormField>
           </div>
-          <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-card-muted px-3.5 py-3">
-            <input type="checkbox" v-model="form.disabled" class="h-4 w-4 accent-primary" />
-            <span class="text-sm font-medium text-foreground">Disabled (hidden from staff, kept on profiles)</span>
-          </label>
+          <div class="mt-4 rounded-2xl bg-card-muted px-3.5 py-2">
+            <ToggleSwitch :model-value="!!form.disabled" label="Disabled" hint="Hidden from staff, kept on profiles." @update:model-value="(v: boolean) => (form.disabled = v)" />
+          </div>
         </AppCard>
 
         <!-- Payment rule -->
@@ -80,10 +78,9 @@
             <h3 class="text-sm font-bold text-foreground">Payment rule</h3>
           </div>
           <p class="mt-2 text-xs text-muted">Staff only see this option when it fits the payment they chose for the invoice.</p>
-          <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-card-muted px-3.5 py-3">
-            <input type="checkbox" v-model="form.available_for_credit" class="h-4 w-4 accent-primary" />
-            <span class="text-sm font-medium text-foreground">Available for credit (pay later) invoices</span>
-          </label>
+          <div class="mt-4 rounded-2xl bg-card-muted px-3.5 py-2">
+            <ToggleSwitch :model-value="form.available_for_credit !== false" label="Available for credit invoices" hint="Pay-later invoices may use this option." @update:model-value="(v: boolean) => (form.available_for_credit = v)" />
+          </div>
           <div class="mt-4 flex items-center justify-between gap-3">
             <p class="text-xs font-bold uppercase tracking-wider text-muted">Paid-now modes of payment <span class="font-medium normal-case tracking-normal">· empty = every mode</span></p>
             <span class="rounded-full bg-card-muted px-2.5 py-1 text-xs font-bold text-muted">{{ form.payment_modes?.length || 0 }}</span>
@@ -93,7 +90,7 @@
               v-for="mode in choices.payment_modes"
               :key="mode.name"
               class="flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition"
-              :class="(form.payment_modes || []).includes(mode.name) ? 'border-success/40 bg-success/[0.06]' : 'border-line hover:bg-card-muted'"
+              :class="(form.payment_modes || []).includes(mode.name) ? 'border-primary/40 bg-primary/[0.06]' : 'border-line hover:bg-card-muted'"
             >
               <input type="checkbox" :value="mode.name" v-model="form.payment_modes" class="h-4 w-4 accent-primary" />
               <span class="min-w-0">
@@ -104,7 +101,7 @@
           </div>
         </AppCard>
 
-        <AppButton v-if="selected.name" variant="danger" size="sm" icon="trash" :loading="deleting" @click="remove">Delete option</AppButton>
+        <AppButton v-if="selected.name" variant="ghost" size="sm" icon="trash" class="text-danger" :loading="deleting" @click="remove">Delete option</AppButton>
       </div>
     </div>
 
@@ -121,13 +118,17 @@ import { ref, computed, onMounted } from 'vue';
 import { listAllInvoiceOptions, getInvoiceOptionChoices, saveInvoiceOption, deleteInvoiceOption } from '../api/frappe';
 import type { InvoiceOption, InvoiceOptionChoices } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, BaseTextarea, StatusBadge, SkeletonList, EmptyState, StickyBar } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, BaseTextarea, StatusBadge, SkeletonList, EmptyState, StickyBar, ToggleSwitch } from '../components/ui';
+import { useToast } from '../composables/useToast';
+import { useConfirm } from '../composables/useConfirm';
+
+const toast = useToast();
+const { confirm } = useConfirm();
 
 const loading = ref(true);
 const saving = ref(false);
 const deleting = ref(false);
 const errorMsg = ref('');
-const notice = ref('');
 const options = ref<InvoiceOption[]>([]);
 const choices = ref<InvoiceOptionChoices>({ naming_series: [], tax_templates: [], companies: [], payment_modes: [] });
 
@@ -158,7 +159,6 @@ function startNew() {
   selected.value = blank();
   form.value = blank();
   errorMsg.value = '';
-  notice.value = '';
 }
 function select(opt: InvoiceOption) {
   selected.value = opt;
@@ -171,7 +171,6 @@ function select(opt: InvoiceOption) {
     payment_modes: [...(opt.payment_modes || [])],
   };
   errorMsg.value = '';
-  notice.value = '';
 }
 
 async function load() {
@@ -192,14 +191,13 @@ async function save() {
   if (!isValid.value) return;
   saving.value = true;
   errorMsg.value = '';
-  notice.value = '';
   try {
     const saved = await saveInvoiceOption({ ...form.value, name: selected.value?.name });
     const idx = options.value.findIndex((o) => o.name === saved.name);
     if (idx >= 0) options.value[idx] = saved;
     else options.value.push(saved);
     select(saved);
-    notice.value = `Saved ${saved.option_name}. Enable it on a Sales Profile to let staff use it.`;
+    toast.success(`Saved ${saved.option_name}`, { message: 'Enable it on a Sales Profile to let staff use it.' });
   } catch (e: any) {
     errorMsg.value = e?.message || 'Failed to save option';
   } finally {
@@ -209,13 +207,16 @@ async function save() {
 
 async function remove() {
   const name = selected.value?.name;
-  if (!name || !confirm(`Delete invoice option "${name}"?`)) return;
+  if (!name) return;
+  const ok = await confirm({ title: `Delete "${name}"?`, message: 'Profiles that use it must drop it first; staff can no longer pick it.', confirmLabel: 'Delete', tone: 'danger', icon: 'trash' });
+  if (!ok) return;
   deleting.value = true;
   errorMsg.value = '';
   try {
     await deleteInvoiceOption(name);
     options.value = options.value.filter((o) => o.name !== name);
     selected.value = null;
+    toast.success('Option deleted');
   } catch (e: any) {
     errorMsg.value = e?.message || 'Failed to delete option';
   } finally {

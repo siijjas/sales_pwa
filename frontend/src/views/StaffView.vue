@@ -1,7 +1,7 @@
 <template>
-  <WorkspacePage eyebrow="Manager · sales staff" title="Sales profiles" description="Reusable configuration for van drivers and field sales staff." width="wide">
+  <WorkspacePage eyebrow="Manager" title="Staff" subtitle="Sales profiles for van drivers and field sales staff" width="wide">
     <template #actions>
-      <AppButton v-if="selectedProfile" variant="secondary" size="sm" icon="plus" @click="startNew">New</AppButton>
+      <AppButton size="sm" icon="plus" @click="startNew">New profile</AppButton>
     </template>
 
     <div class="grid gap-5 lg:grid-cols-[320px,1fr]">
@@ -28,8 +28,9 @@
               · {{ p.assigned_drivers?.length || 0 }} staff
             </p>
           </AppCard>
-          <AppButton variant="secondary" block icon="plus" @click="startNew">Create profile</AppButton>
-          <EmptyState v-if="!filteredProfiles.length" icon="user" title="No profiles" description="Create your first sales profile." />
+          <EmptyState v-if="!filteredProfiles.length" icon="user" title="No profiles" description="Create your first sales profile.">
+            <template #action><AppButton variant="secondary" icon="plus" @click="startNew">Create profile</AppButton></template>
+          </EmptyState>
         </div>
       </aside>
 
@@ -39,9 +40,13 @@
       </div>
 
       <div v-else class="space-y-4 pb-28">
-        <button class="flex items-center gap-1 text-sm font-semibold text-primary lg:hidden" @click="selectedProfile = null">
-          <AppIcon name="chevron-left" :size="16" /> Profiles
-        </button>
+        <div class="flex items-center justify-between gap-3">
+          <button class="flex items-center gap-1 text-sm font-semibold text-primary lg:hidden" @click="selectedProfile = null">
+            <AppIcon name="chevron-left" :size="16" /> All profiles
+          </button>
+          <p class="hidden truncate text-sm font-bold text-foreground lg:block">{{ selectedProfile.name ? form.profile_name : 'New profile' }}</p>
+          <AppButton v-if="selectedProfile.name" variant="ghost" size="sm" icon="trash" class="text-danger" :loading="isDeleting" @click="removeProfile">Delete</AppButton>
+        </div>
 
         <AppAlert v-if="errorMsg" tone="danger" title="Couldn't save profile" :message="errorMsg" />
 
@@ -56,24 +61,23 @@
           </FormField>
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Profile name" required>
-              <BaseInput v-model="form.profile_name" :placeholder="isFieldSales ? 'e.g. North Region Field Team' : 'e.g. Riyadh Van Fleet'" />
+              <BaseInput :model-value="form.profile_name ?? ''" :placeholder="isFieldSales ? 'e.g. North Region Field Team' : 'e.g. Riyadh Van Fleet'" @update:model-value="(v) => (form.profile_name = String(v))" />
             </FormField>
             <FormField label="Company" required>
-              <BaseSelect v-model="form.company" placeholder="Select company">
+              <BaseSelect :model-value="form.company ?? ''" @update:model-value="(v) => (form.company = v)" placeholder="Select company">
                 <option v-for="c in options.companies" :key="c.name" :value="c.name">{{ c.name }}</option>
               </BaseSelect>
             </FormField>
           </div>
-          <ToggleRow v-model="form.is_active" label="Profile is active" />
+          <ToggleSwitch :model-value="!!form.is_active" label="Profile is active" hint="Inactive profiles keep their settings; staff on them cannot use the app." @update:model-value="(v: boolean) => (form.is_active = v)" />
         </FormSection>
 
         <!-- Warehouses -->
         <FormSection :title="isFieldSales ? 'Stock display & routing' : 'Warehouses & routing'" icon="boxes">
-          <ToggleRow
-            v-if="!isFieldSales"
-            v-model="form.separate_van_warehouse"
+          <ToggleSwitch
+            v-if="!isFieldSales" :model-value="!!form.separate_van_warehouse"
             label="Van has its own warehouse (stock is loaded into it from the main warehouse)"
-            class="mb-4"
+            class="mb-4" @update:model-value="(v: boolean) => (form.separate_van_warehouse = v)"
           />
           <p v-if="!isFieldSales && !form.separate_van_warehouse" class="mb-4 text-xs text-muted">
             This van sells straight from the main warehouse: orders, invoices, returns and the stock dashboard use it, and stock loading is hidden.
@@ -81,23 +85,23 @@
           <div class="grid gap-4 md:grid-cols-2">
             <template v-if="!isFieldSales">
               <FormField :label="form.separate_van_warehouse ? 'Main warehouse' : 'Main (selling) warehouse'" required>
-                <BaseSelect v-model="form.source_warehouse" placeholder="Select main warehouse">
+                <BaseSelect :model-value="form.source_warehouse ?? ''" @update:model-value="(v) => (form.source_warehouse = v)" placeholder="Select main warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
               </FormField>
               <FormField v-if="form.separate_van_warehouse" label="Van warehouse" required>
-                <BaseSelect v-model="form.van_warehouse" placeholder="Select van warehouse">
+                <BaseSelect :model-value="form.van_warehouse ?? ''" @update:model-value="(v) => (form.van_warehouse = v)" placeholder="Select van warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
               </FormField>
             </template>
             <FormField v-else label="Stock warehouse (display only)" hint="Catalog shows available qty from here for information. It never blocks an order.">
-              <BaseSelect v-model="form.stock_warehouse" placeholder="Company default warehouse">
+              <BaseSelect :model-value="form.stock_warehouse ?? ''" @update:model-value="(v) => (form.stock_warehouse = v)" placeholder="Company default warehouse">
                 <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Delivery route (territory)">
-              <BaseSelect v-model="form.delivery_route" placeholder="Optional route restriction">
+              <BaseSelect :model-value="form.delivery_route ?? ''" @update:model-value="(v) => (form.delivery_route = v)" placeholder="Optional route restriction">
                 <option v-for="r in options.routes" :key="r.name" :value="r.name">{{ r.name }}</option>
               </BaseSelect>
             </FormField>
@@ -142,41 +146,41 @@
         <FormSection title="Operational controls" icon="sliders">
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Daily credit limit" hint="Max credit sales per day.">
-              <BaseInput v-model="form.daily_credit_limit" type="number" inputmode="decimal" prefix="$" placeholder="0.00" />
+              <BaseInput :model-value="form.daily_credit_limit ?? 0" @update:model-value="(v) => (form.daily_credit_limit = Number(v) || 0)" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" />
             </FormField>
             <FormField v-if="!isFieldSales" label="Low stock threshold" hint="Alert when van stock drops below this.">
-              <BaseInput v-model="form.low_stock_threshold" type="number" inputmode="numeric" />
+              <BaseInput :model-value="form.low_stock_threshold ?? 0" @update:model-value="(v) => (form.low_stock_threshold = Number(v) || 0)" type="number" inputmode="numeric" />
             </FormField>
           </div>
-          <div class="grid gap-2 md:grid-cols-2">
-            <ToggleRow v-model="form.allow_rate_change" label="Allow modifying item rates" />
-            <ToggleRow v-model="form.allow_discount_change" label="Allow modifying discounts" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.allow_sale_without_stock" label="Allow selling items not in stock" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.hide_unavailable_items" label="Hide items not in stock from the catalog" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.allow_credit_sale" label="Allow credit sales (invoice now, collect later)" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.allow_return" label="Allow returns" />
-            <ToggleRow v-model="form.show_customer_balance" label="Show customer balance and ledger" />
-            <ToggleRow v-model="form.allow_create_customer" label="Allow creating new customers" />
-            <ToggleRow v-if="form.allow_create_customer" v-model="form.allow_duplicate_customer_names" label="Allow duplicate customer names" />
-            <ToggleRow v-model="form.use_shifts" label="Use shifts (opening float, cash reconciliation at close)" />
-            <ToggleRow v-if="form.use_shifts" v-model="form.require_open_shift" label="Require an open shift to sell, collect or log expenses" />
-            <ToggleRow v-if="form.use_shifts" v-model="form.allow_driver_close_shift" label="Staff can close their own shift (off: managers only)" />
-            <ToggleRow v-if="form.use_shifts" v-model="form.hide_expected_amount" label="Blind cash count (hide expected amounts at close)" />
+          <div class="grid gap-2 md:grid-cols-2 [&>label]:rounded-2xl [&>label]:bg-card-muted [&>label]:px-3.5 [&>label]:py-2">
+            <ToggleSwitch :model-value="!!form.allow_rate_change" label="Allow modifying item rates" @update:model-value="(v: boolean) => (form.allow_rate_change = v)" />
+            <ToggleSwitch :model-value="!!form.allow_discount_change" label="Allow modifying discounts" @update:model-value="(v: boolean) => (form.allow_discount_change = v)" />
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.allow_sale_without_stock" label="Allow selling items not in stock" @update:model-value="(v: boolean) => (form.allow_sale_without_stock = v)" />
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.hide_unavailable_items" label="Hide items not in stock from the catalog" @update:model-value="(v: boolean) => (form.hide_unavailable_items = v)" />
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.allow_credit_sale" label="Allow credit sales (invoice now, collect later)" @update:model-value="(v: boolean) => (form.allow_credit_sale = v)" />
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.allow_return" label="Allow returns" @update:model-value="(v: boolean) => (form.allow_return = v)" />
+            <ToggleSwitch :model-value="!!form.show_customer_balance" label="Show customer balance and ledger" @update:model-value="(v: boolean) => (form.show_customer_balance = v)" />
+            <ToggleSwitch :model-value="!!form.allow_create_customer" label="Allow creating new customers" @update:model-value="(v: boolean) => (form.allow_create_customer = v)" />
+            <ToggleSwitch v-if="form.allow_create_customer" :model-value="!!form.allow_duplicate_customer_names" label="Allow duplicate customer names" @update:model-value="(v: boolean) => (form.allow_duplicate_customer_names = v)" />
+            <ToggleSwitch :model-value="!!form.use_shifts" label="Use shifts (opening float, cash reconciliation at close)" @update:model-value="(v: boolean) => (form.use_shifts = v)" />
+            <ToggleSwitch v-if="form.use_shifts" :model-value="!!form.require_open_shift" label="Require an open shift to sell, collect or log expenses" @update:model-value="(v: boolean) => (form.require_open_shift = v)" />
+            <ToggleSwitch v-if="form.use_shifts" :model-value="!!form.allow_driver_close_shift" label="Staff can close their own shift (off: managers only)" @update:model-value="(v: boolean) => (form.allow_driver_close_shift = v)" />
+            <ToggleSwitch v-if="form.use_shifts" :model-value="!!form.hide_expected_amount" label="Blind cash count (hide expected amounts at close)" @update:model-value="(v: boolean) => (form.hide_expected_amount = v)" />
           </div>
           <div v-if="!isFieldSales && form.allow_return" class="grid gap-4 md:grid-cols-2">
             <FormField label="Return validity (days)" hint="Items can only be returned if the customer bought them within this many days. 0 = no limit.">
-              <BaseInput v-model="form.return_validity_days" type="number" inputmode="numeric" placeholder="0" />
+              <BaseInput :model-value="form.return_validity_days ?? 0" @update:model-value="(v) => (form.return_validity_days = Number(v) || 0)" type="number" inputmode="numeric" placeholder="0" />
             </FormField>
           </div>
           <div v-if="form.use_shifts" class="grid gap-4 md:grid-cols-2">
             <FormField label="Variance tolerance" hint="A closing whose counted cash is off by more than this is flagged for you. 0 flags any difference. Never blocks closing.">
-              <BaseInput v-model="form.variance_tolerance" type="number" inputmode="decimal" prefix="$" placeholder="0.00" />
+              <BaseInput :model-value="form.variance_tolerance ?? 0" @update:model-value="(v) => (form.variance_tolerance = Number(v) || 0)" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" />
             </FormField>
           </div>
-          <div class="grid gap-2 md:grid-cols-2">
-            <ToggleRow v-if="!isFieldSales" v-model="form.validate_stock_on_save" label="Strictly validate stock on save" />
-            <ToggleRow v-if="!isFieldSales" v-model="form.allow_offline_stock_dashboard" label="Enable offline stock dashboard" />
-            <ToggleRow v-model="form.ignore_pricing_rule" label="Ignore active pricing rules" />
+          <div class="grid gap-2 md:grid-cols-2 [&>label]:rounded-2xl [&>label]:bg-card-muted [&>label]:px-3.5 [&>label]:py-2">
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.validate_stock_on_save" label="Strictly validate stock on save" @update:model-value="(v: boolean) => (form.validate_stock_on_save = v)" />
+            <ToggleSwitch v-if="!isFieldSales" :model-value="!!form.allow_offline_stock_dashboard" label="Enable offline stock dashboard" @update:model-value="(v: boolean) => (form.allow_offline_stock_dashboard = v)" />
+            <ToggleSwitch :model-value="!!form.ignore_pricing_rule" label="Ignore active pricing rules" @update:model-value="(v: boolean) => (form.ignore_pricing_rule = v)" />
           </div>
         </FormSection>
 
@@ -184,33 +188,33 @@
         <FormSection title="Pricing & tax" icon="receipt">
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Selling price list">
-              <BaseSelect v-model="form.selling_price_list" placeholder="Default from selling settings">
+              <BaseSelect :model-value="form.selling_price_list ?? ''" @update:model-value="(v) => (form.selling_price_list = v)" placeholder="Default from selling settings">
                 <option v-for="p in options.price_lists" :key="p.name" :value="p.name">{{ p.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Currency">
-              <BaseSelect v-model="form.currency" placeholder="Company default">
+              <BaseSelect :model-value="form.currency ?? ''" @update:model-value="(v) => (form.currency = v)" placeholder="Company default">
                 <option v-for="c in options.currencies" :key="c.name" :value="c.name">{{ c.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Taxes & charges template">
-              <BaseSelect v-model="form.taxes_and_charges" placeholder="None (calculate dynamically)">
+              <BaseSelect :model-value="form.taxes_and_charges ?? ''" @update:model-value="(v) => (form.taxes_and_charges = v)" placeholder="None (calculate dynamically)">
                 <option v-for="t in filteredTaxTemplates" :key="t.name" :value="t.name">{{ t.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Apply discount on">
-              <BaseSelect v-model="form.apply_discount_on">
+              <BaseSelect :model-value="form.apply_discount_on ?? ''" @update:model-value="(v) => (form.apply_discount_on = v)">
                 <option value="Grand Total">Grand Total</option>
                 <option value="Net Total">Net Total</option>
               </BaseSelect>
             </FormField>
             <FormField v-if="form.allow_discount_change" label="Max discount %" hint="Largest order discount staff may give. 0 = no cap.">
-              <BaseInput v-model="form.max_discount_percent" type="number" inputmode="decimal" min="0" max="100" placeholder="0" />
+              <BaseInput :model-value="form.max_discount_percent ?? 0" @update:model-value="(v) => (form.max_discount_percent = Number(v) || 0)" type="number" inputmode="decimal" min="0" max="100" placeholder="0" />
             </FormField>
           </div>
-          <div class="grid gap-2 md:grid-cols-2">
-            <ToggleRow v-model="form.use_customer_price_list" label="Use the customer's own price list when they have one" />
-            <ToggleRow v-model="form.allow_zero_rated_items" label="Allow zero rated items (lines priced at 0)" />
+          <div class="grid gap-2 md:grid-cols-2 [&>label]:rounded-2xl [&>label]:bg-card-muted [&>label]:px-3.5 [&>label]:py-2">
+            <ToggleSwitch :model-value="!!form.use_customer_price_list" label="Use the customer's own price list when they have one" @update:model-value="(v: boolean) => (form.use_customer_price_list = v)" />
+            <ToggleSwitch :model-value="!!form.allow_zero_rated_items" label="Allow zero rated items (lines priced at 0)" @update:model-value="(v: boolean) => (form.allow_zero_rated_items = v)" />
           </div>
         </FormSection>
 
@@ -248,35 +252,35 @@
         <!-- Cash movements -->
         <FormSection v-if="form.use_shifts" title="Cash movements (expenses & deposits)" icon="banknote">
           <p class="text-xs text-muted">Cash leaving the drawer mid-shift. Each entry posts a Journal Entry that credits the drawer account and debits the expense or back-office account, and the shift closing deducts it from expected cash.</p>
-          <div class="grid gap-2 md:grid-cols-3">
-            <ToggleRow v-model="form.allow_expense" label="Allow expenses" />
-            <ToggleRow v-model="form.allow_cash_deposit" label="Allow deposits to office" />
-            <ToggleRow v-model="form.require_cash_movement_remarks" label="Require remarks" />
-            <ToggleRow v-model="form.allow_cancel_cash_movement" label="Staff can cancel their own (while the shift is open)" />
+          <div class="grid gap-2 md:grid-cols-3 [&>label]:rounded-2xl [&>label]:bg-card-muted [&>label]:px-3.5 [&>label]:py-2">
+            <ToggleSwitch :model-value="!!form.allow_expense" label="Allow expenses" @update:model-value="(v: boolean) => (form.allow_expense = v)" />
+            <ToggleSwitch :model-value="!!form.allow_cash_deposit" label="Allow deposits to office" @update:model-value="(v: boolean) => (form.allow_cash_deposit = v)" />
+            <ToggleSwitch :model-value="!!form.require_cash_movement_remarks" label="Require remarks" @update:model-value="(v: boolean) => (form.require_cash_movement_remarks = v)" />
+            <ToggleSwitch :model-value="!!form.allow_cancel_cash_movement" label="Staff can cancel their own (while the shift is open)" @update:model-value="(v: boolean) => (form.allow_cancel_cash_movement = v)" />
           </div>
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Cash drawer account" hint="Blank: the Default Cash Mode's account for this company.">
-              <BaseSelect v-model="form.cash_account" placeholder="From default cash mode">
+              <BaseSelect :model-value="form.cash_account ?? ''" @update:model-value="(v) => (form.cash_account = v)" placeholder="From default cash mode">
                 <option v-for="a in filteredCashAccounts" :key="a.name" :value="a.name">{{ a.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField v-if="form.allow_cash_deposit" label="Back office cash account" hint="Where deposits land. Blank: company default cash account.">
-              <BaseSelect v-model="form.back_office_cash_account" placeholder="Company default cash account">
+              <BaseSelect :model-value="form.back_office_cash_account ?? ''" @update:model-value="(v) => (form.back_office_cash_account = v)" placeholder="Company default cash account">
                 <option v-for="a in filteredCashAccounts" :key="a.name" :value="a.name">{{ a.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField v-if="form.allow_expense" label="Default expense account" hint="Pre-selected on a new expense.">
-              <BaseSelect v-model="form.expense_account" placeholder="None">
+              <BaseSelect :model-value="form.expense_account ?? ''" @update:model-value="(v) => (form.expense_account = v)" placeholder="None">
                 <option v-for="a in selectableExpenseAccounts" :key="a.name" :value="a.name">{{ a.account_name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Cost center" hint="For the Journal Entries. Blank: company default.">
-              <BaseSelect v-model="form.cost_center" placeholder="Company default">
+              <BaseSelect :model-value="form.cost_center ?? ''" @update:model-value="(v) => (form.cost_center = v)" placeholder="Company default">
                 <option v-for="c in filteredCostCenters" :key="c.name" :value="c.name">{{ c.name }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Max amount per movement" hint="0 = no limit.">
-              <BaseInput v-model="form.cash_movement_max_amount" type="number" inputmode="decimal" placeholder="0.00" />
+              <BaseInput :model-value="form.cash_movement_max_amount ?? 0" @update:model-value="(v) => (form.cash_movement_max_amount = Number(v) || 0)" type="number" inputmode="decimal" placeholder="0.00" />
             </FormField>
           </div>
           <template v-if="form.allow_expense">
@@ -313,7 +317,7 @@
             </label>
           </div>
           <FormField v-if="form.use_shifts" label="Default cash mode" hint="Which mode counts as the cash drawer for shift reconciliation. Falls back to a cash-type mode above, then the generic &quot;Cash&quot; record, if left blank.">
-            <BaseSelect v-model="form.default_cash_mode" placeholder="Auto-detect">
+            <BaseSelect :model-value="form.default_cash_mode ?? ''" @update:model-value="(v) => (form.default_cash_mode = v)" placeholder="Auto-detect">
               <option v-for="mode in allowedCashModes" :key="mode.name" :value="mode.name">{{ mode.name }}</option>
             </BaseSelect>
           </FormField>
@@ -332,10 +336,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, defineComponent, h } from 'vue';
 import { useRouter } from 'vue-router';
-import { listSalesProfiles, getSalesProfileOptions, saveSalesProfile } from '../api/frappe';
+import { listSalesProfiles, getSalesProfileOptions, saveSalesProfile, deleteSalesProfile } from '../api/frappe';
 import type { SalesProfile, SalesProfileOptions } from '../types';
+import { useSessionStore } from '../stores/session';
+import { useToast } from '../composables/useToast';
+import { useConfirm } from '../composables/useConfirm';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, SearchBar, StatusBadge, SkeletonList, EmptyState, StickyBar, SegmentedControl } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, SearchBar, StatusBadge, SkeletonList, EmptyState, StickyBar, SegmentedControl, ToggleSwitch } from '../components/ui';
 
 // Collapsible-free section wrapper used throughout the editor.
 const FormSection = defineComponent({
@@ -355,27 +362,14 @@ const FormSection = defineComponent({
   },
 });
 
-// Theme-aware checkbox row used for boolean settings.
-const ToggleRow = defineComponent({
-  props: { modelValue: { type: Boolean, default: false }, label: { type: String, required: true } },
-  emits: ['update:modelValue'],
-  setup(props, { emit }) {
-    return () =>
-      h('label', { class: 'flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-card-muted px-3.5 py-3' }, [
-        h('input', {
-          type: 'checkbox',
-          checked: props.modelValue,
-          class: 'h-4 w-4 accent-primary',
-          onChange: (e: Event) => emit('update:modelValue', (e.target as HTMLInputElement).checked),
-        }),
-        h('span', { class: 'text-sm font-medium text-foreground' }, props.label),
-      ]);
-  },
-});
-
 const router = useRouter();
+const store = useSessionStore();
+const toast = useToast();
+const { confirm } = useConfirm();
+const currency = computed(() => store.currencyDisplay);
 const loading = ref(true);
 const isSaving = ref(false);
+const isDeleting = ref(false);
 const errorMsg = ref('');
 const profiles = ref<SalesProfile[]>([]);
 const searchQuery = ref('');
@@ -590,10 +584,36 @@ async function saveProfile() {
     if (idx >= 0) profiles.value[idx] = saved;
     else profiles.value.push(saved);
     selectProfile(saved);
+    toast.success(`Saved ${saved.profile_name}`);
   } catch (err: any) {
     errorMsg.value = err.message || 'Failed to save profile';
   } finally {
     isSaving.value = false;
+  }
+}
+
+async function removeProfile() {
+  const name = selectedProfile.value?.name;
+  if (!name) return;
+  const ok = await confirm({
+    title: `Delete ${form.value.profile_name || name}?`,
+    message: 'Staff on this profile lose access to the app until they are assigned to another one.',
+    confirmLabel: 'Delete',
+    tone: 'danger',
+    icon: 'trash',
+  });
+  if (!ok) return;
+  isDeleting.value = true;
+  errorMsg.value = '';
+  try {
+    await deleteSalesProfile(name);
+    profiles.value = profiles.value.filter((p) => p.name !== name);
+    selectedProfile.value = null;
+    toast.success('Profile deleted');
+  } catch (err: any) {
+    errorMsg.value = err.message || 'Failed to delete profile';
+  } finally {
+    isDeleting.value = false;
   }
 }
 

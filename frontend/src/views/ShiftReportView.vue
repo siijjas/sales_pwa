@@ -1,15 +1,15 @@
 <template>
-  <WorkspacePage back :eyebrow="isSummary ? 'Open shift' : 'Closed shift'" :title="isSummary ? 'Shift summary' : 'Closing report'" :description="description" width="default">
+  <WorkspacePage back :title="isSummary ? 'Shift summary' : 'Closing report'" :subtitle="subtitle">
     <template #actions>
-      <AppButton v-if="isSummary" variant="secondary" size="sm" icon="refresh" :loading="loading" @click="load">Refresh</AppButton>
-      <AppButton v-if="report" variant="secondary" size="sm" icon="printer" @click="printPdf">Print</AppButton>
-      <AppButton v-if="canReopen" variant="warning" size="sm" icon="refresh" :loading="reopening" @click="reopen">Reopen shift</AppButton>
+      <AppButton v-if="isSummary" variant="ghost" size="sm" icon="refresh" :loading="loading" @click="load" />
+      <AppButton v-if="report" variant="ghost" size="sm" icon="printer" @click="printPdf" />
     </template>
 
     <SkeletonList v-if="loading && !report" :rows="4" height="6rem" />
 
     <div v-else-if="report" class="space-y-5 pb-8">
-      <AppAlert v-if="isSummary" tone="info" message="Interim report. Your shift is still open, so these figures will change until you close it." />
+      <AppAlert v-if="isSummary" tone="info" :message="description" />
+      <AppAlert v-else tone="info" :message="description" />
       <AppAlert v-if="actionError" tone="danger" :message="actionError" />
       <AppAlert
         v-if="isSummary && report.draft_orders?.length"
@@ -19,7 +19,7 @@
         Not in these figures until submitted.
         <ul class="mt-1.5 space-y-1">
           <li v-for="d in report.draft_orders" :key="d.name">
-            <button type="button" class="font-semibold underline underline-offset-2" @click="router.push({ name: 'order-detail', params: { name: d.name } })">{{ d.name }}</button>
+            <button type="button" class="font-semibold underline underline-offset-2" @click="router.push({ name: 'order', params: { name: d.name } })">{{ d.name }}</button>
             <span class="opacity-90"> · {{ d.customer_name || d.customer }} · {{ currency }} {{ fmt(d.grand_total) }}</span>
           </li>
         </ul>
@@ -48,8 +48,8 @@
       </div>
 
       <!-- Tile drill-down -->
-      <BottomSheet v-model="detailOpen" :title="detailTitle">
-        <div class="max-h-[70vh] space-y-4 overflow-y-auto pr-1">
+      <BottomSheet v-model="detailOpen" :title="detailTitle" size="lg">
+        <div class="space-y-4">
           <!-- Sales: orders, invoices, returns -->
           <template v-if="detail === 'sales'">
             <section>
@@ -60,7 +60,7 @@
                 :key="o.name"
                 type="button"
                 class="flex w-full items-center justify-between gap-3 border-t border-line py-2.5 text-left first-of-type:border-0"
-                @click="goTo({ name: 'order-detail', params: { name: o.name } })"
+                @click="goTo({ name: 'order', params: { name: o.name } })"
               >
                 <span class="min-w-0">
                   <span class="block truncate text-sm font-semibold text-foreground">{{ o.customer_name || o.customer }}</span>
@@ -95,7 +95,7 @@
                 :key="p.name"
                 type="button"
                 class="flex w-full items-center justify-between gap-3 border-t border-line py-2.5 text-left first-of-type:border-0"
-                @click="goTo({ name: 'payment-detail', params: { name: p.name } })"
+                @click="goTo({ name: 'payment', params: { name: p.name } })"
               >
                 <span class="min-w-0">
                   <span class="block truncate text-sm font-semibold text-foreground">{{ p.party_name || p.party }}</span>
@@ -142,7 +142,7 @@
               <div class="flex items-center justify-between"><span class="font-semibold text-foreground">Total expenses</span><span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_expenses) }}</span></div>
               <div v-if="t.total_deposits" class="flex items-center justify-between"><span class="font-semibold text-foreground">Total deposited</span><span class="tnum font-bold text-foreground">{{ currency }} {{ fmt(t.total_deposits) }}</span></div>
             </div>
-            <AppButton v-if="isSummary && store.capabilities.uses_shifts" variant="secondary" block icon="file-text" @click="goTo({ name: 'expenses' })">Record expense or deposit</AppButton>
+            <AppButton v-if="isSummary && store.capabilities.uses_shifts" variant="secondary" block icon="file-text" @click="goTo({ name: 'shift-cash' })">Record expense or deposit</AppButton>
           </template>
 
           <!-- Expected cash: how the drawer figure is built -->
@@ -175,7 +175,7 @@
 
       <div
         v-if="!isSummary && t.net_difference !== undefined"
-        class="flex items-center justify-between rounded-2xl border px-4 py-3"
+        class="flex items-center justify-between rounded-2xl px-4 py-3 ring-1 ring-inset"
         :class="varianceClass(t.net_difference)"
       >
         <div>
@@ -227,22 +227,22 @@
       <!-- Cash reconciliation -->
       <AppCard padding="lg" class="space-y-3">
         <p class="text-sm font-semibold text-foreground">Cash reconciliation</p>
-        <div v-for="row in report.payment_reconciliation" :key="row.mode_of_payment" class="space-y-2 rounded-2xl border border-border p-3">
+        <div v-for="row in report.payment_reconciliation" :key="row.mode_of_payment" class="space-y-2 rounded-2xl bg-card-muted p-3">
           <div class="flex items-center justify-between">
             <span class="text-sm font-bold text-foreground">{{ row.mode_of_payment }}</span>
             <span v-if="row.difference" class="tnum text-xs font-bold" :class="row.difference > 0 ? 'text-success' : 'text-danger'">{{ signed(row.difference) }}</span>
           </div>
           <div class="grid gap-2 text-center text-xs" :class="isSummary ? 'grid-cols-2' : 'grid-cols-3'">
-            <div class="rounded-xl bg-muted/40 py-1.5">
-              <p class="opacity-60">Opening</p>
+            <div class="rounded-xl bg-card py-1.5">
+              <p class="text-muted">Opening</p>
               <p class="tnum font-semibold text-foreground">{{ fmt(row.opening_amount) }}</p>
             </div>
-            <div class="rounded-xl bg-muted/40 py-1.5">
-              <p class="opacity-60">Expected</p>
+            <div class="rounded-xl bg-card py-1.5">
+              <p class="text-muted">Expected</p>
               <p class="tnum font-semibold text-foreground">{{ fmt(row.expected_amount) }}</p>
             </div>
-            <div v-if="!isSummary" class="rounded-xl bg-muted/40 py-1.5">
-              <p class="opacity-60">Counted</p>
+            <div v-if="!isSummary" class="rounded-xl bg-card py-1.5">
+              <p class="text-muted">Counted</p>
               <p class="tnum font-semibold text-foreground">{{ fmt(row.closing_amount ?? 0) }}</p>
             </div>
           </div>
@@ -304,6 +304,8 @@
         <p class="mb-1 text-sm font-semibold text-foreground">Notes</p>
         <p class="whitespace-pre-line text-sm text-muted">{{ report.shift.notes }}</p>
       </AppCard>
+
+      <AppButton v-if="canReopen" variant="secondary" block icon="refresh" :loading="reopening" @click="reopen">Reopen this shift</AppButton>
     </div>
 
     <div v-else class="space-y-4">
@@ -318,6 +320,9 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
+import { useConfirm } from '../composables/useConfirm';
+import { useToast } from '../composables/useToast';
+import { money as fmt, qty, shortDate, dateTime, time } from '../utils/format';
 import type { ShiftReport } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, BottomSheet, KpiTile, SkeletonList } from '../components/ui';
@@ -325,6 +330,8 @@ import { AppCard, AppButton, AppAlert, BottomSheet, KpiTile, SkeletonList } from
 const route = useRoute();
 const router = useRouter();
 const store = useSessionStore();
+const { confirm } = useConfirm();
+const toast = useToast();
 const currency = computed(() => store.currencyDisplay);
 
 const isSummary = computed(() => route.name === 'shift-summary');
@@ -338,11 +345,19 @@ const canReopen = computed(() => !isSummary.value && !!report.value?.shift.closi
 const reopen = async () => {
   const r = report.value;
   if (!r?.shift.closing_shift) return;
-  if (!window.confirm(`Reopen ${r.shift.driver_name}'s shift from ${formatDate(r.shift.shift_date)}? The closing ${r.shift.closing_shift} is cancelled and the shift continues until it is closed again.`)) return;
+  const ok = await confirm({
+    title: 'Reopen this shift?',
+    message: `${r.shift.driver_name}'s shift from ${formatDate(r.shift.shift_date)} continues until it is closed again. The closing ${r.shift.closing_shift} is cancelled.`,
+    confirmLabel: 'Reopen',
+    tone: 'warning',
+    icon: 'refresh',
+  });
+  if (!ok) return;
   reopening.value = true;
   actionError.value = '';
   try {
     const opening = await api.reopenShift(r.shift.closing_shift);
+    toast.success('Shift reopened');
     router.replace({ name: 'shift-summary', query: { opening: opening.name } });
   } catch (e: any) {
     actionError.value = e?.message || 'Could not reopen the shift.';
@@ -354,11 +369,17 @@ const reopen = async () => {
 const t = computed(() => report.value!.totals);
 const description = computed(() =>
   isSummary.value
-    ? 'Everything on your open shift so far. Running it does not close the shift.'
+    ? 'Interim report: the shift is still open, so these figures change until it is closed.'
     : report.value
       ? `Final figures for the shift on ${formatDate(report.value.shift.shift_date)}.`
       : 'Final figures for a closed shift.',
 );
+const subtitle = computed(() => {
+  const r = report.value;
+  if (!r) return isSummary.value ? 'Open shift' : 'Closed shift';
+  const who = r.shift.driver_name || r.shift.driver;
+  return `${who} · ${formatDate(r.shift.shift_date)}`;
+});
 // ─── Tile drill-down ────────────────────────────────────────────────────────
 type DetailKind = 'sales' | 'collections' | 'expenses' | 'cash';
 const detail = ref<DetailKind | null>(null);
@@ -391,10 +412,7 @@ const cashLines = computed(() => {
     { label: 'Deposited to office', amount: r.totals.total_deposits, sign: -1 },
   ];
 });
-const formatTime = (ts: string | null) => {
-  const d = parseTs(ts);
-  return d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
-};
+const formatTime = (ts: string | null) => time(ts);
 
 const salesLines = computed(() => [
   { label: 'Sales orders', count: t.value.sales_orders_count, amount: t.value.total_sales, negative: false },
@@ -404,26 +422,15 @@ const salesLines = computed(() => [
   { label: 'Returns', count: t.value.returns_count, amount: t.value.returns_total, negative: true },
 ]);
 
-const fmt = (n?: number | null) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const qty = (n: number) => (n || 0).toLocaleString(undefined, { maximumFractionDigits: 3 });
 const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${currency.value} ${fmt(Math.abs(n))}`;
 const varianceClass = (n: number) =>
   n === 0
-    ? 'border-border bg-muted/40 text-foreground'
+    ? 'bg-card-muted text-foreground ring-line'
     : n > 0
-      ? 'border-success/25 bg-success/10 text-success'
-      : 'border-danger/25 bg-danger/10 text-danger';
-const parseTs = (ts: string | null) => (ts ? new Date(ts.replace(' ', 'T')) : null);
-const formatDateTime = (ts: string | null) => {
-  const d = parseTs(ts);
-  return d && !Number.isNaN(d.getTime())
-    ? d.toLocaleString(undefined, { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-    : '—';
-};
-const formatDate = (s: string) => {
-  const d = new Date(`${s}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-};
+      ? 'bg-success/10 text-success ring-success/25'
+      : 'bg-danger/10 text-danger ring-danger/25';
+const formatDateTime = (ts: string | null) => dateTime(ts) || '—';
+const formatDate = (s: string) => shortDate(s) || s;
 
 const load = async () => {
   loading.value = true;

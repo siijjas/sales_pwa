@@ -1,2 +1,0 @@
-import{d as e,c as t,w as a,_ as s,o as n,a as i,u as o,b as r}from"./index-DY0O3_hw.js";const d=e({__name:"CustomerView",setup(c){return(_,u)=>(n(),t(s,{back:"",title:"Customer"},{default:a(()=>[i(o(r),{icon:"inbox",title:"Being rebuilt",description:"This screen is part of the UI rebuild and lands in the next phase."})]),_:1}))}});export{d as default};
-//# sourceMappingURL=CustomerView-vCOCnQ9D.js.map

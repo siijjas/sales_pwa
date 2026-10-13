@@ -14,16 +14,18 @@ bench install-app sales_pwa
 
 ### Setup
 
-The app serves two kinds of field staff from one PWA, chosen per **Sales Profile** (Settings → Sales Profiles in the app, or the Sales Profile doctype):
+The app serves two kinds of field staff from one PWA, chosen per **Sales Profile** (**Staff** in the app, or the Sales Profile doctype):
 
 - **Van Sales** — drivers with stock on board: orders, invoicing, delivery, returns, van loading, stock dashboard, and cash shifts. By default each van has its own warehouse, loaded from the main warehouse; switch off **Separate Van Warehouse** on the profile for a van that sells straight from the main warehouse (stock loading is then hidden and orders, invoices, returns and the stock dashboard use the main warehouse).
 - **Field Sales** — order takers without a van: orders and payments only; the back office invoices and delivers. An optional stock warehouse gives them read-only quantities. Shifts are optional.
 
 Shifts work like POS Awesome's: an opening float per payment mode, expenses and cash deposits to the office recorded from the drawer (each posted as a Journal Entry), and a closing that counts every mode against the expected amount. Closings are aggregated by the shift's time window (driver + creation time), never by stamping ERPNext documents. A per-profile **variance tolerance** flags closings that are off (it never blocks); managers can close or reopen any shift.
 
-**Invoice options** (Settings → Invoice options in the app, or the Sales Invoice Option doctype) are named ways of raising an invoice, each with its own Sales Invoice naming series and tax template (blank = no tax). Each option also carries a payment rule: available for credit invoices or not, and for which paid-now modes of payment (empty = every mode). A Sales Profile lists the options its staff may use and marks one default. When staff create an invoice from an order they see only the options that fit the payment choice they made, pick one, see the proposed invoice number (the series' next counter, read without consuming it, so it can still move on) plus subtotal, tax lines and grand total computed by ERPNext, and confirm. A profile without options invoices as before.
+**Invoice options** (**Setup → Invoice options** in the app, or the Sales Invoice Option doctype) are named ways of raising an invoice, each with its own Sales Invoice naming series and tax template (blank = no tax). Each option also carries a payment rule: available for credit invoices or not, and for which paid-now modes of payment (empty = every mode). A Sales Profile lists the options its staff may use and marks one default. When staff create an invoice from an order they see only the options that fit the payment choice they made, pick one, see the proposed invoice number (the series' next counter, read without consuming it, so it can still move on) plus subtotal, tax lines and grand total computed by ERPNext, and confirm. A profile without options invoices as before.
 
 The profile also carries the POS-style staff controls: max discount %, the customer's own price list, zero rated items, credit sales, returns and their validity window, hiding out-of-stock items, customer balance visibility, creating customers (and duplicate names), blind cash counts, manager-only closing, and staff cancelling their own cash movements. All are enforced server-side; managers are exempt.
+
+The app has five tabs on a phone (a rail on tablets and desktops): **Home**, **Sell**, **Customers**, then **Stock**, **Reports** or **Activity** depending on the person, and **More**. Selling is one three-step flow (customer, items, review) that ends with "Submit order" or "Submit & invoice"; everything about a customer (balance, collect payment, return, ledger) starts from their page; the shift has its own area. A sale in progress is kept on the device until it is submitted or discarded. The app is online-only.
 
 After pulling changes, migrate and rebuild:
 

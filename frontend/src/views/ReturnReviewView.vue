@@ -1,76 +1,108 @@
 <template>
-  <WorkspacePage back eyebrow="Review" title="Return summary" :description="customerName ? `From ${customerName}` : 'Confirm items being returned.'" width="default">
+  <WorkspacePage back title="Review return" :subtitle="returns.customer ? `From ${returns.customer.customer_name}` : undefined">
+    <template #actions>
+      <AppButton v-if="returns.lines.length" variant="ghost" size="sm" icon="trash" @click="clearAll">Clear</AppButton>
+    </template>
+
     <div class="space-y-4 pb-28">
-      <AppCard class="bg-gradient-to-br from-danger to-danger/80 text-danger-fg" padding="lg">
-        <p class="text-xs font-semibold uppercase tracking-wide opacity-80">Total credit issued</p>
-        <p class="tnum text-3xl font-bold">{{ currency }} {{ total }}</p>
-        <p class="mt-1 text-sm opacity-90">{{ cartCount }} item{{ cartCount !== 1 ? 's' : '' }}</p>
+      <AppCard padding="lg" class="bg-danger/10 ring-1 ring-inset ring-danger/25">
+        <p class="text-[11px] font-bold uppercase tracking-[0.08em] text-danger">Credit to issue</p>
+        <p class="tnum mt-1 text-[30px] font-semibold leading-none tracking-tightest text-foreground">{{ currency }} {{ money(returns.total) }}</p>
+        <p class="mt-2 text-[12.5px] text-muted">{{ plural(returns.lines.length, 'item') }} · {{ qty(returns.count) }} units · reduces the customer's outstanding balance</p>
       </AppCard>
 
       <AppAlert v-if="error" tone="danger" :message="error" />
 
-      <AppCard v-if="cart.length" padding="none">
-        <div class="divide-y divide-line">
-          <div v-for="line in cart" :key="line.item.item_code" class="flex items-center justify-between gap-3 p-4">
-            <div class="min-w-0 flex-1">
-              <p class="truncate font-semibold text-foreground">{{ line.item.item_name }}</p>
-              <p class="mt-0.5 text-xs text-muted">{{ line.item.item_code }}</p>
-              <p class="tnum mt-1 text-sm font-bold text-foreground">
-                {{ currency }} {{ (line.qty * rate(line)).toFixed(2) }}
-                <span class="font-medium text-muted">• {{ line.qty }} × {{ currency }} {{ rate(line).toFixed(2) }}</span>
-              </p>
-            </div>
-            <QtyStepper :model-value="line.qty" @change="(d: number) => store.updateReturnQty(line.item.item_code, d)" />
+      <AppCard v-if="returns.lines.length" padding="none" class="divide-y divide-line">
+        <div v-for="line in returns.lines" :key="line.item.item_code" class="flex items-center justify-between gap-3 p-4">
+          <div class="min-w-0 flex-1">
+            <p class="truncate font-semibold leading-tight text-foreground">{{ line.item.item_name }}</p>
+            <p class="mt-0.5 text-xs text-muted">{{ line.item.item_code }}</p>
+            <p class="tnum mt-1 text-sm font-bold text-foreground">
+              {{ currency }} {{ money(line.qty * lineRate(line)) }}
+              <span class="font-medium text-muted">· {{ qty(line.qty) }} × {{ money(lineRate(line)) }}</span>
+            </p>
           </div>
+          <QtyStepper :model-value="line.qty" @change="(d: number) => returns.changeQty(line.item.item_code, d)" />
         </div>
       </AppCard>
-      <EmptyState v-else icon="rotate-ccw" title="No items selected" description="Add items from the return catalog." />
+      <EmptyState v-else icon="rotate-ccw" title="No items selected" description="Add the items being returned first.">
+        <template #action>
+          <AppButton variant="secondary" icon="package" @click="router.replace({ name: 'return-items', params: { name } })">Choose items</AppButton>
+        </template>
+      </EmptyState>
     </div>
 
-    <StickyBar v-if="cart.length">
-      <AppButton variant="danger" size="lg" block icon="rotate-ccw" :loading="loading" @click="submit">
-        {{ loading ? 'Processing…' : 'Process return credit' }}
+    <StickyBar v-if="returns.lines.length">
+      <AppButton variant="danger" size="lg" block icon="rotate-ccw" :loading="submitting" @click="submit">
+        {{ submitting ? 'Issuing…' : `Issue credit note · ${currency} ${money(returns.total)}` }}
       </AppButton>
     </StickyBar>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
-import type { CartLine } from '../types';
 import { useSessionStore } from '../stores/session';
+import { useReturnStore } from '../stores/returns';
+import { useShiftStore } from '../stores/shift';
+import { lineRate } from '../stores/sale';
+import { useToast } from '../composables/useToast';
+import { useConfirm } from '../composables/useConfirm';
+import { money, plural, qty } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, QtyStepper, EmptyState, StickyBar } from '../components/ui';
 
-const store = useSessionStore();
+const route = useRoute();
 const router = useRouter();
+const store = useSessionStore();
+const returns = useReturnStore();
+const shift = useShiftStore();
+const toast = useToast();
+const { confirm } = useConfirm();
 
-const cart = computed(() => store.returnCart);
-const cartCount = computed(() => store.returnCartCount);
-const total = computed(() => store.returnCartTotal.toFixed(2));
+const name = computed(() => String(route.params.name));
 const currency = computed(() => store.currencyDisplay);
-const customerName = computed(() => store.customer?.customer_name || '');
-
-const loading = ref(false);
+const submitting = ref(false);
 const error = ref('');
-const rate = (line: CartLine) => line.item.price_list_rate || line.item.standard_rate || 0;
+
+onMounted(async () => {
+  await shift.refresh();
+  if (shift.needsShift) {
+    router.replace(shift.gateRoute);
+    return;
+  }
+  // The review belongs to the customer in the route; a stale draft for someone else is dropped.
+  if (returns.customer && returns.customer.name !== name.value) returns.clear();
+  if (!returns.customer) router.replace({ name: 'return-items', params: { name: name.value } });
+});
+
+async function clearAll() {
+  if (await confirm({ title: 'Clear the return?', message: 'All selected items will be removed.', confirmLabel: 'Clear', tone: 'danger', icon: 'trash' })) {
+    returns.clear();
+    router.replace({ name: 'return-items', params: { name: name.value } });
+  }
+}
 
 const submit = async () => {
-  if (!store.customer || !cart.value.length) return;
-  loading.value = true;
+  if (!returns.customer || !returns.lines.length) return;
+  submitting.value = true;
   error.value = '';
   try {
     // Send the rate the driver was shown — the server only sees the price list otherwise.
-    const items = cart.value.map((line) => ({ item_code: line.item.item_code, qty: line.qty, rate: rate(line) }));
-    await api.createSalesReturn(store.customer.name, items);
-    store.clearReturnCart();
-    router.push({ name: 'ledger', query: { refresh: '1' } });
+    const items = returns.lines.map((line) => ({ item_code: line.item.item_code, qty: line.qty, rate: lineRate(line) }));
+    const total = returns.total;
+    await api.createSalesReturn(returns.customer.name, items);
+    const customer = returns.customer.name;
+    returns.clear();
+    toast.success('Credit note issued', { message: `${currency.value} ${money(total)} credited` });
+    router.replace({ name: 'customer', params: { name: customer } });
   } catch (e: any) {
-    error.value = e?.message || 'Failed to process return. Check permissions and stock settings.';
+    error.value = e?.message || 'Failed to process the return. Check permissions and stock settings.';
   } finally {
-    loading.value = false;
+    submitting.value = false;
   }
 };
 </script>

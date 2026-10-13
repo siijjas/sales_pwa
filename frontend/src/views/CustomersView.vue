@@ -1,153 +1,139 @@
 <template>
-  <WorkspacePage back :eyebrow="actionLabel" title="Select customer" width="default">
+  <WorkspacePage title="Customers" :subtitle="subtitle">
     <template #actions>
-      <AppButton v-if="canCreateCustomer" size="sm" icon="plus" @click="openNewCustomer">New customer</AppButton>
+      <AppButton v-if="store.canCreateCustomer" size="sm" icon="plus" @click="openNew">New</AppButton>
+    </template>
+    <template #sticky>
+      <SearchBar v-model="search" placeholder="Search by name, ID or mobile…" />
     </template>
 
-    <div class="space-y-4">
-      <div class="sticky top-[60px] z-30 -mx-1 px-1 pb-1">
-        <SearchBar v-model="txt" placeholder="Search customers by name or ID…" />
-      </div>
-
-      <AppAlert tone="info" :message="actionHint" />
-
-      <SkeletonList v-if="loading" :rows="5" height="4rem" />
-      <EmptyState v-else-if="!customers.length" icon="users" title="No customers found" description="Try a different search term, or add this customer as new.">
-        <template #action>
-          <AppButton v-if="canCreateCustomer" variant="secondary" icon="plus" @click="openNewCustomer">New customer</AppButton>
+    <AppAlert v-if="error" tone="danger" :message="error" class="mb-3" />
+    <SkeletonList v-if="loading && !customers.length" :rows="6" height="4rem" />
+    <EmptyState
+      v-else-if="!customers.length"
+      icon="users"
+      title="No customers found"
+      :description="search ? 'Try a different name, ID or mobile number.' : 'Customers you can sell to show up here.'"
+    >
+      <template v-if="store.canCreateCustomer" #action>
+        <AppButton variant="secondary" icon="plus" @click="openNew">New customer</AppButton>
+      </template>
+    </EmptyState>
+    <AppCard v-else padding="none" class="divide-y divide-line" :class="loading ? 'opacity-60' : ''">
+      <ListRow
+        v-for="c in customers"
+        :key="c.name"
+        interactive
+        chevron
+        :title="c.customer_name"
+        :subtitle="rowSubtitle(c)"
+        @click="open(c)"
+      >
+        <template #leading><Avatar :name="c.customer_name" size="sm" /></template>
+        <template v-if="c.territory" #trailing>
+          <StatusBadge tone="neutral" :dot="false">{{ c.territory }}</StatusBadge>
         </template>
-      </EmptyState>
-      <div v-else class="space-y-2.5">
-        <AppCard
-          v-for="customer in customers"
-          :key="customer.name"
-          padding="sm"
-          interactive
-          @click="selectCustomer(customer)"
-        >
-          <div class="flex items-center gap-3">
-            <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/12 text-sm font-bold text-primary">
-              {{ initials(customer.customer_name) }}
-            </span>
-            <div class="min-w-0 flex-1">
-              <p class="truncate font-semibold text-foreground">{{ customer.customer_name }}</p>
-              <p class="truncate text-xs text-muted">{{ customer.name }}</p>
-            </div>
-            <StatusBadge v-if="customer.territory" tone="neutral" :dot="false">{{ customer.territory }}</StatusBadge>
-            <AppIcon name="chevron-right" :size="18" class="text-subtle" />
-          </div>
-        </AppCard>
-      </div>
-    </div>
+      </ListRow>
+    </AppCard>
 
-    <BottomSheet v-model="newCustomerOpen" title="New customer">
+    <BottomSheet v-model="newOpen" title="New customer">
       <div class="space-y-4">
         <FormField label="Customer name" required>
-          <BaseInput v-model="newCustomerName" placeholder="e.g. Al Amal Grocery" @keyup.enter="submitNewCustomer" />
+          <BaseInput v-model="newName" placeholder="e.g. Al Amal Grocery" @keyup.enter="submitNew" />
         </FormField>
         <FormField label="Mobile number">
-          <BaseInput v-model="newCustomerMobile" type="tel" inputmode="tel" placeholder="Optional" @keyup.enter="submitNewCustomer" />
+          <BaseInput v-model="newMobile" type="tel" inputmode="tel" placeholder="Optional" @keyup.enter="submitNew" />
         </FormField>
-        <AppAlert v-if="newCustomerError" tone="danger" :message="newCustomerError" />
-        <div class="flex gap-3">
-          <AppButton variant="subtle" block @click="newCustomerOpen = false">Cancel</AppButton>
-          <AppButton block :loading="creatingCustomer" @click="submitNewCustomer">Add customer</AppButton>
-        </div>
+        <AppAlert v-if="newError" tone="danger" :message="newError" />
       </div>
+      <template #footer>
+        <div class="grid grid-cols-2 gap-2.5">
+          <AppButton variant="subtle" size="lg" block @click="newOpen = false">Cancel</AppButton>
+          <AppButton size="lg" block :loading="creating" @click="submitNew">Add customer</AppButton>
+        </div>
+      </template>
     </BottomSheet>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue';
-import { useRouter, useRoute } from 'vue-router';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import type { Customer } from '../types';
 import { useSessionStore } from '../stores/session';
+import { useToast } from '../composables/useToast';
+import { plural } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, AppIcon, SearchBar, StatusBadge, SkeletonList, EmptyState, BottomSheet, FormField, BaseInput } from '../components/ui';
+import { AppCard, AppButton, AppAlert, Avatar, ListRow, SearchBar, StatusBadge, SkeletonList, EmptyState, BottomSheet, FormField, BaseInput } from '../components/ui';
 
 const router = useRouter();
-const route = useRoute();
 const store = useSessionStore();
-const txt = ref('');
+const toast = useToast();
+
+const search = ref('');
 const customers = ref<Customer[]>([]);
 const loading = ref(true);
+const error = ref('');
 
-const newCustomerOpen = ref(false);
-const newCustomerName = ref('');
-const newCustomerMobile = ref('');
-const newCustomerError = ref('');
-const creatingCustomer = ref(false);
+const subtitle = computed(() => (loading.value && !customers.value.length ? undefined : plural(customers.value.length, 'customer') + (search.value ? ' matching' : '')));
 
-const redirect = computed(() => route.query.redirect as string | undefined);
-const actionLabel = computed(
-  () => ({ payment: 'Collect Payment', ledger: 'Customer Ledger', return: 'Sales Return' })[redirect.value || ''] || 'New Order',
-);
-const actionHint = computed(
-  () =>
-    ({
-      payment: 'The selected customer opens the payment collection workflow.',
-      ledger: 'The selected customer opens their financial ledger.',
-      return: 'The selected customer opens the returns workflow.',
-    })[redirect.value || ''] || 'The selected customer continues to the catalog to build a new order.',
-);
+const rowSubtitle = (c: Customer) => [c.name, c.mobile_no].filter(Boolean).join(' · ');
 
-const initials = (name: string) =>
-  name
-    .split(' ')
-    .map((w) => w[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-
+let timer = 0;
+let requestSeq = 0;
 const load = async () => {
+  const seq = ++requestSeq;
   loading.value = true;
-  customers.value = await api.searchCustomers(txt.value);
-  loading.value = false;
+  error.value = '';
+  try {
+    const rows = await api.searchCustomers(search.value);
+    if (seq === requestSeq) customers.value = rows;
+  } catch (e: any) {
+    if (seq === requestSeq) error.value = e?.message || 'Could not load customers';
+  } finally {
+    if (seq === requestSeq) loading.value = false;
+  }
 };
-
-watch(txt, () => {
-  clearTimeout(timer);
+watch(search, () => {
+  window.clearTimeout(timer);
   timer = window.setTimeout(load, 300);
 });
-let timer = window.setTimeout(load, 0);
+onMounted(load);
 
-const selectCustomer = (customer: Customer) => {
-  store.setCustomer(customer);
-  if (redirect.value === 'payment') router.push({ name: 'payment' });
-  else if (redirect.value === 'ledger') router.push({ name: 'ledger' });
-  else if (redirect.value === 'return') {
-    store.clearReturnCart();
-    router.push({ name: 'return-items', query: { customer: customer.name, customer_name: customer.customer_name } });
-  } else router.push({ name: 'items' });
+const open = (c: Customer) => router.push({ name: 'customer', params: { name: c.name } });
+
+// New customer sheet (Sales Profile.allow_create_customer off: staff pick from the list only).
+const newOpen = ref(false);
+const newName = ref('');
+const newMobile = ref('');
+const newError = ref('');
+const creating = ref(false);
+
+const openNew = () => {
+  newName.value = search.value.trim();
+  newMobile.value = '';
+  newError.value = '';
+  newOpen.value = true;
 };
 
-// Sales Profile.allow_create_customer off: staff pick from the list only.
-const canCreateCustomer = computed(() => store.isManager || store.capabilities.can_create_customer !== false);
-const openNewCustomer = () => {
-  newCustomerName.value = txt.value.trim();
-  newCustomerMobile.value = '';
-  newCustomerError.value = '';
-  newCustomerOpen.value = true;
-};
-
-const submitNewCustomer = async () => {
-  const name = newCustomerName.value.trim();
+const submitNew = async () => {
+  const name = newName.value.trim();
   if (!name) {
-    newCustomerError.value = 'Customer name is required';
+    newError.value = 'Customer name is required';
     return;
   }
-  creatingCustomer.value = true;
-  newCustomerError.value = '';
+  creating.value = true;
+  newError.value = '';
   try {
-    const customer = await api.createCustomer(name, newCustomerMobile.value.trim() || undefined);
-    newCustomerOpen.value = false;
-    selectCustomer(customer);
+    const customer = await api.createCustomer(name, newMobile.value.trim() || undefined);
+    newOpen.value = false;
+    toast.success(`${customer.customer_name} added`);
+    router.push({ name: 'customer', params: { name: customer.name } });
   } catch (e: any) {
-    newCustomerError.value = e?.message || 'Failed to create customer';
+    newError.value = e?.message || 'Failed to create customer';
   } finally {
-    creatingCustomer.value = false;
+    creating.value = false;
   }
 };
 </script>

@@ -1,124 +1,100 @@
 <template>
-  <WorkspacePage back eyebrow="Ledger" title="Customer ledger" description="Invoiced amounts, receipts, and running balance." width="default">
+  <WorkspacePage back title="Ledger" :subtitle="customer?.customer_name">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="refresh" :loading="loading" @click="reload">Refresh</AppButton>
+      <AppButton variant="ghost" size="sm" icon="refresh" :loading="loading" aria-label="Refresh" @click="loadLedger" />
+    </template>
+    <template #sticky>
+      <SegmentedControl v-model="period" :options="PERIODS" />
     </template>
 
-    <div class="space-y-4">
-      <!-- Customer + period controls -->
-      <AppCard padding="sm" class="space-y-3">
-        <button
-          v-if="customer"
-          class="focus-ring flex w-full items-center justify-between rounded-2xl bg-primary/10 px-3.5 py-3 text-left"
-          @click="changeCustomer"
-        >
-          <div class="flex items-center gap-3">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/15 text-xs font-bold text-primary">
-              {{ initials(customer.customer_name) }}
-            </span>
-            <p class="font-bold text-foreground">{{ customer.customer_name }}</p>
-          </div>
-          <span class="text-xs font-semibold text-primary">Change</span>
-        </button>
-        <AppButton v-else variant="secondary" block icon="plus" @click="$router.push({ name: 'customers', query: { redirect: 'ledger' } })">
-          Select customer
-        </AppButton>
+    <AppAlert v-if="error" tone="danger" :message="error" />
+    <SkeletonList v-else-if="loading && !entries.length" :rows="6" height="3.5rem" />
 
-        <FormField label="Period">
-          <BaseSelect v-model="selectedPeriod">
-            <option value="week">Last week</option>
-            <option value="month">Last month</option>
-            <option value="3months">Last 3 months</option>
-            <option value="6months">Last 6 months</option>
-          </BaseSelect>
-        </FormField>
+    <div v-else class="space-y-5" :class="loading ? 'opacity-60' : ''">
+      <!-- Closing balance -->
+      <AppCard padding="lg" class="bg-primary text-primary-fg">
+        <p class="text-[11px] font-bold uppercase tracking-[0.08em] opacity-80">Outstanding balance</p>
+        <p class="tnum mt-1 text-[30px] font-semibold leading-none tracking-tightest">{{ currency }} {{ money(Math.abs(currentBalance)) }}</p>
+        <p class="mt-2 text-[12px] opacity-80">{{ currentBalance < -0.005 ? 'In credit' : 'Owed by the customer' }} · as of {{ shortDate(range.to) }}</p>
       </AppCard>
 
-      <SkeletonList v-if="loading" :rows="6" height="3.5rem" />
-      <EmptyState v-else-if="customer && !entries.length" icon="ledger" title="No transactions" description="Nothing recorded for this period." />
+      <div class="grid grid-cols-3 gap-2.5">
+        <KpiTile label="Opening" :value="money(openingBalance)" :sub="shortDate(range.from)" tone="info" />
+        <KpiTile label="Invoiced" :value="money(totalDebit)" tone="danger" />
+        <KpiTile label="Received" :value="money(totalCredit)" tone="success" />
+      </div>
 
-      <template v-else-if="customer && entries.length">
-        <!-- Summary -->
-        <div class="grid grid-cols-3 gap-3">
-          <KpiTile label="Opening" :value="`${currency} ${openingBalance.toFixed(2)}`" tone="info" />
-          <KpiTile label="Invoiced" :value="`${currency} ${totalDebit.toFixed(2)}`" tone="danger" />
-          <KpiTile label="Received" :value="`${currency} ${totalCredit.toFixed(2)}`" tone="success" />
-        </div>
-
-        <!-- Transactions -->
-        <AppCard padding="none">
-          <div class="border-b border-line px-4 py-3 text-xs font-bold uppercase tracking-wider text-muted">
-            {{ entries.length }} transactions
-          </div>
-          <div class="divide-y divide-line">
-            <div v-for="(entry, index) in entriesWithBalance" :key="index" class="flex items-center gap-3 px-4 py-3">
-              <span
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                :class="entry.debit > 0 ? 'bg-danger/12 text-danger' : 'bg-success/12 text-success'"
-              >
-                <AppIcon :name="entry.debit > 0 ? 'file-text' : 'banknote'" :size="17" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-semibold text-foreground">{{ getDescription(entry) }}</p>
-                <p class="text-[11px] text-muted">{{ formatDate(entry.posting_date) }} • {{ entry.voucher_no }}</p>
-              </div>
-              <div class="shrink-0 text-right">
-                <p class="tnum text-sm font-bold" :class="entry.debit > 0 ? 'text-danger' : 'text-success'">
-                  {{ entry.debit > 0 ? '+' : '−' }} {{ currency }} {{ (entry.debit > 0 ? entry.debit : entry.credit).toFixed(2) }}
+      <section>
+        <SectionHeader title="Transactions" :description="entries.length ? plural(entries.length, 'entry', 'entries') : undefined" />
+        <EmptyState v-if="!entries.length" icon="ledger" title="No transactions" description="Nothing recorded in this period." />
+        <AppCard v-else padding="none" class="divide-y divide-line">
+          <ListRow
+            v-for="(entry, index) in entriesWithBalance"
+            :key="index"
+            dense
+            :icon="entry.debit > 0 ? 'file-text' : 'banknote'"
+            :tone="entry.debit > 0 ? 'danger' : 'success'"
+            :title="describe(entry)"
+            :subtitle="`${relativeDate(entry.posting_date)} · ${entry.voucher_no}`"
+          >
+            <template #trailing>
+              <div class="text-right">
+                <p class="tnum text-[14px] font-bold" :class="entry.debit > 0 ? 'text-danger' : 'text-success'">
+                  {{ entry.debit > 0 ? '+' : '−' }} {{ money(entry.debit > 0 ? entry.debit : entry.credit) }}
                 </p>
-                <p class="tnum text-[11px] text-muted">Bal {{ currency }} {{ Math.abs(entry.balance).toFixed(2) }}</p>
+                <p class="tnum text-[11px] text-muted">Bal {{ money(Math.abs(entry.balance)) }}</p>
               </div>
-            </div>
-          </div>
+            </template>
+          </ListRow>
         </AppCard>
-
-        <!-- Outstanding -->
-        <AppCard class="bg-gradient-to-br from-primary to-primary/80 text-primary-fg" padding="lg">
-          <p class="text-xs font-semibold uppercase tracking-wide opacity-80">Outstanding balance</p>
-          <p class="tnum mt-1 text-3xl font-bold">{{ currency }} {{ Math.abs(currentBalance).toFixed(2) }}</p>
-        </AppCard>
-      </template>
+      </section>
     </div>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
-import { useSessionStore } from '../stores/session';
 import * as api from '../api/frappe';
-import type { LedgerEntry } from '../types';
+import type { Customer, LedgerEntry } from '../types';
+import { useSessionStore } from '../stores/session';
+import { money, plural, relativeDate, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppIcon, KpiTile, FormField, BaseSelect, SkeletonList, EmptyState } from '../components/ui';
+import { AppCard, AppButton, AppAlert, KpiTile, ListRow, SectionHeader, SegmentedControl, SkeletonList, EmptyState } from '../components/ui';
 
-const store = useSessionStore();
+const PERIODS = [
+  { value: 'week', label: '1w' },
+  { value: 'month', label: '1m' },
+  { value: '3months', label: '3m' },
+  { value: '6months', label: '6m' },
+];
+
 const route = useRoute();
-
-const customer = computed(() => store.customer);
+const store = useSessionStore();
 const currency = computed(() => store.currencyDisplay);
+const name = computed(() => String(route.params.name));
 
-const selectedPeriod = ref('week');
+const customer = ref<Customer | null>(null);
+const period = ref('month');
 const entries = ref<LedgerEntry[]>([]);
 const openingBalance = ref(0);
-const loading = ref(false);
+const loading = ref(true);
+const error = ref('');
 
-const dateRange = computed(() => {
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const range = computed(() => {
   const end = new Date();
   const start = new Date();
-  if (selectedPeriod.value === 'week') start.setDate(start.getDate() - 7);
-  else if (selectedPeriod.value === 'month') start.setMonth(start.getMonth() - 1);
-  else if (selectedPeriod.value === '3months') start.setMonth(start.getMonth() - 3);
-  else if (selectedPeriod.value === '6months') start.setMonth(start.getMonth() - 6);
-  return { from: start.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+  if (period.value === 'week') start.setDate(start.getDate() - 7);
+  else if (period.value === 'month') start.setMonth(start.getMonth() - 1);
+  else if (period.value === '3months') start.setMonth(start.getMonth() - 3);
+  else start.setMonth(start.getMonth() - 6);
+  return { from: iso(start), to: iso(end) };
 });
-
-const customerParam = route.query.customer as string | undefined;
-const customerNameParam = route.query.customer_name as string | undefined;
 
 interface EntryWithBalance extends LedgerEntry {
   balance: number;
 }
-
 const entriesWithBalance = computed<EntryWithBalance[]>(() => {
   let running = openingBalance.value;
   return entries.value.map((entry) => {
@@ -130,60 +106,37 @@ const currentBalance = computed(() => openingBalance.value + entries.value.reduc
 const totalDebit = computed(() => entries.value.reduce((sum, e) => sum + e.debit, 0));
 const totalCredit = computed(() => entries.value.reduce((sum, e) => sum + e.credit, 0));
 
-const initials = (name: string) => name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
-
-const getDescription = (entry: EntryWithBalance): string => {
-  const labels: Record<string, string> = {
-    'Sales Invoice': 'Sales Invoice',
-    'Payment Entry': 'Payment Received',
-    'Journal Entry': 'Journal Entry',
-    'Credit Note': 'Credit Note',
-    'Debit Note': 'Debit Note',
-  };
-  return labels[entry.voucher_type] || entry.voucher_type;
+const LABELS: Record<string, string> = {
+  'Sales Invoice': 'Sales invoice',
+  'Payment Entry': 'Payment received',
+  'Journal Entry': 'Journal entry',
+  'Credit Note': 'Credit note',
+  'Debit Note': 'Debit note',
 };
+const describe = (entry: LedgerEntry) => LABELS[entry.voucher_type] || entry.voucher_type;
 
-const formatDate = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return 'Today';
-  if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
-const loadLedger = async () => {
-  if (!customer.value) return;
+async function loadLedger() {
   loading.value = true;
+  error.value = '';
   try {
-    const result = await api.getCustomerLedger(customer.value.name, dateRange.value.from, dateRange.value.to);
+    const result = await api.getCustomerLedger(name.value, range.value.from, range.value.to);
     if (Array.isArray(result)) {
       entries.value = result;
       openingBalance.value = 0;
     } else {
-      entries.value = (result as any).entries || [];
-      openingBalance.value = (result as any).opening_balance || 0;
+      entries.value = result.entries || [];
+      openingBalance.value = result.opening_balance || 0;
     }
-  } catch (e) {
-    console.error('Failed to load ledger', e);
+  } catch (e: any) {
+    error.value = e?.message || 'Could not load the ledger';
   } finally {
     loading.value = false;
   }
-};
+}
 
-const reload = () => customer.value && loadLedger();
-const changeCustomer = () => {
-  store.setCustomer(null);
-  entries.value = [];
-};
-
-onMounted(() => {
-  if (customerParam && customerNameParam) {
-    store.setCustomer({ name: customerParam, customer_name: customerNameParam, customer_group: '', territory: '' });
-  }
-  if (customer.value) loadLedger();
+onMounted(async () => {
+  api.getCustomer(name.value).then((c) => (customer.value = c)).catch(() => (customer.value = null));
+  await loadLedger();
 });
-
-watch([customer, selectedPeriod], () => customer.value && loadLedger());
+watch(period, loadLedger);
 </script>

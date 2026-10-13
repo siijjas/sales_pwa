@@ -1,108 +1,96 @@
 <template>
-  <WorkspacePage back eyebrow="Load van" title="Stock transfer" description="Replenish the van warehouse from the source warehouse." width="default">
-    <div class="space-y-4 pb-28">
+  <WorkspacePage :back="{ name: 'stock' }" title="Load van" subtitle="Transfer stock from the main warehouse">
+    <div class="space-y-4 pb-32">
       <!-- Route -->
-      <AppCard padding="sm" class="space-y-3">
+      <AppCard padding="sm">
         <div class="flex items-center gap-2">
-          <div class="flex-1 rounded-2xl bg-card-muted px-3 py-2.5">
+          <div class="min-w-0 flex-1 rounded-2xl bg-card-muted px-3 py-2.5">
             <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">From</p>
             <p class="truncate text-sm font-bold text-foreground">{{ driverConfig?.source_warehouse || 'Not configured' }}</p>
           </div>
           <AppIcon name="arrow-right" :size="20" class="shrink-0 text-subtle" />
-          <div class="flex-1 rounded-2xl bg-primary/10 px-3 py-2.5">
+          <div class="min-w-0 flex-1 rounded-2xl bg-primary-soft px-3 py-2.5">
             <p class="text-[11px] font-semibold uppercase tracking-wide text-primary">To</p>
             <p class="truncate text-sm font-bold text-foreground">{{ driverConfig?.van_warehouse || 'Not configured' }}</p>
           </div>
         </div>
-        <BaseTextarea v-model="remarks" :rows="2" placeholder="Optional note for this van load…" />
       </AppCard>
 
-      <AppAlert v-if="message" tone="success" :message="message" />
       <AppAlert v-if="error" tone="danger" :message="error" />
 
-      <!-- Source search -->
-      <AppCard padding="sm" class="space-y-3">
-        <p class="px-1 text-sm font-bold text-foreground">Search transfer items</p>
-        <SearchBar v-model="search" placeholder="Search by item name or code…" />
-        <SkeletonList v-if="searchLoading" :rows="2" height="4rem" />
-        <div v-else class="max-h-80 space-y-2 overflow-y-auto">
-          <div
-            v-for="item in searchResults"
-            :key="item.item_code"
-            class="flex items-center justify-between gap-3 rounded-2xl border border-line bg-card-muted p-3"
-          >
-            <div class="min-w-0">
-              <p class="truncate font-semibold text-foreground">{{ item.item_name }}</p>
-              <p class="text-xs text-muted">{{ item.item_code }} • {{ item.stock_uom }}</p>
-              <p class="tnum mt-0.5 text-xs text-muted">Source: {{ Number(item.actual_qty || 0).toFixed(2) }}</p>
-              <div class="mt-1 flex gap-1">
-                <StatusBadge v-if="item.has_batch_no" tone="info" :dot="false">Batch</StatusBadge>
-                <StatusBadge v-if="item.has_serial_no" tone="info" :dot="false">Serial</StatusBadge>
+      <!-- Lines -->
+      <section>
+        <SectionHeader title="This load" :description="lines.length ? plural(lines.length, 'line') : 'Nothing added yet'" />
+        <EmptyState v-if="!lines.length" icon="truck" title="No lines yet" description="Search the main warehouse below and add what you are loading." />
+        <div v-else class="space-y-2.5">
+          <AppCard v-for="line in lines" :key="line.item_code" class="space-y-3">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate font-semibold text-foreground">{{ line.item_name }}</p>
+                <p class="text-xs text-muted">{{ line.item_code }} · {{ line.stock_uom }} · {{ qty(line.available_qty) }} available</p>
               </div>
+              <button type="button" class="shrink-0 text-sm font-semibold text-danger" @click="removeLine(line.item_code)">Remove</button>
             </div>
-            <AppButton variant="secondary" size="sm" icon="plus" :disabled="lines.some(l => l.item_code === item.item_code)" @click="openAddSheet(item)">
-              {{ lines.some(l => l.item_code === item.item_code) ? 'Added' : 'Add' }}
-            </AppButton>
-          </div>
-          <p v-if="!searchResults.length" class="py-2 text-sm text-muted">No source stock found for this filter.</p>
+            <FormField label="Quantity" :error="line.qty > line.available_qty ? 'More than the main warehouse holds.' : undefined">
+              <BaseInput :model-value="line.qty" type="number" inputmode="decimal" min="0" @update:modelValue="(v) => setQty(line.item_code, v)" />
+            </FormField>
+            <FormField v-if="line.has_batch_no" label="Batch" required>
+              <BaseSelect :model-value="line.batch_no || ''" placeholder="Select batch" @update:modelValue="(v) => setBatch(line.item_code, v)">
+                <option v-for="batch in detailMap[line.item_code]?.batches || []" :key="batch.batch_no" :value="batch.batch_no">
+                  {{ batch.batch_no }} · {{ qty(batch.available_qty) }}
+                </option>
+              </BaseSelect>
+            </FormField>
+            <FormField v-if="line.has_serial_no" label="Serial numbers" :hint="`Entered ${(line.serial_nos || []).length} of ${Math.trunc(line.qty)}`">
+              <BaseTextarea :model-value="(line.serial_nos || []).join('\n')" :rows="4" placeholder="One serial number per line" @update:modelValue="(v) => setSerials(line.item_code, v)" />
+            </FormField>
+          </AppCard>
         </div>
-      </AppCard>
+      </section>
 
-      <!-- Transfer lines -->
-      <div class="space-y-3">
-        <div class="flex items-center justify-between px-1">
-          <p class="text-sm font-bold text-foreground">Transfer lines</p>
-          <p class="text-xs text-muted">{{ lines.length }} selected</p>
-        </div>
-
-        <EmptyState v-if="!lines.length" icon="truck" title="No lines yet" description="Add items from the source warehouse to build this load." />
-
-        <AppCard v-for="line in lines" :key="line.item_code" class="space-y-3">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate font-semibold text-foreground">{{ line.item_name }}</p>
-              <p class="text-xs text-muted">{{ line.item_code }} • {{ line.stock_uom }}</p>
-            </div>
-            <button class="text-sm font-semibold text-danger" @click="removeLine(line.item_code)">Remove</button>
+      <!-- Source search -->
+      <section>
+        <SectionHeader title="Add from main warehouse" />
+        <AppCard padding="sm" class="space-y-3">
+          <SearchBar v-model="search" placeholder="Search by item name or code…" />
+          <SkeletonList v-if="searchLoading" :rows="2" height="3.5rem" />
+          <div v-else class="max-h-96 divide-y divide-line overflow-y-auto">
+            <ListRow v-for="item in searchResults" :key="item.item_code" dense :title="item.item_name" :subtitle="`${item.item_code} · ${qty(item.actual_qty)} ${item.stock_uom}`">
+              <template #trailing>
+                <div class="flex items-center gap-1.5">
+                  <StatusBadge v-if="item.has_batch_no" tone="info" :dot="false">Batch</StatusBadge>
+                  <StatusBadge v-if="item.has_serial_no" tone="info" :dot="false">Serial</StatusBadge>
+                  <AppButton variant="secondary" size="sm" icon="plus" :disabled="lines.some((l) => l.item_code === item.item_code)" @click="openAddSheet(item)">
+                    {{ lines.some((l) => l.item_code === item.item_code) ? 'Added' : 'Add' }}
+                  </AppButton>
+                </div>
+              </template>
+            </ListRow>
+            <p v-if="!searchResults.length" class="py-3 text-center text-sm text-muted">No stock in the main warehouse matches this search.</p>
           </div>
-
-          <FormField label="Quantity" :hint="`Available: ${line.available_qty.toFixed(2)}`">
-            <BaseInput :model-value="line.qty" type="number" inputmode="numeric" @update:modelValue="(v) => setQty(line.item_code, v)" />
-          </FormField>
-
-          <FormField v-if="line.has_batch_no" label="Batch">
-            <BaseSelect :model-value="line.batch_no || ''" placeholder="Select batch" @update:modelValue="(v) => setBatch(line.item_code, v)">
-              <option v-for="batch in detailMap[line.item_code]?.batches || []" :key="batch.batch_no" :value="batch.batch_no">
-                {{ batch.batch_no }} • {{ batch.available_qty.toFixed(2) }}
-              </option>
-            </BaseSelect>
-          </FormField>
-
-          <FormField v-if="line.has_serial_no" label="Serial numbers" :hint="`Entered ${(line.serial_nos || []).length} of ${Math.trunc(line.qty)}`">
-            <BaseTextarea :model-value="(line.serial_nos || []).join('\n')" :rows="4" placeholder="One serial number per line" @update:modelValue="(v) => setSerials(line.item_code, v)" />
-          </FormField>
         </AppCard>
-      </div>
+      </section>
+
+      <AppCard padding="lg">
+        <FormField label="Note" hint="Optional, saved on the Stock Entry.">
+          <BaseTextarea v-model="remarks" :rows="2" placeholder="e.g. Morning load, route North" />
+        </FormField>
+      </AppCard>
     </div>
 
     <StickyBar>
-      <div class="flex items-center justify-between gap-3 pl-2">
-        <div>
-          <p class="text-[11px] font-semibold uppercase tracking-wide text-muted">Transfer</p>
-          <p class="text-sm font-bold text-foreground">{{ lines.length }} line{{ lines.length !== 1 ? 's' : '' }}</p>
-        </div>
-        <AppButton variant="warning" size="lg" icon="truck" :disabled="!canSubmit" :loading="submitting" @click="submitTransfer">
-          {{ submitting ? 'Submitting…' : 'Submit transfer' }}
-        </AppButton>
-      </div>
+      <AppButton size="lg" block icon="truck" :disabled="!canSubmit" :loading="submitting" @click="submitTransfer">
+        {{ submitting ? 'Submitting…' : lines.length ? `Submit transfer · ${plural(lines.length, 'line')}` : 'Add lines to transfer' }}
+      </AppButton>
     </StickyBar>
 
     <QtyInputSheet
       v-model="addSheetOpen"
       :title="pendingDetail?.item_name || ''"
-      :subtitle="pendingDetail?.item_code"
+      :subtitle="pendingDetail ? `${pendingDetail.item_code} · ${pendingDetail.stock_uom}` : undefined"
       :max-qty="pendingDetail?.source_qty"
-      confirm-label="Add to transfer"
+      :uom="pendingDetail?.stock_uom"
+      confirm-label="Add to load"
       @confirm="onTransferQtyConfirmed"
     />
   </WorkspacePage>
@@ -110,13 +98,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import type { Item, StockTransferLine, TransferItemDetail } from '../types';
 import { useSessionStore } from '../stores/session';
+import { useToast } from '../composables/useToast';
+import { qty, plural } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, BaseTextarea, SearchBar, StatusBadge, SkeletonList, EmptyState, StickyBar, QtyInputSheet } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, BaseTextarea, ListRow, SearchBar, SectionHeader, StatusBadge, SkeletonList, EmptyState, StickyBar, QtyInputSheet } from '../components/ui';
 
 const store = useSessionStore();
+const router = useRouter();
+const toast = useToast();
 const driverConfig = computed(() => store.driverConfig);
 const search = ref('');
 const searchResults = ref<Item[]>([]);
@@ -125,7 +118,6 @@ const lines = ref<StockTransferLine[]>([]);
 const detailMap = ref<Record<string, TransferItemDetail>>({});
 const submitting = ref(false);
 const error = ref('');
-const message = ref('');
 const remarks = ref('');
 const addSheetOpen = ref(false);
 const pendingDetail = ref<TransferItemDetail | null>(null);
@@ -145,7 +137,7 @@ const canSubmit = computed(() => {
 async function loadItems() {
   if (!driverConfig.value?.source_warehouse || !driverConfig.value?.van_warehouse) {
     searchResults.value = [];
-    error.value = 'Assign both source and van warehouses in Sales Profiles before creating a transfer.';
+    error.value = 'This profile has no separate van warehouse, so there is nothing to load. Ask a manager to check the Sales Profile.';
     searchLoading.value = false;
     return;
   }
@@ -172,9 +164,9 @@ async function openAddSheet(item: Item) {
   }
 }
 
-function onTransferQtyConfirmed(qty: number) {
+function onTransferQtyConfirmed(q: number) {
   const detail = pendingDetail.value;
-  if (!detail) return;
+  if (!detail || q <= 0) return;
   detailMap.value = { ...detailMap.value, [detail.item_code]: detail };
   lines.value = [
     ...lines.value,
@@ -182,7 +174,7 @@ function onTransferQtyConfirmed(qty: number) {
       item_code: detail.item_code,
       item_name: detail.item_name,
       stock_uom: detail.stock_uom,
-      qty,
+      qty: q,
       available_qty: detail.source_qty,
       has_batch_no: detail.has_batch_no,
       has_serial_no: detail.has_serial_no,
@@ -212,13 +204,10 @@ async function submitTransfer() {
   if (!canSubmit.value) return;
   submitting.value = true;
   error.value = '';
-  message.value = '';
   try {
     const result = await api.createStockTransfer(lines.value, remarks.value);
-    message.value = `Stock Entry ${result.name} submitted to ${result.to_warehouse}.`;
-    lines.value = [];
-    remarks.value = '';
-    await loadItems();
+    toast.success('Van loaded', { message: `Stock Entry ${result.name} submitted to ${result.to_warehouse}.` });
+    router.replace({ name: 'stock' });
   } catch (err: any) {
     error.value = err?.message || 'Failed to create stock transfer';
   } finally {

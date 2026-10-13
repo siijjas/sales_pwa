@@ -1,124 +1,50 @@
 <template>
-  <WorkspacePage eyebrow="Manager · access control" title="Roles & access" description="The three-tier role model enforced at the API and row level." width="default">
-    <template #actions>
-      <StatusBadge tone="primary" :dot="false">Restricted</StatusBadge>
-    </template>
-
+  <WorkspacePage eyebrow="Manager" title="Setup" subtitle="How invoicing, staff and the app are configured">
     <div class="space-y-5">
-      <!-- Role cards -->
-      <div class="grid gap-3 sm:grid-cols-3">
-        <div class="rounded-3xl bg-slate-950 p-5 text-white shadow-card">
-          <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10">
-            <AppIcon name="shield" :size="18" />
-          </div>
-          <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-slate-400">System Manager</p>
-          <p class="mt-1 text-lg font-bold">Full admin</p>
-          <p class="mt-1 text-sm text-slate-300">CRUD on all custom doctypes and manager endpoints. Can delete configurations.</p>
-        </div>
-        <AppCard class="border-warning/30 bg-warning/[0.08]" padding="lg">
-          <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-warning/15 text-warning">
-            <AppIcon name="users" :size="18" />
-          </div>
-          <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-warning">Sales Manager</p>
-          <p class="mt-1 text-lg font-bold text-foreground">Operations</p>
-          <p class="mt-1 text-sm text-muted">Manage profiles, view reports, approve loads. Cannot delete records.</p>
+      <section>
+        <SectionHeader title="Configuration" />
+        <AppCard padding="none" class="divide-y divide-line">
+          <ListRow interactive chevron icon="file-text" tone="primary" title="Invoice options" subtitle="Numbering series, tax template and payment rule per option. Enabled per Sales Profile." @click="router.push({ name: 'invoice-options' })" />
+          <ListRow interactive chevron icon="user" tone="info" title="Staff profiles" subtitle="Warehouses, payment modes, cash rules and who is assigned." @click="router.push({ name: 'staff' })" />
         </AppCard>
-        <AppCard class="border-success/30 bg-success/[0.08]" padding="lg">
-          <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-success/15 text-success">
-            <AppIcon name="briefcase" :size="18" />
-          </div>
-          <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-success">Sales App User</p>
-          <p class="mt-1 text-lg font-bold text-foreground">Sales staff</p>
-          <p class="mt-1 text-sm text-muted">Van drivers and field sales reps. PWA only, own data via row-level filter.</p>
+      </section>
+
+      <section>
+        <SectionHeader title="Appearance" />
+        <AppCard padding="lg">
+          <p class="text-[14px] font-semibold text-foreground">Theme</p>
+          <p class="mt-0.5 text-[12.5px] text-muted">Applies to this device only.</p>
+          <SegmentedControl class="mt-3" :model-value="preference" :options="[{ value: 'light', label: 'Light' }, { value: 'dark', label: 'Dark' }, { value: 'system', label: 'Follow device' }]" @update:model-value="(v: string) => setPreference(v as ThemePreference)" />
         </AppCard>
-      </div>
+      </section>
 
-      <!-- Permission matrix -->
-      <AppCard padding="none">
-        <div class="border-b border-line px-5 py-3 text-xs font-bold uppercase tracking-wider text-muted">Permission matrix</div>
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-sm">
-            <thead>
-              <tr class="border-b border-line">
-                <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-muted">Module / action</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">Sys Mgr</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">Sales Mgr</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">App User</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-line">
-              <tr v-for="row in permMatrix" :key="row.action">
-                <td class="px-5 py-3 font-medium text-foreground">{{ row.action }}</td>
-                <td class="px-4 py-3 text-center"><PermCell :value="row.sm" /></td>
-                <td class="px-4 py-3 text-center"><PermCell :value="row.mgr" /></td>
-                <td class="px-4 py-3 text-center"><PermCell :value="row.driver" /></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </AppCard>
+      <section>
+        <SectionHeader title="How access works" />
+        <AppAlert tone="info" title="Three roles">
+          <span class="block"><span class="font-semibold">System Manager</span> — full control, including deleting configuration.</span>
+          <span class="mt-1 block"><span class="font-semibold">Sales Manager</span> — runs the fleet: profiles, invoice options, reports, closing and reopening shifts.</span>
+          <span class="mt-1 block"><span class="font-semibold">Sales App User</span> — granted automatically to anyone assigned to an active Sales Profile; sees only their own work.</span>
+        </AppAlert>
+      </section>
 
-      <!-- Invoice options -->
-      <AppCard padding="lg">
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-muted">Invoicing</p>
-            <p class="mt-1 text-lg font-bold text-foreground">Invoice options</p>
-            <p class="mt-1 text-sm text-muted">Named ways of raising an invoice, each with its own numbering series and tax template. Enable them per Sales Profile; staff pick one and preview the number and totals before the invoice is created.</p>
-          </div>
-          <AppButton variant="secondary" size="sm" icon="receipt" @click="router.push({ name: 'invoice-options' })">Manage</AppButton>
-        </div>
-      </AppCard>
-
-      <!-- How-to -->
-      <AppAlert tone="info">
-        <span class="font-semibold">Assign the Sales App User role:</span>
-        <ol class="mt-2 list-inside list-decimal space-y-1">
-          <li>Open <strong>ERPNext Desk → Setup → User</strong> and select the staff member.</li>
-          <li>Add the <strong>Sales App User</strong> role.</li>
-          <li>Assign the user to a Sales Profile in <strong>Profiles</strong>.</li>
-          <li>Activate the profile — the user can now sign in to the Sales App.</li>
-        </ol>
-      </AppAlert>
+      <section>
+        <SectionHeader title="About" />
+        <AppCard padding="none">
+          <ListRow icon="briefcase" tone="neutral" title="Sales App" :subtitle="`Signed in as ${store.session?.full_name || store.session?.user}`" />
+        </AppCard>
+      </section>
     </div>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { defineComponent, h } from 'vue';
 import { useRouter } from 'vue-router';
+import { useSessionStore } from '../stores/session';
+import { useTheme, type ThemePreference } from '../composables/useTheme';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppAlert, AppButton, AppIcon, StatusBadge } from '../components/ui';
+import { AppCard, AppAlert, ListRow, SectionHeader, SegmentedControl } from '../components/ui';
 
 const router = useRouter();
-
-// Tiny inline cell renderer for the ✅ / ❌ / 🔐 matrix values.
-const PermCell = defineComponent({
-  props: { value: { type: String, required: true } },
-  setup(props) {
-    return () => {
-      if (props.value === '✅') return h(AppIcon, { name: 'check', size: 17, class: 'inline text-success', strokeWidth: 3 });
-      if (props.value === '❌') return h(AppIcon, { name: 'x', size: 16, class: 'inline text-subtle' });
-      return h('span', { class: 'inline-flex items-center gap-1 text-xs font-semibold text-warning' }, [
-        h(AppIcon, { name: 'lock', size: 13, class: 'inline' }),
-        'route',
-      ]);
-    };
-  },
-});
-
-const permMatrix = [
-  { action: 'Create / Submit Sales Orders', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: "Submit others' orders", sm: '✅', mgr: '✅', driver: '❌' },
-  { action: 'View Stock Dashboard (own warehouse)', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: 'Create Stock Transfer', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: 'Collect Payments', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: 'View Customer Ledger', sm: '✅', mgr: '✅', driver: '🔐' },
-  { action: 'Log & Read Expenses (own)', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: 'Submit EOD Report', sm: '✅', mgr: '✅', driver: '✅' },
-  { action: 'View All EOD Reports', sm: '✅', mgr: '✅', driver: '❌' },
-  { action: 'Manage Sales Profiles', sm: '✅', mgr: '✅', driver: '❌' },
-  { action: 'Delete Configurations', sm: '✅', mgr: '❌', driver: '❌' },
-  { action: 'View Role & Access Settings', sm: '✅', mgr: '✅', driver: '❌' },
-];
+const store = useSessionStore();
+const { preference, setPreference } = useTheme();
 </script>

@@ -1,325 +1,284 @@
 <template>
-  <WorkspacePage back eyebrow="Collect payment" title="New payment" description="Choose allocation behaviour and post a payment entry." width="default">
+  <WorkspacePage back title="Collect payment" :subtitle="customer?.customer_name">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="refresh" @click="reload">Refresh</AppButton>
+      <AppButton variant="ghost" size="sm" icon="refresh" :loading="loading" aria-label="Refresh" @click="reload" />
     </template>
 
-    <div class="space-y-5 pb-28">
-      <!-- Customer -->
-      <AppCard v-if="customer" padding="sm">
-        <div class="flex items-center justify-between gap-3">
-          <div class="flex min-w-0 items-center gap-3">
-            <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/12 text-sm font-bold text-primary">
-              {{ initials(customer.customer_name) }}
-            </span>
-            <div class="min-w-0">
-              <p class="truncate font-bold text-foreground">{{ customer.customer_name }}</p>
-              <p class="truncate text-xs text-muted">{{ customer.name }}</p>
-            </div>
+    <SkeletonList v-if="loading && !customer" :rows="3" height="5rem" />
+    <AppAlert v-else-if="loadError" tone="danger" :message="loadError" />
+
+    <div v-else-if="customer" class="space-y-5 pb-28">
+      <!-- Customer summary -->
+      <AppCard padding="sm">
+        <div class="flex items-center gap-3">
+          <Avatar :name="customer.customer_name" />
+          <div class="min-w-0 flex-1">
+            <p class="truncate font-bold text-foreground">{{ customer.customer_name }}</p>
+            <p class="truncate text-xs text-muted">{{ customer.name }}</p>
           </div>
-          <button class="text-sm font-semibold text-primary" @click="changeCustomer">Change</button>
+          <div v-if="showBalance && summary" class="shrink-0 text-right">
+            <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Outstanding</p>
+            <p class="tnum text-[15px] font-bold text-foreground">{{ currency }} {{ money(summary.outstanding_balance) }}</p>
+          </div>
         </div>
       </AppCard>
-      <AppButton v-else variant="secondary" block icon="plus" @click="$router.push({ name: 'customers', query: { redirect: 'payment' } })">
-        Select customer
-      </AppButton>
 
-      <div v-if="customer" class="space-y-5">
-        <!-- Customer summary -->
-        <AppCard v-if="customerSummary && showBalance" class="bg-primary/[0.07] border-primary/20" padding="sm">
-          <div class="flex items-center justify-between">
-            <span class="text-sm font-medium text-muted">Outstanding balance</span>
-            <span class="tnum text-lg font-bold text-foreground">{{ currency }} {{ (customerSummary.outstanding_balance || 0).toFixed(2) }}</span>
-          </div>
-          <div v-if="customerSummary.last_invoice" class="mt-2 flex items-center justify-between border-t border-line pt-2 text-sm">
-            <span class="text-muted">Last invoice</span>
-            <span class="text-right">
-              <span class="block font-semibold text-foreground">{{ customerSummary.last_invoice.name }}</span>
-              <span class="tnum block text-xs text-muted">{{ customerSummary.last_invoice.posting_date }} • {{ currency }} {{ (customerSummary.last_invoice.grand_total || 0).toFixed(2) }}</span>
-            </span>
-          </div>
-          <div v-if="customerSummary.last_payment" class="mt-2 flex items-center justify-between border-t border-line pt-2 text-sm">
-            <span class="text-muted">Last payment</span>
-            <span class="text-right">
-              <span class="tnum block font-semibold text-foreground">{{ currency }} {{ (customerSummary.last_payment.paid_amount || 0).toFixed(2) }}</span>
-              <span class="block text-xs text-muted">{{ customerSummary.last_payment.posting_date }}</span>
-            </span>
-          </div>
-        </AppCard>
-
-        <!-- Amount + mode -->
-        <div class="grid gap-4 sm:grid-cols-2">
-          <FormField label="Paid amount">
-            <BaseInput v-model="paidAmount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" @update:modelValue="onPaidAmountChange" />
-          </FormField>
-          <FormField label="Mode of payment">
-            <BaseSelect v-model="modeOfPayment" placeholder="Select mode">
-              <option v-for="mode in paymentModes" :key="mode.name" :value="mode.name">{{ mode.name }}</option>
-            </BaseSelect>
-          </FormField>
-        </div>
-
-        <!-- Allocation mode -->
-        <div class="space-y-2">
-          <label class="text-xs font-bold uppercase tracking-wider text-muted">Allocation type</label>
-          <SegmentedControl
-            :model-value="allocationMode"
-            :options="[{ value: 'auto', label: 'Auto FIFO' }, { value: 'manual', label: 'Manual' }, { value: 'advance', label: 'Advance' }]"
-            @update:modelValue="(v: string) => (allocationMode = v as any)"
-          />
-          <p class="text-xs text-muted">
-            {{ allocationMode === 'auto' ? 'Allocates to the oldest invoices first.' : allocationMode === 'manual' ? 'Pick and allocate specific invoices.' : 'Recorded as an advance — not allocated to invoices.' }}
-          </p>
-        </div>
-
-        <!-- Outstanding invoices -->
-        <div v-if="allocationMode !== 'advance'" class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="text-xs font-bold uppercase tracking-wider text-muted">Outstanding invoices</label>
-            <span class="tnum text-xs font-medium" :class="unallocatedAmount < 0 ? 'text-danger' : 'text-muted'">
-              Unallocated: {{ currency }} {{ unallocatedAmount.toFixed(2) }}
-            </span>
-          </div>
-
-          <SearchBar v-if="allocationMode === 'manual' && invoices.length" v-model="invoiceSearchQuery" placeholder="Search invoice number…" />
-
-          <SkeletonList v-if="loadingInvoices" :rows="2" height="4rem" />
-          <EmptyState v-else-if="!invoices.length" icon="file-text" title="No outstanding invoices" description="This customer has nothing pending." />
-
-          <div v-else class="space-y-2">
-            <div
-              v-for="inv in filteredInvoices"
-              :key="inv.name"
-              class="rounded-2xl border bg-card p-3 shadow-card transition"
-              :class="inv.checked ? 'border-primary ring-1 ring-primary/40' : 'border-line'"
-              @click="allocationMode === 'manual' ? toggleInvoice(inv) : null"
+      <!-- Amount + mode -->
+      <AppCard class="space-y-4">
+        <FormField label="Amount received" required>
+          <BaseInput v-model="paidAmount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" min="0" step="0.01" @update:model-value="onPaidAmountChange" />
+        </FormField>
+        <div>
+          <p class="mb-[7px] text-[13px] font-semibold text-foreground">Mode of payment <span class="text-danger">*</span></p>
+          <div v-if="paymentModes.length <= 4" class="flex flex-wrap gap-2">
+            <button
+              v-for="mode in paymentModes"
+              :key="mode.name"
+              type="button"
+              class="focus-ring rounded-full px-4 py-2 text-[13px] font-semibold ring-1 ring-inset transition"
+              :class="modeOfPayment === mode.name ? 'bg-primary text-primary-fg ring-primary' : 'bg-card text-foreground ring-line-strong hover:bg-card-muted'"
+              @click="modeOfPayment = mode.name"
             >
-              <div class="flex items-start gap-3">
-                <span
-                  v-if="allocationMode === 'manual'"
-                  class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition"
-                  :class="inv.checked ? 'border-primary bg-primary text-primary-fg' : 'border-line-strong'"
-                >
-                  <AppIcon v-if="inv.checked" name="check" :size="14" :stroke-width="3" />
-                </span>
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-start justify-between">
-                    <div>
-                      <p class="font-semibold text-foreground">{{ inv.name }}</p>
-                      <p class="text-xs text-muted">{{ inv.posting_date }}</p>
-                    </div>
+              {{ mode.name }}
+            </button>
+          </div>
+          <BaseSelect v-else v-model="modeOfPayment" placeholder="Select mode">
+            <option v-for="mode in paymentModes" :key="mode.name" :value="mode.name">{{ mode.name }}</option>
+          </BaseSelect>
+        </div>
+      </AppCard>
+
+      <!-- Allocation -->
+      <section class="space-y-2">
+        <SectionHeader title="Allocate to" />
+        <SegmentedControl
+          :model-value="allocationMode"
+          :options="[{ value: 'auto', label: 'Oldest first' }, { value: 'manual', label: 'Pick invoices' }, { value: 'advance', label: 'Advance' }]"
+          @update:model-value="(v: string) => (allocationMode = v as AllocationMode)"
+        />
+        <p class="px-0.5 text-xs text-muted">
+          {{ allocationMode === 'auto' ? 'The amount settles the oldest invoices first.' : allocationMode === 'manual' ? 'Choose which invoices this payment settles and how much goes to each.' : 'Recorded as an advance, not allocated to any invoice.' }}
+        </p>
+      </section>
+
+      <!-- Invoices -->
+      <section v-if="allocationMode !== 'advance'" class="space-y-2.5">
+        <div class="flex items-center justify-between px-0.5">
+          <p class="text-[12px] font-bold uppercase tracking-[0.08em] text-muted">Outstanding invoices</p>
+          <span class="tnum text-xs font-semibold" :class="unallocatedAmount < -0.005 ? 'text-danger' : 'text-muted'">
+            Unallocated {{ currency }} {{ money(unallocatedAmount) }}
+          </span>
+        </div>
+        <SearchBar v-if="allocationMode === 'manual' && invoices.length > 5" v-model="invoiceSearch" placeholder="Search invoice number…" />
+        <SkeletonList v-if="loadingInvoices" :rows="2" height="4rem" />
+        <EmptyState v-else-if="!invoices.length" icon="file-text" title="No outstanding invoices" description="Record the amount as an advance instead." />
+        <div v-else class="space-y-2">
+          <div
+            v-for="inv in filteredInvoices"
+            :key="inv.name"
+            class="rounded-2xl bg-card p-3.5 ring-1 ring-inset transition"
+            :class="inv.checked ? 'bg-primary/[0.05] ring-primary/50' : 'ring-line'"
+          >
+            <div class="flex items-start gap-3" :class="allocationMode === 'manual' ? 'cursor-pointer' : ''" @click="allocationMode === 'manual' && toggleInvoice(inv)">
+              <span
+                class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition"
+                :class="inv.checked ? 'border-primary bg-primary text-primary-fg' : 'border-line-strong'"
+              >
+                <AppIcon v-if="inv.checked" name="check" :size="12" :stroke-width="3.5" />
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <p class="truncate text-[15px] font-semibold text-foreground">{{ inv.name }}</p>
+                    <p class="text-xs text-muted">{{ shortDate(inv.posting_date) }}<span v-if="inv.outstanding_amount < inv.grand_total - 0.005"> · of {{ money(inv.grand_total) }}</span></p>
                   </div>
-                  <div class="mt-2 flex items-center justify-between rounded-xl bg-card-muted p-2.5 text-sm">
-                    <div>
-                      <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Invoice</p>
-                      <p class="tnum font-medium text-foreground">{{ currency }} {{ inv.grand_total.toFixed(2) }}</p>
-                    </div>
-                    <div class="text-right">
-                      <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Pending</p>
-                      <p class="tnum font-bold text-primary">{{ currency }} {{ inv.outstanding_amount.toFixed(2) }}</p>
-                    </div>
-                  </div>
-                  <div v-if="inv.checked && inv.allocated_amount > 0" class="mt-2 flex items-center justify-between border-t border-line pt-2">
-                    <label class="text-xs font-medium text-muted">Allocated</label>
-                    <input
-                      v-if="allocationMode === 'manual'"
-                      type="number"
-                      v-model.number="inv.allocated_amount"
-                      class="tnum w-28 rounded-xl border border-line bg-input px-3 py-1.5 text-right text-sm font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
-                      @click.stop
-                      @input="validateAllocation(inv)"
-                    />
-                    <span v-else class="tnum text-sm font-bold text-primary">{{ currency }} {{ inv.allocated_amount.toFixed(2) }}</span>
+                  <div class="shrink-0 text-right">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Pending</p>
+                    <p class="tnum text-[15px] font-bold text-foreground">{{ money(inv.outstanding_amount) }}</p>
                   </div>
                 </div>
               </div>
             </div>
+            <div v-if="inv.checked" class="mt-3 flex items-center justify-between border-t border-line pt-2.5">
+              <span class="text-xs font-semibold text-muted">Allocated</span>
+              <input
+                v-if="allocationMode === 'manual'"
+                v-model.number="inv.allocated_amount"
+                type="number"
+                inputmode="decimal"
+                min="0"
+                :max="inv.outstanding_amount"
+                step="0.01"
+                class="field-inline"
+                @click.stop
+                @input="validateAllocation(inv)"
+              />
+              <span v-else class="tnum text-sm font-bold text-primary">{{ currency }} {{ money(inv.allocated_amount) }}</span>
+            </div>
           </div>
         </div>
+      </section>
 
-        <!-- Advance: link sales order -->
-        <div v-else class="space-y-3">
-          <AppAlert tone="info" title="Advance payment" message="Optionally link to a Sales Order, or leave unlinked for a general advance." />
-          <label class="text-xs font-bold uppercase tracking-wider text-muted">Link to sales order (optional)</label>
-          <SearchBar v-if="!loadingSalesOrders && salesOrders.length" v-model="salesOrderSearchQuery" placeholder="Search order number…" />
-
-          <SkeletonList v-if="loadingSalesOrders" :rows="2" height="4rem" />
-          <EmptyState v-else-if="!salesOrders.length" icon="receipt" title="No sales orders" description="None found for this customer." />
-
-          <div v-else class="space-y-2">
-            <button
-              class="flex w-full items-center gap-3 rounded-2xl border bg-card p-3 text-left transition"
-              :class="selectedSalesOrder === null ? 'border-primary ring-1 ring-primary/40' : 'border-line'"
-              @click="selectedSalesOrder = null"
-            >
-              <span class="flex h-5 w-5 items-center justify-center rounded-full border" :class="selectedSalesOrder === null ? 'border-primary' : 'border-line-strong'">
-                <span v-if="selectedSalesOrder === null" class="h-2 w-2 rounded-full bg-primary" />
-              </span>
-              <div>
-                <p class="font-semibold text-foreground">No sales order</p>
-                <p class="text-xs text-muted">General advance payment</p>
+      <!-- Advance: optional order link -->
+      <section v-else class="space-y-2.5">
+        <SectionHeader title="Link to an order" description="Optional. Leave unlinked for a general advance." />
+        <SearchBar v-if="!loadingSalesOrders && salesOrders.length > 5" v-model="orderSearch" placeholder="Search order number…" />
+        <SkeletonList v-if="loadingSalesOrders" :rows="2" height="4rem" />
+        <div v-else class="space-y-2">
+          <ChoiceCard title="No order" subtitle="General advance payment" :selected="selectedSalesOrder === null" @click="selectedSalesOrder = null" />
+          <ChoiceCard
+            v-for="so in filteredSalesOrders"
+            :key="so.name"
+            :title="so.name"
+            :subtitle="`${shortDate(so.transaction_date)} · ${currency} ${money(so.grand_total)}`"
+            :selected="selectedSalesOrder === so.name"
+            @click="selectedSalesOrder = so.name"
+          >
+            <template #trailing>
+              <div class="shrink-0 text-right">
+                <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Pending</p>
+                <p class="tnum text-sm font-bold text-primary">{{ money(so.grand_total - (so.advance_paid || 0)) }}</p>
               </div>
-            </button>
-            <button
-              v-for="so in filteredSalesOrders"
-              :key="so.name"
-              class="flex w-full items-start gap-3 rounded-2xl border bg-card p-3 text-left transition"
-              :class="selectedSalesOrder === so.name ? 'border-primary ring-1 ring-primary/40' : 'border-line'"
-              @click="selectedSalesOrder = so.name"
-            >
-              <span class="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border" :class="selectedSalesOrder === so.name ? 'border-primary' : 'border-line-strong'">
-                <span v-if="selectedSalesOrder === so.name" class="h-2 w-2 rounded-full bg-primary" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="font-semibold text-foreground">{{ so.name }}</p>
-                <p class="text-xs text-muted">{{ so.transaction_date }}</p>
-                <div class="mt-2 flex items-center justify-between rounded-xl bg-card-muted p-2.5 text-sm">
-                  <div>
-                    <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Order</p>
-                    <p class="tnum font-medium text-foreground">{{ currency }} {{ so.grand_total.toFixed(2) }}</p>
-                  </div>
-                  <div class="text-right">
-                    <p class="text-[10px] font-bold uppercase tracking-wide text-muted">Pending</p>
-                    <p class="tnum font-bold text-primary">{{ currency }} {{ (so.grand_total - (so.advance_paid || 0)).toFixed(2) }}</p>
-                  </div>
-                </div>
-              </div>
-            </button>
-          </div>
+            </template>
+          </ChoiceCard>
         </div>
-      </div>
+      </section>
 
       <AppAlert v-if="submitError" tone="danger" :message="submitError" />
-      <AppAlert v-if="successMsg" tone="success" :message="successMsg" />
     </div>
 
-    <StickyBar>
+    <StickyBar v-if="customer">
       <AppButton size="lg" block icon="check" :disabled="!isValid" :loading="submitting" @click="submit">
-        {{ submitting ? 'Submitting…' : `Confirm payment${paidAmount ? ` • ${currency} ${Number(paidAmount).toFixed(2)}` : ''}` }}
+        {{ submitting ? 'Recording…' : `Confirm payment${amountNumber > 0 ? ` · ${currency} ${money(amountNumber)}` : ''}` }}
       </AppButton>
     </StickyBar>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useSessionStore } from '../stores/session';
 import * as api from '../api/frappe';
-import type { OutstandingInvoice, PaymentMode, PaymentReference, SalesOrderSummary, CustomerSummary } from '../types';
+import type { Customer, CustomerSummary, OutstandingInvoice, PaymentMode, PaymentReference, SalesOrderSummary } from '../types';
+import { useSessionStore } from '../stores/session';
+import { useShiftStore } from '../stores/shift';
+import { useToast } from '../composables/useToast';
+import { money, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, SearchBar, SegmentedControl, SkeletonList, EmptyState, StickyBar } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, Avatar, BaseInput, BaseSelect, ChoiceCard, FormField, SearchBar, SectionHeader, SegmentedControl, SkeletonList, EmptyState, StickyBar } from '../components/ui';
 
-const store = useSessionStore();
-// Sales Profile.show_customer_balance off: staff never see what the customer owes.
-const showBalance = computed(() => store.isManager || store.capabilities.shows_customer_balance !== false);
+type AllocationMode = 'auto' | 'manual' | 'advance';
+
 const route = useRoute();
 const router = useRouter();
+const store = useSessionStore();
+const shift = useShiftStore();
+const toast = useToast();
 
-const customer = computed(() => store.customer);
+const name = computed(() => String(route.params.name));
 const currency = computed(() => store.currencyDisplay);
+// Sales Profile.show_customer_balance off: staff never see what the customer owes.
+const showBalance = computed(() => store.showsCustomerBalance);
 
-const modeOfPayment = ref('');
-const paidAmount = ref<number | null>(null);
+const customer = ref<Customer | null>(null);
+const summary = ref<CustomerSummary | null>(null);
+const paymentModes = ref<PaymentMode[]>([]);
 const invoices = ref<OutstandingInvoice[]>([]);
 const salesOrders = ref<SalesOrderSummary[]>([]);
-const customerSummary = ref<CustomerSummary | null>(null);
-const paymentModes = ref<PaymentMode[]>([]);
+const loading = ref(true);
+const loadError = ref('');
 const loadingInvoices = ref(false);
 const loadingSalesOrders = ref(false);
+
+const paidAmount = ref<number | string>('');
+const modeOfPayment = ref('');
+const allocationMode = ref<AllocationMode>('auto');
+const selectedSalesOrder = ref<string | null>(null);
+const invoiceSearch = ref('');
+const orderSearch = ref('');
 const submitting = ref(false);
 const submitError = ref('');
-const successMsg = ref('');
-const allocationMode = ref<'auto' | 'manual' | 'advance'>('auto');
-const selectedSalesOrder = ref<string | null>(null);
-const invoiceSearchQuery = ref('');
-const salesOrderSearchQuery = ref('');
 
-const customerParam = route.query.customer as string | undefined;
-const customerNameParam = route.query.customer_name as string | undefined;
-
-const initials = (name: string) => name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+const amountNumber = computed(() => Number(paidAmount.value) || 0);
 
 onMounted(async () => {
-  if (customerParam && customerNameParam) {
-    store.setCustomer({ name: customerParam, customer_name: customerNameParam, customer_group: '', territory: '' });
+  await shift.refresh();
+  if (shift.needsShift) {
+    toast.warning(shift.isStale ? 'Close your previous shift first' : 'Open your shift first', { message: 'Payments need an open shift.' });
+    router.replace(shift.gateRoute);
+    return;
   }
   try {
-    paymentModes.value = await api.getPaymentModes();
-    if (paymentModes.value.length) modeOfPayment.value = paymentModes.value[0].name;
-  } catch (e) {
-    console.error('Failed to load payment modes', e);
+    customer.value = await api.getCustomer(name.value);
+  } catch (e: any) {
+    loadError.value = e?.message || 'Customer not found';
+    loading.value = false;
+    return;
   }
-  if (customer.value) {
-    loadInvoices();
-    loadSalesOrders();
-    loadCustomerSummary();
-  }
+  loading.value = false;
+  api
+    .getPaymentModes()
+    .then((modes) => {
+      paymentModes.value = modes;
+      if (modes.length && !modeOfPayment.value) modeOfPayment.value = modes[0].name;
+    })
+    .catch(() => {});
+  await reload();
 });
 
-const reload = async () => {
-  if (!customer.value) return;
-  await Promise.all([loadInvoices(), loadSalesOrders(), loadCustomerSummary()]);
-};
+async function reload() {
+  await Promise.all([loadInvoices(), loadSalesOrders(), loadSummary()]);
+}
 
-const loadInvoices = async () => {
-  if (!customer.value) return;
+async function loadInvoices() {
   loadingInvoices.value = true;
   try {
-    const data = await api.getOutstandingInvoices(customer.value.name);
+    const data = await api.getOutstandingInvoices(name.value);
     invoices.value = data.map((inv) => ({ ...inv, checked: false, allocated_amount: 0 }));
-  } catch (e) {
-    console.error('Failed to load invoices', e);
+    if (allocationMode.value === 'auto') autoAllocate();
+  } catch (_e) {
+    invoices.value = [];
   } finally {
     loadingInvoices.value = false;
   }
-};
+}
 
-const loadSalesOrders = async () => {
-  if (!customer.value) return;
+async function loadSalesOrders() {
   loadingSalesOrders.value = true;
   try {
-    salesOrders.value = await api.getSalesOrders(customer.value.name);
-  } catch (e) {
-    console.error('Failed to load sales orders', e);
+    salesOrders.value = await api.getSalesOrders(name.value);
+  } catch (_e) {
+    salesOrders.value = [];
   } finally {
     loadingSalesOrders.value = false;
   }
-};
+}
 
-const loadCustomerSummary = async () => {
-  if (!customer.value) return;
+async function loadSummary() {
+  if (!showBalance.value) return;
   try {
-    customerSummary.value = await api.getCustomerSummary(customer.value.name);
-  } catch (e) {
-    console.error('Failed to load customer summary', e);
+    summary.value = await api.getCustomerSummary(name.value);
+  } catch (_e) {
+    summary.value = null;
   }
-};
+}
 
-const changeCustomer = () => {
-  store.setCustomer(null);
-  invoices.value = [];
-  salesOrders.value = [];
-  customerSummary.value = null;
-  paidAmount.value = null;
-  selectedSalesOrder.value = null;
-};
-
+// ── Allocation ────────────────────────────────────────────────────────────
 const onPaidAmountChange = () => {
   if (allocationMode.value === 'auto') autoAllocate();
 };
 
 const autoAllocate = () => {
-  if (!paidAmount.value || paidAmount.value <= 0) {
+  if (amountNumber.value <= 0) {
     invoices.value.forEach((inv) => {
       inv.checked = false;
       inv.allocated_amount = 0;
     });
     return;
   }
-  let remaining = Number(paidAmount.value);
-  const sortedInvoices = [...invoices.value].sort((a, b) => new Date(a.posting_date).getTime() - new Date(b.posting_date).getTime());
-  sortedInvoices.forEach((inv) => {
+  let remaining = amountNumber.value;
+  const sorted = [...invoices.value].sort((a, b) => new Date(a.posting_date).getTime() - new Date(b.posting_date).getTime());
+  sorted.forEach((inv) => {
     if (remaining <= 0) {
       inv.checked = false;
       inv.allocated_amount = 0;
@@ -354,32 +313,38 @@ const updatePaidAmountFromSelection = () => {
 };
 
 const allocatedTotal = computed(() => invoices.value.filter((i) => i.checked).reduce((sum, i) => sum + (i.allocated_amount || 0), 0));
+const unallocatedAmount = computed(() => amountNumber.value - allocatedTotal.value);
 
 const filteredInvoices = computed(() => {
-  if (!invoiceSearchQuery.value.trim()) return invoices.value;
-  const query = invoiceSearchQuery.value.toLowerCase();
-  return invoices.value.filter((inv) => inv.name.toLowerCase().includes(query));
+  const q = invoiceSearch.value.trim().toLowerCase();
+  return q ? invoices.value.filter((inv) => inv.name.toLowerCase().includes(q)) : invoices.value;
 });
-
 const filteredSalesOrders = computed(() => {
-  if (!salesOrderSearchQuery.value.trim()) return salesOrders.value;
-  const query = salesOrderSearchQuery.value.toLowerCase();
-  return salesOrders.value.filter((so) => so.name.toLowerCase().includes(query));
+  const q = orderSearch.value.trim().toLowerCase();
+  return q ? salesOrders.value.filter((so) => so.name.toLowerCase().includes(q)) : salesOrders.value;
 });
-
-const unallocatedAmount = computed(() => (Number(paidAmount.value) || 0) - allocatedTotal.value);
 
 const isValid = computed(() => {
-  if (!customer.value || !modeOfPayment.value || (Number(paidAmount.value) || 0) <= 0) return false;
+  if (!customer.value || !modeOfPayment.value || amountNumber.value <= 0) return false;
   if (allocationMode.value === 'advance') return true;
-  return unallocatedAmount.value >= 0;
+  return unallocatedAmount.value >= -0.005;
 });
 
+watch(allocationMode, (mode) => {
+  if (mode === 'auto') autoAllocate();
+  else if (mode === 'advance') {
+    invoices.value.forEach((inv) => {
+      inv.checked = false;
+      inv.allocated_amount = 0;
+    });
+  }
+});
+
+// ── Submit ────────────────────────────────────────────────────────────────
 const submit = async () => {
   if (!isValid.value || !customer.value) return;
   submitting.value = true;
   submitError.value = '';
-  successMsg.value = '';
   try {
     const references: PaymentReference[] =
       allocationMode.value === 'advance'
@@ -387,30 +352,19 @@ const submit = async () => {
         : invoices.value
             .filter((i) => i.checked && (i.allocated_amount || 0) > 0)
             .map((i) => ({ name: i.name, grand_total: i.grand_total, outstanding_amount: i.outstanding_amount, allocated_amount: i.allocated_amount || 0 }));
-
-    await api.createPaymentEntry(
+    const entry = await api.createPaymentEntry(
       customer.value.name,
       modeOfPayment.value,
-      Number(paidAmount.value) || 0,
+      amountNumber.value,
       references,
       allocationMode.value === 'advance' ? selectedSalesOrder.value || undefined : undefined,
     );
-    successMsg.value = 'Payment created successfully. Returning…';
-    setTimeout(() => router.back(), 1500);
+    toast.success(`Payment ${entry} recorded`, { message: `${currency.value} ${money(amountNumber.value)} by ${modeOfPayment.value}` });
+    router.replace({ name: 'customer', params: { name: customer.value.name } });
   } catch (e: any) {
-    submitError.value = e.message || 'Failed to create payment';
+    submitError.value = e?.message || 'Failed to record the payment';
   } finally {
     submitting.value = false;
   }
 };
-
-watch(allocationMode, (newMode) => {
-  if (newMode === 'auto' && paidAmount.value) autoAllocate();
-  else if (newMode === 'advance') {
-    invoices.value.forEach((inv) => {
-      inv.checked = false;
-      inv.allocated_amount = 0;
-    });
-  }
-});
 </script>

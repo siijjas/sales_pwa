@@ -1,18 +1,18 @@
 <template>
-  <WorkspacePage back eyebrow="Manager" title="Reports" description="Sales, collections, cash and stock movement across the fleet." width="wide">
+  <WorkspacePage eyebrow="Manager" title="Reports" subtitle="Sales, collections, cash and stock across the fleet" width="wide">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="refresh" :loading="loading" @click="load">Refresh</AppButton>
+      <AppButton variant="ghost" size="sm" icon="refresh" :loading="loading" @click="load" />
       <AppButton variant="secondary" size="sm" icon="printer" :disabled="!report" @click="print">Print</AppButton>
     </template>
 
     <!-- Filters: one row above everything they drive -->
-    <AppCard padding="sm" class="mb-5 space-y-3">
-      <div class="flex flex-wrap gap-1.5">
+    <AppCard padding="sm" class="mb-4 space-y-3">
+      <div class="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
         <button
           v-for="p in PRESETS"
           :key="p.value"
           type="button"
-          class="focus-ring rounded-full px-3 py-1.5 text-xs font-semibold transition"
+          class="focus-ring shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition"
           :class="preset === p.value ? 'bg-primary text-primary-fg' : 'bg-card-muted text-muted hover:text-foreground'"
           @click="setPreset(p.value)"
         >{{ p.label }}</button>
@@ -39,7 +39,7 @@
       </div>
     </AppCard>
 
-    <SegmentedControl v-model="tab" :options="TABS" class="mb-5" />
+    <div class="no-scrollbar mb-4 overflow-x-auto"><SegmentedControl v-model="tab" :options="TABS" class="min-w-[420px]" /></div>
 
     <SkeletonList v-if="loading && !report" :rows="4" height="6rem" />
     <AppAlert v-else-if="error" tone="danger" :message="error" />
@@ -104,6 +104,7 @@
       <!-- ── Drivers ──────────────────────────────────────────── -->
       <template v-else-if="tab === 'drivers'">
         <EmptyState v-if="!report.by_driver.length" icon="users" title="No staff" description="No staff member matches these filters." />
+        <div class="grid gap-3 lg:grid-cols-2">
         <AppCard v-for="d in report.by_driver" :key="d.driver" padding="lg" class="space-y-3">
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
@@ -132,6 +133,7 @@
             <p v-if="d.draft_orders" class="flex justify-between"><span class="text-muted">Drafts left at close</span><span class="tnum font-semibold text-warning">{{ d.draft_orders }}</span></p>
           </div>
         </AppCard>
+        </div>
       </template>
 
       <!-- ── Items ────────────────────────────────────────────── -->
@@ -289,7 +291,7 @@ const PRESETS: { value: Preset; label: string }[] = [
 ];
 const TABS: { value: Tab; label: string }[] = [
   { value: 'overview', label: 'Overview' },
-  { value: 'drivers', label: 'Drivers' },
+  { value: 'drivers', label: 'Staff' },
   { value: 'items', label: 'Items' },
   { value: 'cash', label: 'Cash' },
   { value: 'shifts', label: 'Shifts' },

@@ -1,32 +1,30 @@
 <template>
-  <WorkspacePage back eyebrow="Cash drawer" title="Expenses & deposits" description="Cash leaving your drawer during the shift. Every entry posts a Journal Entry." width="default">
+  <WorkspacePage :back="{ name: 'shift' }" title="Cash out" :subtitle="ctx?.opening_shift ? `Shift ${ctx.opening_shift}` : 'Expenses and deposits'">
     <SkeletonList v-if="loading" :rows="3" height="6rem" />
 
     <AppAlert v-else-if="loadError" tone="danger" :message="loadError" />
 
-    <div v-else-if="ctx && !ctx.opening_shift" class="space-y-4">
-      <AppAlert tone="warning" title="No open shift" message="Expenses and deposits come out of an open shift's cash drawer. Open your shift first." />
-      <AppButton block icon="play-circle" @click="$router.push({ name: 'shift-open' })">Open shift</AppButton>
-    </div>
-
-    <div v-else-if="ctx" class="grid gap-5 md:grid-cols-2">
-      <!-- Form -->
-      <AppCard padding="lg" class="h-fit space-y-4">
-        <div>
-          <h3 class="text-base font-bold text-foreground">New cash movement</h3>
-          <p class="mt-0.5 text-sm text-muted">Shift {{ ctx.opening_shift }}</p>
+    <AppCard v-else-if="ctx && !ctx.opening_shift" padding="lg">
+      <div class="flex items-start gap-3.5">
+        <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-warning/16 text-warning"><AppIcon name="clock" :size="22" /></span>
+        <div class="min-w-0 flex-1">
+          <p class="text-[15px] font-bold text-foreground">No open shift</p>
+          <p class="mt-0.5 text-[13px] leading-relaxed text-muted">Expenses and deposits come out of an open shift's cash drawer. Open your shift first.</p>
+          <AppButton class="mt-3" size="sm" icon="play-circle" @click="router.push({ name: 'shift-open' })">Open shift</AppButton>
         </div>
+      </div>
+    </AppCard>
 
+    <div v-else-if="ctx" class="space-y-5 pb-28">
+      <!-- Form -->
+      <AppCard padding="lg" class="space-y-4">
         <AppAlert v-if="!typeOptions.length" tone="info" message="Your profile allows neither expenses nor deposits. Ask your manager." />
 
         <template v-else>
           <SegmentedControl v-if="typeOptions.length > 1" :model-value="form.movement_type" :options="typeOptions" @update:modelValue="setType" />
 
-          <AppAlert v-if="error" tone="danger" :message="error" />
-          <AppAlert v-if="successMsg" tone="success" :message="successMsg" />
-
-          <FormField label="Amount" required :hint="ctx.max_amount ? `Max ${currency} ${fmt(ctx.max_amount)} per entry.` : ''">
-            <BaseInput v-model="form.amount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" />
+          <FormField label="Amount" required :hint="ctx.max_amount ? `Max ${currency} ${money(ctx.max_amount)} per entry.` : ''">
+            <BaseInput v-model="form.amount" type="number" inputmode="decimal" :prefix="currency" placeholder="0.00" min="0" step="0.01" />
           </FormField>
 
           <FormField v-if="isExpense" label="Expense account" required>
@@ -43,26 +41,27 @@
             <BaseTextarea v-model="form.remarks" :rows="2" placeholder="Add a note…" />
           </FormField>
 
-          <p class="rounded-xl border border-line bg-card-muted px-3 py-2 text-xs text-muted">
+          <p class="rounded-xl bg-card-muted px-3 py-2 text-xs text-muted">
             <span class="font-semibold text-foreground">{{ ctx.cash_account || 'Cash drawer' }}</span>
             →
             <span class="font-semibold text-foreground">{{ isExpense ? (form.expense_account || 'expense account') : (ctx.back_office_cash_account || 'back office cash') }}</span>
           </p>
 
-          <AppButton size="lg" block :icon="isExpense ? 'file-text' : 'banknote'" :variant="isExpense ? 'primary' : 'secondary'" :disabled="!isValid" :loading="submitting" @click="submit">
-            {{ submitting ? 'Posting…' : isExpense ? 'Record expense' : 'Record deposit' }}
-          </AppButton>
+          <AppAlert v-if="error" tone="danger" :message="error" />
         </template>
       </AppCard>
 
       <!-- This shift -->
-      <div class="space-y-3">
-        <div class="grid grid-cols-2 gap-3">
-          <KpiTile label="Expenses" :value="`${currency} ${fmt(totals.expenses)}`" :sub="`${counts.expenses} entries`" icon="file-text" tone="warning" />
-          <KpiTile label="Deposited" :value="`${currency} ${fmt(totals.deposits)}`" :sub="`${counts.deposits} entries`" icon="banknote" tone="info" />
+      <section>
+        <SectionHeader title="This shift" />
+        <div class="grid grid-cols-2 gap-2.5">
+          <KpiTile label="Expenses" :value="money(totals.expenses)" :sub="plural(counts.expenses, 'entry', 'entries')" icon="file-text" tone="warning" />
+          <KpiTile label="Deposited" :value="money(totals.deposits)" :sub="plural(counts.deposits, 'entry', 'entries')" icon="banknote" tone="info" />
         </div>
+      </section>
 
-        <p class="text-xs font-bold uppercase tracking-wider text-muted">This shift</p>
+      <section>
+        <SectionHeader title="Movements" />
         <EmptyState v-if="!ctx.movements.length" icon="file-text" title="Nothing yet" description="Expenses and deposits on this shift will appear here." />
         <div v-else class="space-y-2.5">
           <AppCard v-for="m in ctx.movements" :key="m.name" padding="sm">
@@ -75,22 +74,28 @@
                 <p class="mt-1 text-xs text-muted">{{ m.name }}<span v-if="m.journal_entry"> · {{ m.journal_entry }}</span></p>
                 <p v-if="m.against_name" class="mt-0.5 text-xs text-muted">{{ m.movement_type === 'Expense' ? 'Paid to' : 'Deposited with' }} {{ m.against_name }}</p>
               </div>
-              <p class="tnum shrink-0 font-bold text-foreground">{{ currency }} {{ fmt(m.amount) }}</p>
+              <p class="tnum shrink-0 font-bold text-foreground">{{ currency }} {{ money(m.amount) }}</p>
             </div>
-            <p v-if="m.remarks" class="mt-3 rounded-xl border border-line bg-card-muted p-2.5 text-sm text-muted">{{ m.remarks }}</p>
+            <p v-if="m.remarks" class="mt-3 rounded-xl bg-card-muted p-2.5 text-sm text-muted">{{ m.remarks }}</p>
             <div v-if="store.isManager || (store.capabilities.can_cancel_cash_movement && m.driver === store.session?.user)" class="mt-3 flex justify-end">
-              <AppButton variant="danger" size="sm" icon="x" :loading="cancelling === m.name" @click="cancel(m)">Cancel</AppButton>
+              <AppButton variant="ghost" size="sm" icon="x" :loading="cancelling === m.name" @click="cancel(m)">Cancel entry</AppButton>
             </div>
           </AppCard>
         </div>
-      </div>
+      </section>
     </div>
 
+    <StickyBar v-if="ctx?.opening_shift && typeOptions.length">
+      <AppButton size="lg" block :icon="isExpense ? 'file-text' : 'banknote'" :disabled="!isValid" :loading="submitting" @click="submit">
+        {{ submitting ? 'Posting…' : isExpense ? 'Record expense' : 'Record deposit' }}
+      </AppButton>
+    </StickyBar>
+
     <!-- After a deposit: the drawer has been handed in, so this is the natural moment to close. -->
-    <BottomSheet v-model="closePromptOpen" title="Deposit recorded">
+    <BottomSheet v-model="closePromptOpen" title="Deposit recorded" size="sm">
       <div class="space-y-4">
         <p class="text-sm text-muted">
-          <span class="tnum font-semibold text-foreground">{{ currency }} {{ fmt(lastDeposit?.amount) }}</span> deposited to the office on shift
+          <span class="tnum font-semibold text-foreground">{{ currency }} {{ money(lastDeposit?.amount) }}</span> deposited to the office on shift
           <span class="font-semibold text-foreground">{{ ctx?.opening_shift }}</span>.
           <template v-if="canCloseShift">Done for the day? Close your shift now to count the drawer against what is expected.</template>
           <template v-else>Only a manager can close this shift. Let them know the cash has been handed in.</template>
@@ -109,12 +114,17 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
+import { useToast } from '../composables/useToast';
+import { useConfirm } from '../composables/useConfirm';
+import { money, plural } from '../utils/format';
 import type { CashMovement, CashMovementContext, CashMovementType } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, AppAlert, BottomSheet, FormField, BaseInput, BaseSelect, BaseTextarea, SkeletonList, EmptyState, KpiTile, StatusBadge, SegmentedControl } from '../components/ui';
+import { AppCard, AppButton, AppAlert, AppIcon, BottomSheet, FormField, BaseInput, BaseSelect, BaseTextarea, SkeletonList, EmptyState, KpiTile, SectionHeader, StatusBadge, SegmentedControl, StickyBar } from '../components/ui';
 
 const store = useSessionStore();
 const router = useRouter();
+const toast = useToast();
+const { confirm } = useConfirm();
 const currency = computed(() => store.currencyDisplay);
 
 // Prompt to close the shift once cash has been deposited to the office.
@@ -132,7 +142,6 @@ const loadError = ref('');
 const submitting = ref(false);
 const cancelling = ref('');
 const error = ref('');
-const successMsg = ref('');
 
 const form = ref<{ movement_type: CashMovementType; amount: number | string | null; expense_account: string; against_name: string; remarks: string }>({
   movement_type: 'Expense',
@@ -141,8 +150,6 @@ const form = ref<{ movement_type: CashMovementType; amount: number | string | nu
   against_name: '',
   remarks: '',
 });
-
-const fmt = (n?: number | null) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const typeOptions = computed(() => {
   const list: { value: CashMovementType; label: string }[] = [];
@@ -201,7 +208,6 @@ const submit = async () => {
   if (!isValid.value) return;
   submitting.value = true;
   error.value = '';
-  successMsg.value = '';
   try {
     const created = await api.createCashMovement({
       movement_type: form.value.movement_type,
@@ -211,7 +217,7 @@ const submit = async () => {
       remarks: form.value.remarks,
     });
     ctx.value!.movements.unshift(created);
-    successMsg.value = `${created.movement_type} ${created.name} posted${created.journal_entry ? ` (${created.journal_entry})` : ''}.`;
+    toast.success(`${created.movement_type} recorded`, { message: `${created.name}${created.journal_entry ? ` · ${created.journal_entry}` : ''}` });
     form.value = { ...form.value, amount: null, against_name: '', remarks: '' };
     if (created.movement_type === 'Deposit') {
       lastDeposit.value = created;
@@ -225,12 +231,21 @@ const submit = async () => {
 };
 
 const cancel = async (m: CashMovement) => {
-  if (!window.confirm(`Cancel ${m.movement_type.toLowerCase()} ${m.name} and reverse its Journal Entry?`)) return;
+  const ok = await confirm({
+    title: `Cancel this ${m.movement_type.toLowerCase()}?`,
+    message: `${m.name} for ${currency.value} ${money(m.amount)} is cancelled and its Journal Entry reversed.`,
+    confirmLabel: 'Cancel entry',
+    cancelLabel: 'Keep',
+    tone: 'danger',
+    icon: 'trash',
+  });
+  if (!ok) return;
   cancelling.value = m.name;
   error.value = '';
   try {
     await api.cancelCashMovement(m.name);
     ctx.value!.movements = ctx.value!.movements.filter((x) => x.name !== m.name);
+    toast.success('Entry cancelled');
   } catch (e: any) {
     error.value = e?.message || 'Failed to cancel.';
   } finally {

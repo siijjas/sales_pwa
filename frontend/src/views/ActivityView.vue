@@ -1,131 +1,224 @@
 <template>
-  <WorkspacePage eyebrow="Activity" title="Order history" description="Review recent orders and reopen them for follow-up." width="default">
+  <WorkspacePage title="Activity" :subtitle="customerFilter ? `Customer ${customerFilter}` : undefined">
     <template #actions>
-      <AppButton variant="secondary" size="sm" icon="refresh" :loading="loading" @click="reload">Refresh</AppButton>
-      <AppButton size="sm" icon="plus" @click="$router.push({ name: 'customers', query: { redirect: 'order' } })">New order</AppButton>
+      <AppButton variant="ghost" size="sm" icon="sliders" aria-label="Filter by date" :class="hasDates ? 'text-primary' : ''" @click="filtersOpen = true" />
+      <AppButton size="sm" icon="plus" @click="router.push({ name: 'sell' })">New sale</AppButton>
+    </template>
+    <template #sticky>
+      <div class="space-y-2">
+        <SegmentedControl :model-value="tab" :options="[{ value: 'orders', label: 'Orders' }, { value: 'payments', label: 'Payments' }]" @update:model-value="setTab" />
+        <SearchBar v-model="search" :placeholder="tab === 'orders' ? 'Search by customer or order #…' : 'Search by customer or payment #…'" />
+      </div>
     </template>
 
-    <div class="space-y-4">
-      <div class="space-y-2.5">
-        <SearchBar v-model="search" placeholder="Search by customer or order #…" />
-        <div class="grid grid-cols-2 gap-2.5">
-          <FormField label="From">
-            <input v-model="fromDate" type="date" class="field-input" />
-          </FormField>
-          <FormField label="To">
-            <input v-model="toDate" type="date" class="field-input" />
-          </FormField>
-        </div>
-        <button
-          v-if="search || fromDate || toDate"
-          type="button"
-          class="text-xs font-semibold text-primary"
-          @click="clearFilters"
-        >
-          Clear filters
-        </button>
+    <div class="space-y-3">
+      <div v-if="hasFilters" class="flex flex-wrap items-center gap-2 px-0.5 text-[12px]">
+        <span v-if="hasDates" class="rounded-full bg-card-muted px-2.5 py-1 font-semibold text-muted">{{ dateLabel }}</span>
+        <span v-if="customerFilter" class="rounded-full bg-card-muted px-2.5 py-1 font-semibold text-muted">{{ customerFilter }}</span>
+        <button type="button" class="font-bold text-primary" @click="clearFilters">Clear</button>
       </div>
 
-      <SkeletonList v-if="loading && !orders.length" :rows="5" />
-      <EmptyState v-else-if="!orders.length" icon="receipt" title="No orders found" :description="hasFilters ? 'Try different search terms or dates.' : 'Orders you create will appear here.'">
-        <template #action>
-          <AppButton icon="plus" @click="$router.push({ name: 'customers', query: { redirect: 'order' } })">Create order</AppButton>
+      <p v-if="!loading && rows.length" class="px-0.5 text-[12px] text-muted">{{ summaryLine }}</p>
+
+      <AppAlert v-if="error" tone="danger" :message="error" />
+      <SkeletonList v-if="loading && !rows.length" :rows="6" height="4rem" />
+      <EmptyState
+        v-else-if="!rows.length"
+        :icon="tab === 'orders' ? 'receipt' : 'wallet'"
+        :title="tab === 'orders' ? 'No orders found' : 'No payments found'"
+        :description="hasFilters || search ? 'Try different search terms or dates.' : tab === 'orders' ? 'Orders you create appear here.' : 'Payments you collect appear here.'"
+      >
+        <template v-if="tab === 'orders' && !hasFilters && !search" #action>
+          <AppButton icon="plus" @click="router.push({ name: 'sell' })">New sale</AppButton>
         </template>
       </EmptyState>
-      <div v-else class="space-y-2.5">
-        <AppCard v-for="order in orders" :key="order.name" interactive @click="openOrder(order.name)">
-          <div class="flex items-start justify-between gap-3">
-            <div class="min-w-0">
-              <p class="truncate font-bold text-foreground">{{ order.customer_name }}</p>
-              <p class="mt-0.5 text-xs text-muted">{{ order.name }} • {{ order.transaction_date }}</p>
-              <p class="tnum mt-2 text-lg font-bold text-foreground">{{ currency }} {{ fmt(order.grand_total) }}</p>
-            </div>
-            <StatusBadge :status="order.status" />
-          </div>
+
+      <template v-else>
+        <AppCard padding="none" class="divide-y divide-line" :class="loading ? 'opacity-60' : ''">
+          <template v-if="tab === 'orders'">
+            <ListRow
+              v-for="o in orders"
+              :key="o.name"
+              interactive
+              chevron
+              :title="o.customer_name"
+              :subtitle="`${o.name} · ${relativeDate(o.transaction_date)}`"
+              @click="router.push({ name: 'order', params: { name: o.name } })"
+            >
+              <template #leading><Avatar :name="o.customer_name" size="sm" tone="neutral" /></template>
+              <template #trailing>
+                <div class="text-right">
+                  <p class="tnum text-[14px] font-bold text-foreground">{{ currency }} {{ money(o.grand_total) }}</p>
+                  <StatusBadge class="mt-0.5" :status="o.status" :dot="false" />
+                </div>
+              </template>
+            </ListRow>
+          </template>
+          <template v-else>
+            <ListRow
+              v-for="p in payments"
+              :key="p.name"
+              interactive
+              chevron
+              :title="p.party_name || p.party"
+              :subtitle="`${p.name} · ${relativeDate(p.posting_date)}`"
+              @click="router.push({ name: 'payment', params: { name: p.name } })"
+            >
+              <template #leading><Avatar :name="p.party_name || p.party" size="sm" tone="success" /></template>
+              <template #trailing>
+                <div class="text-right">
+                  <p class="tnum text-[14px] font-bold text-foreground">{{ currency }} {{ money(p.paid_amount) }}</p>
+                  <StatusBadge class="mt-0.5" :tone="p.docstatus === 0 ? 'warning' : 'neutral'" :dot="false">{{ p.docstatus === 0 ? 'Draft' : p.mode_of_payment }}</StatusBadge>
+                </div>
+              </template>
+            </ListRow>
+          </template>
         </AppCard>
         <AppButton v-if="hasMore" variant="secondary" block :loading="loadingMore" @click="loadMore">Load more</AppButton>
-      </div>
+      </template>
     </div>
+
+    <BottomSheet v-model="filtersOpen" title="Filter by date" size="sm">
+      <div class="grid grid-cols-2 gap-3">
+        <FormField label="From">
+          <BaseInput v-model="fromDate" type="date" />
+        </FormField>
+        <FormField label="To">
+          <BaseInput v-model="toDate" type="date" />
+        </FormField>
+      </div>
+      <template #footer>
+        <div class="grid grid-cols-2 gap-2.5">
+          <AppButton variant="subtle" size="lg" block @click="clearDates">Clear</AppButton>
+          <AppButton size="lg" block @click="filtersOpen = false">Done</AppButton>
+        </div>
+      </template>
+    </BottomSheet>
   </WorkspacePage>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed, watch } from 'vue';
-import { useRouter } from 'vue-router';
-import type { SalesOrder } from '../types';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
+import type { PaymentListRow } from '../api/frappe';
+import type { SalesOrder } from '../types';
 import { useSessionStore } from '../stores/session';
+import { money, plural, relativeDate, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
-import { AppCard, AppButton, StatusBadge, SkeletonList, EmptyState, SearchBar, FormField } from '../components/ui';
+import { AppCard, AppButton, AppAlert, Avatar, BaseInput, BottomSheet, FormField, ListRow, SearchBar, SegmentedControl, StatusBadge, SkeletonList, EmptyState } from '../components/ui';
 
 const PAGE_LENGTH = 20;
+type Tab = 'orders' | 'payments';
 
-const store = useSessionStore();
+const route = useRoute();
 const router = useRouter();
-const session = computed(() => store.session);
+const store = useSessionStore();
 const currency = computed(() => store.currencyDisplay);
-const orders = ref<SalesOrder[]>([]);
-const loading = ref(true);
-const loadingMore = ref(false);
-const hasMore = ref(false);
+
+const tab = computed<Tab>(() => (route.query.tab === 'payments' ? 'payments' : 'orders'));
+const customerFilter = computed(() => (typeof route.query.customer === 'string' ? route.query.customer : ''));
+const setTab = (v: string) => router.replace({ name: 'activity', query: { ...route.query, tab: v } });
 
 const search = ref('');
 const fromDate = ref('');
 const toDate = ref('');
-const hasFilters = computed(() => !!(search.value || fromDate.value || toDate.value));
+const filtersOpen = ref(false);
+const hasDates = computed(() => !!(fromDate.value || toDate.value));
+const hasFilters = computed(() => hasDates.value || !!customerFilter.value);
+const dateLabel = computed(() => {
+  if (fromDate.value && toDate.value) return `${shortDate(fromDate.value)} – ${shortDate(toDate.value)}`;
+  if (fromDate.value) return `From ${shortDate(fromDate.value)}`;
+  return `Until ${shortDate(toDate.value)}`;
+});
 
-const fmt = (n?: number) => (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const orders = ref<SalesOrder[]>([]);
+const payments = ref<PaymentListRow[]>([]);
+const loading = ref(true);
+const loadingMore = ref(false);
+const hasMore = ref(false);
+const error = ref('');
 
-const load = async () => {
-  if (!session.value) return;
-  loading.value = true;
-  try {
-    const page = await api.recentOrders(session.value.user, {
-      search: search.value,
-      fromDate: fromDate.value || undefined,
-      toDate: toDate.value || undefined,
-      limitStart: 0,
-      pageLength: PAGE_LENGTH,
-    });
-    orders.value = page;
-    hasMore.value = page.length === PAGE_LENGTH;
-  } finally {
-    loading.value = false;
+const rows = computed(() => (tab.value === 'orders' ? orders.value : payments.value));
+const summaryLine = computed(() => {
+  if (tab.value === 'orders') {
+    const total = orders.value.reduce((s, o) => s + (o.grand_total || 0), 0);
+    return `${plural(orders.value.length, 'order')}${hasMore.value ? '+' : ''} · ${currency.value} ${money(total)}`;
   }
-};
+  const total = payments.value.reduce((s, p) => s + (p.paid_amount || 0), 0);
+  return `${plural(payments.value.length, 'payment')}${hasMore.value ? '+' : ''} · ${currency.value} ${money(total)}`;
+});
 
-const loadMore = async () => {
-  if (!session.value) return;
+const options = (limitStart: number) => ({
+  search: search.value,
+  fromDate: fromDate.value || undefined,
+  toDate: toDate.value || undefined,
+  customer: customerFilter.value || undefined,
+  limitStart,
+  pageLength: PAGE_LENGTH,
+});
+
+let seq = 0;
+async function fetchPage(limitStart: number): Promise<number> {
+  const user = store.session!.user;
+  if (tab.value === 'orders') {
+    const page = await api.recentOrders(user, options(limitStart));
+    orders.value = limitStart ? [...orders.value, ...page] : page;
+    return page.length;
+  }
+  const page = await api.listPayments(user, options(limitStart));
+  payments.value = limitStart ? [...payments.value, ...page] : page;
+  return page.length;
+}
+
+async function load() {
+  if (!store.session) return;
+  const mine = ++seq;
+  loading.value = true;
+  error.value = '';
+  try {
+    const n = await fetchPage(0);
+    if (mine === seq) hasMore.value = n === PAGE_LENGTH;
+  } catch (e: any) {
+    if (mine === seq) error.value = e?.message || 'Could not load activity';
+  } finally {
+    if (mine === seq) loading.value = false;
+  }
+}
+
+async function loadMore() {
   loadingMore.value = true;
   try {
-    const page = await api.recentOrders(session.value.user, {
-      search: search.value,
-      fromDate: fromDate.value || undefined,
-      toDate: toDate.value || undefined,
-      limitStart: orders.value.length,
-      pageLength: PAGE_LENGTH,
-    });
-    orders.value = [...orders.value, ...page];
-    hasMore.value = page.length === PAGE_LENGTH;
+    const n = await fetchPage(rows.value.length);
+    hasMore.value = n === PAGE_LENGTH;
+  } catch (e: any) {
+    error.value = e?.message || 'Could not load more';
   } finally {
     loadingMore.value = false;
   }
-};
+}
 
-const reload = () => load();
-const clearFilters = () => {
-  search.value = '';
+function clearDates() {
   fromDate.value = '';
   toDate.value = '';
-};
+  filtersOpen.value = false;
+}
+function clearFilters() {
+  fromDate.value = '';
+  toDate.value = '';
+  if (customerFilter.value) router.replace({ name: 'activity', query: { tab: tab.value } });
+}
 
-onMounted(load);
-
-let filterTimer = window.setTimeout(() => {}, 0);
+let timer = 0;
 watch([search, fromDate, toDate], () => {
-  clearTimeout(filterTimer);
-  filterTimer = window.setTimeout(load, 300);
+  window.clearTimeout(timer);
+  timer = window.setTimeout(load, 300);
 });
-
-const openOrder = (name: string) => router.push({ name: 'order-detail', params: { name } });
+watch([tab, customerFilter], () => {
+  orders.value = [];
+  payments.value = [];
+  hasMore.value = false;
+  load();
+});
+onMounted(load);
 </script>

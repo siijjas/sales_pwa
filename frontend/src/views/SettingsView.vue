@@ -25,11 +25,11 @@
         </AppCard>
         <AppCard class="border-success/30 bg-success/[0.08]" padding="lg">
           <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-success/15 text-success">
-            <AppIcon name="truck" :size="18" />
+            <AppIcon name="briefcase" :size="18" />
           </div>
           <p class="mt-3 text-[10px] font-bold uppercase tracking-widest text-success">Sales App User</p>
-          <p class="mt-1 text-lg font-bold text-foreground">Field driver</p>
-          <p class="mt-1 text-sm text-muted">PWA only. Own data via row-level filter.</p>
+          <p class="mt-1 text-lg font-bold text-foreground">Sales staff</p>
+          <p class="mt-1 text-sm text-muted">Van drivers and field sales reps. PWA only, own data via row-level filter.</p>
         </AppCard>
       </div>
 
@@ -43,7 +43,7 @@
                 <th class="px-5 py-3 text-left text-xs font-bold uppercase tracking-wider text-muted">Module / action</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">Sys Mgr</th>
                 <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">Sales Mgr</th>
-                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">Driver</th>
+                <th class="px-4 py-3 text-center text-xs font-bold uppercase tracking-wider text-muted">App User</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-line">
@@ -62,10 +62,10 @@
       <AppAlert tone="info">
         <span class="font-semibold">Assign the Sales App User role:</span>
         <ol class="mt-2 list-inside list-decimal space-y-1">
-          <li>Open <strong>ERPNext Desk → Setup → User</strong> and select the driver.</li>
+          <li>Open <strong>ERPNext Desk → Setup → User</strong> and select the staff member.</li>
           <li>Add the <strong>Sales App User</strong> role.</li>
-          <li>Create a Driver Profile for that user in <strong>Profiles</strong>.</li>
-          <li>Activate the profile — the driver can now use the PWA.</li>
+          <li>Assign the user to a Sales Profile in <strong>Profiles</strong>.</li>
+          <li>Activate the profile — the user can now sign in to the Sales App.</li>
         </ol>
       </AppAlert>
     </div>
@@ -95,14 +95,14 @@ const PermCell = defineComponent({
 const permMatrix = [
   { action: 'Create / Submit Sales Orders', sm: '✅', mgr: '✅', driver: '✅' },
   { action: "Submit others' orders", sm: '✅', mgr: '✅', driver: '❌' },
-  { action: 'View Stock Dashboard (own van)', sm: '✅', mgr: '✅', driver: '✅' },
+  { action: 'View Stock Dashboard (own warehouse)', sm: '✅', mgr: '✅', driver: '✅' },
   { action: 'Create Stock Transfer', sm: '✅', mgr: '✅', driver: '✅' },
   { action: 'Collect Payments', sm: '✅', mgr: '✅', driver: '✅' },
   { action: 'View Customer Ledger', sm: '✅', mgr: '✅', driver: '🔐' },
   { action: 'Log & Read Expenses (own)', sm: '✅', mgr: '✅', driver: '✅' },
   { action: 'Submit EOD Report', sm: '✅', mgr: '✅', driver: '✅' },
   { action: 'View All EOD Reports', sm: '✅', mgr: '✅', driver: '❌' },
-  { action: 'Manage Driver Profiles', sm: '✅', mgr: '✅', driver: '❌' },
+  { action: 'Manage Sales Profiles', sm: '✅', mgr: '✅', driver: '❌' },
   { action: 'Delete Configurations', sm: '✅', mgr: '❌', driver: '❌' },
   { action: 'View Role & Access Settings', sm: '✅', mgr: '✅', driver: '❌' },
 ];

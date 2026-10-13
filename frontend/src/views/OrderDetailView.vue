@@ -120,9 +120,10 @@
     <BottomSheet v-model="optionSheetOpen" title="Invoice option">
       <div class="space-y-3">
         <p class="text-sm text-muted">Choose how this invoice is numbered and taxed. You will see the proposed number and totals before anything is created.</p>
+        <p class="text-xs text-subtle">Showing options for {{ markAsPaid ? `payment by ${modeOfPayment}` : 'credit (pay later)' }}.</p>
         <AppAlert v-if="sheetError" tone="danger" :message="sheetError" />
         <button
-          v-for="opt in invoiceOptions"
+          v-for="opt in applicableOptions"
           :key="opt.name"
           type="button"
           class="flex w-full items-center gap-3 rounded-2xl border p-3.5 text-left transition hover:bg-card-muted"
@@ -218,7 +219,7 @@
         </div>
 
         <div class="flex gap-2">
-          <AppButton variant="secondary" block @click="backFromPreview">{{ invoiceOptions.length > 1 ? 'Change option' : 'Cancel' }}</AppButton>
+          <AppButton variant="secondary" block @click="backFromPreview">{{ applicableOptions.length > 1 ? 'Change option' : 'Cancel' }}</AppButton>
           <AppButton
             :variant="preview.short_items.length ? 'warning' : 'primary'"
             block
@@ -240,6 +241,7 @@ import { onMounted, ref, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import type { SalesOrder, PaymentMode, InvoiceOption, InvoicePreview } from '../types';
+import { invoiceOptionApplies } from '../types';
 import { useSessionStore } from '../stores/session';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, AppIcon, StatusBadge, SkeletonList, StickyBar, SegmentedControl, FormField, BaseSelect, BottomSheet } from '../components/ui';
@@ -267,6 +269,11 @@ const paymentModes = ref<PaymentMode[]>([]);
 // profile lists more than one) → preview the proposed number and totals → confirm.
 // The preview comes from the server building the very invoice it will then save.
 const invoiceOptions = ref<InvoiceOption[]>([]);
+// Each option carries a payment rule (credit yes/no, paid-now modes), so the list on
+// offer follows the payment choice made above. The server applies the same rule.
+const applicableOptions = computed(() =>
+  invoiceOptions.value.filter((opt) => invoiceOptionApplies(opt, markAsPaid.value, modeOfPayment.value)),
+);
 const optionSheetOpen = ref(false);
 const previewOpen = ref(false);
 const previewLoading = ref(false);
@@ -331,12 +338,18 @@ const createInvoice = async () => {
   }
   error.value = '';
   sheetError.value = '';
-  if (invoiceOptions.value.length > 1) {
+  if (invoiceOptions.value.length && !applicableOptions.value.length) {
+    error.value = markAsPaid.value
+      ? `None of your invoice options is available for payment by ${modeOfPayment.value}.`
+      : 'None of your invoice options is available for credit invoices.';
+    return;
+  }
+  if (applicableOptions.value.length > 1) {
     optionSheetOpen.value = true;
     return;
   }
   // One option (or none): the server applies the profile default, straight to the preview.
-  await openPreview(invoiceOptions.value[0]?.name ?? null);
+  await openPreview(applicableOptions.value[0]?.name ?? null);
 };
 
 const openPreview = async (option: string | null) => {
@@ -344,7 +357,10 @@ const openPreview = async (option: string | null) => {
   previewLoading.value = true;
   sheetError.value = '';
   try {
-    preview.value = await api.previewSalesInvoice(order.value.name, option);
+    preview.value = await api.previewSalesInvoice(order.value.name, option, {
+      markAsPaid: markAsPaid.value,
+      modeOfPayment: modeOfPayment.value,
+    });
     selectedOption.value = option;
     optionSheetOpen.value = false;
     previewOpen.value = true;
@@ -359,7 +375,7 @@ const openPreview = async (option: string | null) => {
 
 const backFromPreview = () => {
   previewOpen.value = false;
-  if (invoiceOptions.value.length > 1) optionSheetOpen.value = true;
+  if (applicableOptions.value.length > 1) optionSheetOpen.value = true;
 };
 
 const confirmInvoice = async () => {

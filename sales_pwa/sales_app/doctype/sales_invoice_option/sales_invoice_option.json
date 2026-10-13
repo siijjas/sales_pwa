@@ -15,6 +15,10 @@
   "naming_series",
   "column_break_configuration",
   "taxes_and_charges",
+  "section_availability",
+  "available_for_credit",
+  "column_break_availability",
+  "payment_modes",
   "section_notes",
   "description"
  ],
@@ -68,6 +72,30 @@
    "in_list_view": 1,
    "label": "Taxes and Charges Template",
    "options": "Sales Taxes and Charges Template"
+  },
+  {
+   "description": "Which payment choice this option is offered for. Staff only see the options that fit the payment they selected.",
+   "fieldname": "section_availability",
+   "fieldtype": "Section Break",
+   "label": "Payment Rule"
+  },
+  {
+   "default": "1",
+   "description": "Offered when the invoice is raised on credit (pay later).",
+   "fieldname": "available_for_credit",
+   "fieldtype": "Check",
+   "label": "Available for Credit Invoices"
+  },
+  {
+   "fieldname": "column_break_availability",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Offered when the invoice is paid now with one of these modes. Leave empty for every mode.",
+   "fieldname": "payment_modes",
+   "fieldtype": "Table MultiSelect",
+   "label": "Paid-Now Modes of Payment",
+   "options": "Sales Invoice Option Payment Mode"
   },
   {
    "fieldname": "section_notes",

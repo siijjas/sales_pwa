@@ -1036,16 +1036,19 @@ def _proposed_invoice_name(sinv) -> str | None:
 
 
 @frappe.whitelist()
-def preview_sales_invoice(sales_order: str, invoice_option: str | None = None):
+def preview_sales_invoice(
+	sales_order: str, invoice_option: str | None = None, mark_as_paid: int = 0, mode_of_payment: str | None = None
+):
 	"""What create_sales_invoice() would raise for this order with this option: the
 	proposed number, lines, subtotal, each tax line and the grand total — plus the
 	stock shortages, so the app can show everything on one confirmation sheet.
-	Read-only: nothing is inserted and no series counter moves."""
+	Read-only: nothing is inserted and no series counter moves. The payment choice
+	is needed because each option carries a payment rule (see invoice_option.py)."""
 	_require_van_user()
 	_require_capability("can_invoice", "invoice orders")
 	so = _get_invoiceable_order(sales_order)
 	config = _get_driver_config(required=False)
-	option = resolve_invoice_option(config, invoice_option)
+	option = resolve_invoice_option(config, invoice_option, _coerce_check(mark_as_paid), mode_of_payment or None)
 	short_items = _van_stock_shortages(so, _selling_warehouse(config))
 	allow_without_stock = bool(config and config.get("allow_sale_without_stock"))
 	sinv = _build_sales_invoice(so, config, option, defer_delivery=bool(short_items) and allow_without_stock)
@@ -1141,7 +1144,7 @@ def create_sales_invoice(
 
 	config = _get_driver_config(required=False)
 	van_warehouse = _selling_warehouse(config)
-	option = resolve_invoice_option(config, invoice_option)
+	option = resolve_invoice_option(config, invoice_option, mark_as_paid, mode_of_payment or None)
 
 	# Re-checked here rather than trusted from the client: the flag only means "the
 	# driver saw the warning", the Sales Profile decides whether it is allowed at all.

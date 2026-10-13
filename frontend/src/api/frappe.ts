@@ -657,9 +657,17 @@ export async function createSalesInvoice(
 }
 
 /** What the invoice would look like (number, lines, taxes, totals) — nothing is created. */
-export async function previewSalesInvoice(salesOrder: string, invoiceOption?: string | null): Promise<import('../types').InvoicePreview> {
+export async function previewSalesInvoice(
+  salesOrder: string,
+  invoiceOption?: string | null,
+  payment?: { markAsPaid?: boolean; modeOfPayment?: string | null },
+): Promise<import('../types').InvoicePreview> {
   const params = new URLSearchParams({ sales_order: salesOrder });
   if (invoiceOption) params.set('invoice_option', invoiceOption);
+  if (payment?.markAsPaid) {
+    params.set('mark_as_paid', '1');
+    if (payment.modeOfPayment) params.set('mode_of_payment', payment.modeOfPayment);
+  }
   const res = await fetch(`/api/method/sales_pwa.sales_app.sales.preview_sales_invoice?${params.toString()}`, {
     method: 'GET',
     headers: { ...defaultHeaders() },

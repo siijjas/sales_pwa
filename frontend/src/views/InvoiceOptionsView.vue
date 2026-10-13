@@ -23,6 +23,7 @@
             </div>
             <p class="mt-1 truncate text-sm text-muted">{{ opt.naming_series }}</p>
             <p class="mt-1 truncate text-xs text-subtle">{{ opt.taxes_and_charges || 'No tax' }}<span v-if="opt.company"> · {{ opt.company }}</span></p>
+            <p class="mt-1 truncate text-xs text-subtle">{{ paymentRuleLabel(opt) }}</p>
           </AppCard>
           <AppButton variant="secondary" block icon="plus" @click="startNew">Create option</AppButton>
           <EmptyState v-if="!options.length" icon="file-text" title="No invoice options" description="Create one, then enable it on a Sales Profile." />
@@ -72,6 +73,37 @@
           </label>
         </AppCard>
 
+        <!-- Payment rule -->
+        <AppCard>
+          <div class="flex items-center gap-2.5">
+            <span class="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/12 text-primary"><AppIcon name="wallet" :size="16" /></span>
+            <h3 class="text-sm font-bold text-foreground">Payment rule</h3>
+          </div>
+          <p class="mt-2 text-xs text-muted">Staff only see this option when it fits the payment they chose for the invoice.</p>
+          <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-2xl border border-line bg-card-muted px-3.5 py-3">
+            <input type="checkbox" v-model="form.available_for_credit" class="h-4 w-4 accent-primary" />
+            <span class="text-sm font-medium text-foreground">Available for credit (pay later) invoices</span>
+          </label>
+          <div class="mt-4 flex items-center justify-between gap-3">
+            <p class="text-xs font-bold uppercase tracking-wider text-muted">Paid-now modes of payment <span class="font-medium normal-case tracking-normal">· empty = every mode</span></p>
+            <span class="rounded-full bg-card-muted px-2.5 py-1 text-xs font-bold text-muted">{{ form.payment_modes?.length || 0 }}</span>
+          </div>
+          <div class="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <label
+              v-for="mode in choices.payment_modes"
+              :key="mode.name"
+              class="flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition"
+              :class="(form.payment_modes || []).includes(mode.name) ? 'border-success/40 bg-success/[0.06]' : 'border-line hover:bg-card-muted'"
+            >
+              <input type="checkbox" :value="mode.name" v-model="form.payment_modes" class="h-4 w-4 accent-primary" />
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-semibold text-foreground">{{ mode.name }}</span>
+                <span class="block text-xs text-muted">{{ mode.type }}</span>
+              </span>
+            </label>
+          </div>
+        </AppCard>
+
         <AppButton v-if="selected.name" variant="danger" size="sm" icon="trash" :loading="deleting" @click="remove">Delete option</AppButton>
       </div>
     </div>
@@ -97,7 +129,12 @@ const deleting = ref(false);
 const errorMsg = ref('');
 const notice = ref('');
 const options = ref<InvoiceOption[]>([]);
-const choices = ref<InvoiceOptionChoices>({ naming_series: [], tax_templates: [], companies: [] });
+const choices = ref<InvoiceOptionChoices>({ naming_series: [], tax_templates: [], companies: [], payment_modes: [] });
+
+function paymentRuleLabel(opt: InvoiceOption): string {
+  const paid = opt.payment_modes?.length ? `paid by ${opt.payment_modes.join(', ')}` : 'any paid-now mode';
+  return opt.available_for_credit === false ? `Paid now only: ${paid}` : `Credit · ${paid}`;
+}
 const selected = ref<InvoiceOption | Partial<InvoiceOption> | null>(null);
 
 const blank = (): Partial<InvoiceOption> => ({
@@ -107,6 +144,8 @@ const blank = (): Partial<InvoiceOption> => ({
   company: '',
   description: '',
   disabled: false,
+  available_for_credit: true,
+  payment_modes: [],
 });
 const form = ref<Partial<InvoiceOption>>(blank());
 
@@ -123,7 +162,14 @@ function startNew() {
 }
 function select(opt: InvoiceOption) {
   selected.value = opt;
-  form.value = { ...opt, taxes_and_charges: opt.taxes_and_charges || '', company: opt.company || '', description: opt.description || '' };
+  form.value = {
+    ...opt,
+    taxes_and_charges: opt.taxes_and_charges || '',
+    company: opt.company || '',
+    description: opt.description || '',
+    available_for_credit: opt.available_for_credit !== false,
+    payment_modes: [...(opt.payment_modes || [])],
+  };
   errorMsg.value = '';
   notice.value = '';
 }

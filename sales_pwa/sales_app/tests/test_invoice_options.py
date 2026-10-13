@@ -7,7 +7,12 @@ Run with: bench run-tests --site <site> --module sales_pwa.sales_app.tests.test_
 import frappe
 from frappe.utils import flt
 
-from sales_pwa.sales_app.invoice_option import list_invoice_options, resolve_invoice_option, save_invoice_option
+from sales_pwa.sales_app.invoice_option import (
+	list_invoice_options,
+	option_applies,
+	resolve_invoice_option,
+	save_invoice_option,
+)
 from sales_pwa.sales_app.sales import create_sales_invoice, create_sales_order, preview_sales_invoice, submit_sales_order
 from sales_pwa.sales_app.tests import test_shift_and_access as base
 from sales_pwa.sales_app.utils import _driver_cache_key
@@ -78,6 +83,36 @@ class TestInvoiceOptions(base.TestShiftAndAccessRegressions):
 		# Naming an option the profile does not list is refused.
 		with self.assertRaises(frappe.PermissionError):
 			resolve_invoice_option({"invoice_options": []}, self.option["name"])
+
+	def test_payment_rule_filters_options(self):
+		cash_only = {"available_for_credit": False, "payment_modes": [self.cash_mode], "option_name": "cash"}
+		any_mode = {"available_for_credit": True, "payment_modes": [], "option_name": "any"}
+		self.assertTrue(option_applies(cash_only, True, self.cash_mode))
+		self.assertFalse(option_applies(cash_only, True, "Some Other Mode"))
+		self.assertFalse(option_applies(cash_only, False, None))
+		self.assertTrue(option_applies(any_mode, False, None))
+		self.assertTrue(option_applies(any_mode, True, "Some Other Mode"))
+
+		cfg = {"invoice_options": [dict(cash_only, name="cash", is_default=True), dict(any_mode, name="any", is_default=False)]}
+		self.assertEqual(resolve_invoice_option(cfg, None, False, None)["name"], "any")
+		self.assertEqual(resolve_invoice_option(cfg, None, True, self.cash_mode)["name"], "cash")
+		with self.assertRaises(frappe.PermissionError):
+			resolve_invoice_option(cfg, "cash", False, None)
+		with self.assertRaisesRegex(frappe.ValidationError, "None of your invoice options"):
+			resolve_invoice_option({"invoice_options": [dict(cash_only, name="cash", is_default=True)]}, None, False, None)
+
+	def test_saved_rule_round_trips(self):
+		frappe.set_user("Administrator")
+		saved = save_invoice_option(
+			{
+				"option_name": f"{TEST_PREFIX} Cash rule",
+				"naming_series": self.series[0],
+				"available_for_credit": False,
+				"payment_modes": [self.cash_mode],
+			}
+		)
+		self.assertFalse(saved["available_for_credit"])
+		self.assertEqual(saved["payment_modes"], [self.cash_mode])
 
 	# ─── preview and create agree ──────────────────────────────────────────
 

@@ -23,7 +23,7 @@ from sales_pwa.sales_app.utils import (
 	_manager_only, _coerce_list, _to_float, _coerce_check, _capabilities,
 	_default_company, _driver_cache_key, _driver_stock_cache_key,
 )
-from sales_pwa.sales_app.invoice_option import profile_invoice_options
+from sales_pwa.sales_app.invoice_option import all_enabled_invoice_options, profile_invoice_options
 
 # Check fields added for the POS-profile style controls, with the default a new profile
 # gets. Existing rows received the same defaults from the column default on migrate.
@@ -97,13 +97,7 @@ def get_van_profile_options():
 			limit_page_length=100,
 			order_by="name asc",
 		),
-		"invoice_options": frappe.get_all(
-			"Sales Invoice Option",
-			filters={"disabled": 0},
-			fields=["name", "option_name", "naming_series", "taxes_and_charges", "company", "description"],
-			limit_page_length=200,
-			order_by="option_name asc",
-		),
+		"invoice_options": all_enabled_invoice_options(),
 		"currencies": frappe.get_all(
 			"Currency",
 			filters={"enabled": 1},

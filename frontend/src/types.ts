@@ -371,12 +371,24 @@ export interface InvoiceOption {
   disabled?: boolean;
   /** Set on a profile's list: pre-selected for its staff. */
   is_default?: boolean;
+  /** Payment rule: offered for credit (pay later) invoices? */
+  available_for_credit: boolean;
+  /** Payment rule: offered when paid now with one of these modes. Empty = every mode. */
+  payment_modes: string[];
+}
+
+/** Does the option's payment rule fit this payment choice? Mirrors invoice_option.option_applies(). */
+export function invoiceOptionApplies(option: InvoiceOption, markAsPaid: boolean, modeOfPayment: string | null | undefined): boolean {
+  if (!markAsPaid) return option.available_for_credit !== false;
+  const modes = option.payment_modes || [];
+  return modes.length === 0 || (!!modeOfPayment && modes.includes(modeOfPayment));
 }
 
 export interface InvoiceOptionChoices {
   naming_series: string[];
   tax_templates: Array<{ name: string; company: string }>;
   companies: Array<{ name: string }>;
+  payment_modes: PaymentMode[];
 }
 
 export interface InvoicePreviewLine {

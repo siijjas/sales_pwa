@@ -235,6 +235,7 @@
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm font-semibold text-foreground">{{ opt.option_name }}</p>
                 <p class="truncate text-xs text-muted">{{ opt.naming_series }} · {{ opt.taxes_and_charges || 'No tax' }}</p>
+                <p class="truncate text-xs text-subtle">{{ opt.available_for_credit === false ? 'Paid now only' : 'Credit' }} · {{ opt.payment_modes?.length ? opt.payment_modes.join(', ') : 'any paid-now mode' }}</p>
               </div>
               <label v-if="isInvoiceOptionEnabled(opt.name)" class="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-semibold text-muted">
                 <input type="radio" name="default-invoice-option" :checked="isDefaultInvoiceOption(opt.name)" class="accent-primary" @change="setDefaultInvoiceOption(opt.name)" />

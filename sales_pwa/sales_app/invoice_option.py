@@ -9,19 +9,47 @@ see every enabled option.
 import json
 
 import frappe
+from frappe.model.document import Document
 
 from sales_pwa.sales_app.doctype.sales_invoice_option.sales_invoice_option import sales_invoice_naming_series
 from sales_pwa.sales_app.utils import (
 	_coerce_check,
+	_coerce_list,
 	_get_driver_config,
 	_manager_only,
 	_require_van_user,
 )
 
-OPTION_FIELDS = ["name", "option_name", "naming_series", "taxes_and_charges", "company", "description", "disabled"]
+OPTION_FIELDS = [
+	"name", "option_name", "naming_series", "taxes_and_charges", "company", "description", "disabled",
+	"available_for_credit",
+]
 
 
-def invoice_option_payload(row, is_default: bool = False) -> dict:
+def _payment_modes_by_option(names: list[str]) -> dict[str, list[str]]:
+	if not names:
+		return {}
+	out: dict[str, list[str]] = {}
+	for row in frappe.get_all(
+		"Sales Invoice Option Payment Mode",
+		filters={"parent": ["in", names], "parenttype": "Sales Invoice Option"},
+		fields=["parent", "mode_of_payment"],
+		order_by="idx asc",
+	):
+		out.setdefault(row.parent, []).append(row.mode_of_payment)
+	return out
+
+
+def invoice_option_payload(row, is_default: bool = False, payment_modes: list[str] | None = None) -> dict:
+	"""`row` is a Sales Invoice Option Document or a get_all() row (OPTION_FIELDS)."""
+	if payment_modes is None:
+		child_rows = row.get("payment_modes") if isinstance(row, Document) else None
+		payment_modes = (
+			[r.mode_of_payment for r in child_rows if r.mode_of_payment]
+			if child_rows is not None
+			else _payment_modes_by_option([row.name]).get(row.name, [])
+		)
+	available_for_credit = row.get("available_for_credit")
 	return {
 		"name": row.name,
 		"option_name": row.option_name,
@@ -31,7 +59,22 @@ def invoice_option_payload(row, is_default: bool = False) -> dict:
 		"description": row.description,
 		"disabled": _coerce_check(row.disabled),
 		"is_default": bool(is_default),
+		# Payment rule: offered on credit? / for which paid-now modes (empty = every mode).
+		"available_for_credit": _coerce_check(1 if available_for_credit is None else available_for_credit),
+		"payment_modes": list(payment_modes),
 	}
+
+
+def option_applies(option: dict, mark_as_paid: bool, mode_of_payment: str | None) -> bool:
+	"""Does the option's payment rule fit how this invoice is being paid?"""
+	if not mark_as_paid:
+		return bool(option.get("available_for_credit", True))
+	modes = option.get("payment_modes") or []
+	return not modes or mode_of_payment in modes
+
+
+def _describe_payment(mark_as_paid: bool, mode_of_payment: str | None) -> str:
+	return f"payment mode {mode_of_payment}" if mark_as_paid else "credit (pay later) invoices"
 
 
 def profile_invoice_options(doc) -> list[dict]:
@@ -48,37 +91,62 @@ def profile_invoice_options(doc) -> list[dict]:
 			fields=OPTION_FIELDS,
 		)
 	}
-	out = [invoice_option_payload(masters[r.invoice_option], r.is_default) for r in rows if r.invoice_option in masters]
+	modes = _payment_modes_by_option(list(masters))
+	out = [
+		invoice_option_payload(masters[r.invoice_option], r.is_default, modes.get(r.invoice_option, []))
+		for r in rows
+		if r.invoice_option in masters
+	]
 	if out and not any(o["is_default"] for o in out):
 		out[0]["is_default"] = True
 	return out
 
 
+def _options_payload(rows) -> list[dict]:
+	modes = _payment_modes_by_option([r.name for r in rows])
+	return [invoice_option_payload(r, False, modes.get(r.name, [])) for r in rows]
+
+
 def all_enabled_invoice_options() -> list[dict]:
 	rows = frappe.get_all("Sales Invoice Option", filters={"disabled": 0}, fields=OPTION_FIELDS, order_by="option_name asc")
-	return [invoice_option_payload(r) for r in rows]
+	return _options_payload(rows)
 
 
-def resolve_invoice_option(config: dict | None, invoice_option: str | None) -> dict | None:
+def resolve_invoice_option(
+	config: dict | None,
+	invoice_option: str | None,
+	mark_as_paid: bool = False,
+	mode_of_payment: str | None = None,
+) -> dict | None:
 	"""Which option an invoice is raised with.
 
 	Staff are held to their profile's list (the client only names an option, the
-	profile decides whether it is allowed). A manager without a profile may use any
-	enabled option. With nothing named, the profile's default applies; a profile
-	without options returns None and the invoice is raised the historical way.
+	profile decides whether it is allowed), and every option's payment rule must fit
+	how the invoice is paid. A manager without a profile may use any enabled option.
+	With nothing named, the profile's default applies if it fits the payment, else
+	the first option that does; a profile without options returns None and the
+	invoice is raised the historical way.
 	"""
 	allowed = (config or {}).get("invoice_options") or []
+	payment = _describe_payment(mark_as_paid, mode_of_payment)
 	if invoice_option:
 		match = next((o for o in allowed if o["name"] == invoice_option), None)
-		if match:
-			return match
-		if config:
-			frappe.throw(f"Invoice option '{invoice_option}' is not enabled on your Sales Profile.", frappe.PermissionError)
-		row = frappe.db.get_value("Sales Invoice Option", {"name": invoice_option, "disabled": 0}, OPTION_FIELDS, as_dict=True)
-		if not row:
-			frappe.throw(f"Invoice option '{invoice_option}' does not exist or is disabled.")
-		return invoice_option_payload(row)
-	return next((o for o in allowed if o.get("is_default")), allowed[0] if allowed else None)
+		if not match:
+			if config:
+				frappe.throw(f"Invoice option '{invoice_option}' is not enabled on your Sales Profile.", frappe.PermissionError)
+			row = frappe.db.get_value("Sales Invoice Option", {"name": invoice_option, "disabled": 0}, OPTION_FIELDS, as_dict=True)
+			if not row:
+				frappe.throw(f"Invoice option '{invoice_option}' does not exist or is disabled.")
+			match = invoice_option_payload(row)
+		if not option_applies(match, mark_as_paid, mode_of_payment):
+			frappe.throw(f"Invoice option '{match['option_name']}' is not available for {payment}.", frappe.PermissionError)
+		return match
+	if not allowed:
+		return None
+	fitting = [o for o in allowed if option_applies(o, mark_as_paid, mode_of_payment)]
+	if not fitting:
+		frappe.throw(f"None of your invoice options is available for {payment}. Ask a manager to adjust the payment rules.")
+	return next((o for o in fitting if o.get("is_default")), fitting[0])
 
 
 # ─── Staff-facing ───────────────────────────────────────────────────────────────
@@ -100,7 +168,7 @@ def list_invoice_options():
 def list_all_invoice_options():
 	_manager_only()
 	rows = frappe.get_all("Sales Invoice Option", fields=OPTION_FIELDS, order_by="option_name asc")
-	return [invoice_option_payload(r) for r in rows]
+	return _options_payload(rows)
 
 
 @frappe.whitelist()
@@ -117,6 +185,9 @@ def get_invoice_option_choices():
 			limit_page_length=200,
 		),
 		"companies": frappe.get_all("Company", fields=["name"], order_by="name asc", limit_page_length=50),
+		"payment_modes": frappe.get_all(
+			"Mode of Payment", filters={"enabled": 1}, fields=["name", "type"], order_by="name asc", limit_page_length=200
+		),
 	}
 
 
@@ -132,6 +203,12 @@ def save_invoice_option(payload):
 	doc.company = data.get("company") or None
 	doc.description = data.get("description") or None
 	doc.disabled = 1 if _coerce_check(data.get("disabled")) else 0
+	doc.available_for_credit = 1 if _coerce_check(data.get("available_for_credit", True)) else 0
+	doc.set("payment_modes", [])
+	for mode in _coerce_list(data.get("payment_modes")):
+		mode = mode.get("mode_of_payment") if isinstance(mode, dict) else mode
+		if mode:
+			doc.append("payment_modes", {"mode_of_payment": mode})
 	doc.flags.ignore_permissions = True
 	doc.save()
 	return invoice_option_payload(doc)

@@ -27,6 +27,11 @@ class SalesInvoiceOption(Document):
 				frappe.throw(f"Tax template {self.taxes_and_charges} belongs to {template.company}, not {self.company}")
 			if not self.company:
 				self.company = template.company
+		seen = set()
+		for row in self.payment_modes or []:
+			if row.mode_of_payment in seen:
+				frappe.throw(f"Mode of payment {row.mode_of_payment} is listed twice")
+			seen.add(row.mode_of_payment)
 
 	def on_update(self):
 		_clear_caches_of_profiles_using(self.name)

@@ -203,13 +203,14 @@ function onItemKeydown(e: KeyboardEvent) {
     e.preventDefault();
     highlighted.value = (highlighted.value - 1 + results.value.length) % results.value.length;
   } else if (e.key === 'Enter') {
+    // An empty box has nothing to do with Enter: let it reach the screen (a sheet that just opened).
+    if (!picked.value && !text.value.trim()) return;
     e.preventDefault();
     e.stopPropagation();
     if (picked.value) {
       focusQty();
       return;
     }
-    if (!text.value.trim()) return;
     if (loading.value) {
       // Results still on their way (a fast typist on a slow link): act on them when they land.
       enterPending = true;

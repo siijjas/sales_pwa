@@ -1306,17 +1306,20 @@ export function downloadPdf(doctype: string, name: string, format?: string) {
  * composables/usePrint for the full tap-to-paper flow). `job` is null when no
  * printer applies and the PDF should open instead.
  */
-export async function printDocument(doctype: string, name: string, format?: string): Promise<import('../types').PrintJobReceipt> {
+export async function printDocument(doctype: string, name: string, format?: string, printer?: string): Promise<import('../types').PrintJobReceipt> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.printing.print_document', {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
-    body: JSON.stringify({ doctype, name, format: format || undefined }),
+    body: JSON.stringify({ doctype, name, format: format || undefined, printer: printer || undefined }),
   });
   const data = await handleResponse(res);
   return data.message as import('../types').PrintJobReceipt;
 }
+
+/** The formats and printers the print setup sheet offers for a doctype, with the profile's defaults. */
+export const getPrintChoices = (doctype: string) => getMethod<import('../types').PrintChoices>('sales_pwa.sales_app.printing.print_choices', { doctype });
 
 export const getPrintJobStatus = (job: string) =>
   getMethod<import('../types').PrintJobStatus>('sales_pwa.sales_app.printing.job_status', { job });

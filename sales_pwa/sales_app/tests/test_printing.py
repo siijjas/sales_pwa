@@ -211,6 +211,36 @@ class TestPrintingFlow(FrappeTestCase):
 		invoice.is_return = 1
 		self.assertEqual(printing.resolve_printer(invoice).name, self.office.name)
 
+	def test_print_choices_offer_formats_and_live_printers(self):
+		self._route(invoice_printer=self.office.name, shift_report_printer=None)
+		frappe.set_user(self.driver_user)
+		choices = printing.print_choices("Sales Invoice")
+		names = [f["name"] for f in choices["formats"]]
+		self.assertEqual(names[0], "Standard")
+		self.assertIn(choices["default_format"], names)
+		self.assertEqual(choices["default_printer"], self.office.name)
+		by_name = {p["name"]: p for p in choices["printers"]}
+		self.assertEqual(by_name[self.receipt.name]["printer_type"], printing.RECEIPT)
+		self.assertFalse(by_name[self.office.name]["online"])
+		self.assertIsNone(printing.print_choices("Sales Shift Opening")["default_printer"])
+		# A printer whose agent is off is not offered.
+		frappe.db.set_value("Sales Print Agent", self.agent.name, "is_active", 0)
+		self.assertEqual(printing.print_choices("Sales Invoice")["printers"], [])
+		self.assertRaises(frappe.PermissionError, printing.print_choices, "Purchase Order")
+
+	def test_a_chosen_printer_wins_over_the_profile(self):
+		self._route(order_printer=self.receipt.name)
+		order = self._order()
+		self._fake_render()
+		result = printing.print_document("Sales Order", order, printer=self.office.name)
+		self.assertEqual(result["printer"], self.office.name)
+		self.assertEqual(frappe.get_doc("Sales Print Job", result["job"]).payload_type, "pdf")
+		# Blank means the profile decides, as before.
+		self.assertEqual(printing.print_document("Sales Order", order, printer="")["printer"], self.receipt.name)
+		# A printer that cannot print now is refused rather than silently swapped.
+		frappe.db.set_value("Sales Printer", self.office.name, "is_active", 0)
+		self.assertRaises(frappe.ValidationError, printing.print_document, "Sales Order", order, None, self.office.name)
+
 	def test_shift_reports_use_the_shift_printer(self):
 		self._route(shift_report_printer=self.receipt.name)
 		frappe.set_user(self.driver_user)

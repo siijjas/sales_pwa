@@ -5,6 +5,7 @@ import { useSaleStore } from './sale';
 import { useReturnStore } from './returns';
 import { useShiftStore } from './shift';
 import { useCounterStore } from './counter';
+import { usePrintSetupStore } from './printSetup';
 
 // A manager with no profile keeps the historical behaviour (see utils._capabilities).
 const DEFAULT_CAPABILITIES: Capabilities = {
@@ -113,6 +114,7 @@ export const useSessionStore = defineStore('session', {
       useSaleStore().hydrate(user);
       useReturnStore().hydrate(user);
       useCounterStore().hydrate(user);
+      usePrintSetupStore().hydrate(user);
       useShiftStore().reset();
     },
     async logout(): Promise<string | null> {
@@ -126,6 +128,7 @@ export const useSessionStore = defineStore('session', {
         useSaleStore().hydrate(null);
         useReturnStore().hydrate(null);
         useCounterStore().hydrate(null);
+        usePrintSetupStore().hydrate(null);
         useShiftStore().reset();
       }
       return warning;

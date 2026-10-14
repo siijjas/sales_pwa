@@ -89,7 +89,7 @@ The draft (customer, lines, discount, the draft order being edited) is kept per 
 | **Lines** | Grid of independent lines (the same item twice is two lines): qty and, when allowed, rate editable in place; stock from the selling warehouse; a shortage badge from the preview. The entry row above the lines takes code, name or barcode, an exact code adds on Enter, then qty, Enter lands the line. |
 | **Totals** | ERPNext's own figures for the cart: subtotal, discount (percent or amount, capped by the profile), tax lines, grand and rounded total, proposed invoice number. A cart the profile refuses shows the reason instead of totals. |
 | **After the order** | Submit (F9) submits the order, then a sheet asks whether to invoice it as well: yes → how it is paid (paid now with a mode of payment, or credit; print-at-once toggle when a printer is set) → the invoice option when the profile has any → the invoice is raised. Esc at any step leaves the order in the To invoice list. |
-| **Actions** | F7 hold (draft Sales Order), F9 submit order, F10 print last invoice, Esc clear. |
+| **Actions** | F7 hold (draft Sales Order), F8 print setup (the cashier's own print format and printer, or the PDF, kept on that PC), F9 submit order, F10 print last invoice, Esc clear. |
 | **Queue** | Held (Resume), To invoice (opens the invoice sheet), Today's invoices (Print). |
 
 ### 5.4 Invoice sheet (shared)

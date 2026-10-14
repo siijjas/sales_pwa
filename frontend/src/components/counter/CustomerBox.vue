@@ -161,6 +161,8 @@ function onKeydown(e: KeyboardEvent) {
     e.preventDefault();
     highlighted.value = (highlighted.value - 1 + results.value.length) % results.value.length;
   } else if (e.key === 'Enter') {
+    // An empty box with no customer has nothing to do with Enter: let it reach the screen (a sheet that just opened).
+    if (!results.value.length && !text.value.trim() && !props.modelValue && !loading.value) return;
     e.preventDefault();
     e.stopPropagation();
     const row = results.value[highlighted.value];

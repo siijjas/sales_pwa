@@ -58,6 +58,7 @@
 
     <ToastHost />
     <ConfirmDialog />
+    <PrintSetupSheet />
   </div>
 </template>
 
@@ -68,6 +69,7 @@ import { useSessionStore } from '../stores/session';
 import { useNavigation } from '../navigation';
 import { useToast } from '../composables/useToast';
 import { AppIcon, ThemeToggle, ToastHost, ConfirmDialog } from './ui';
+import PrintSetupSheet from './PrintSetupSheet.vue';
 
 const store = useSessionStore();
 const route = useRoute();

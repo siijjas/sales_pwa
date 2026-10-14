@@ -14,6 +14,7 @@
       <div class="flex flex-wrap items-center gap-1.5">
         <AppButton size="sm" variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
         <AppButton size="sm" variant="subtle" icon="printer" :disabled="!lastInvoice" @click="printLast">Print last <kbd class="ml-1 text-[11px] opacity-70">F10</kbd></AppButton>
+        <AppButton size="sm" variant="subtle" icon="settings" :title="`Invoices print as ${printTargetLabel}. Choose the format and printer.`" @click="choose('Sales Invoice')">{{ printTargetLabel }} <kbd class="ml-1 text-[11px] opacity-70">F8</kbd></AppButton>
         <AppButton size="sm" variant="ghost" icon="trash" :disabled="!counter.hasLines && !counter.customer" @click="clear">Clear <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
       </div>
     </div>
@@ -243,6 +244,7 @@ import type { CounterItem, CounterPreview, CounterQueue as CounterQueueData, Cou
 import { invoiceOptionApplies } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useCounterStore } from '../stores/counter';
+import { PDF, usePrintSetupStore } from '../stores/printSetup';
 import { useShiftStore } from '../stores/shift';
 import { useToast } from '../composables/useToast';
 import { usePrint } from '../composables/usePrint';
@@ -259,7 +261,15 @@ const counter = useCounterStore();
 const shift = useShiftStore();
 const router = useRouter();
 const toast = useToast();
-const { print, printsDirectly } = usePrint();
+const { print, printsDirectly, printerFor, choose } = usePrint();
+const printSetup = usePrintSetupStore();
+// The header button says where the invoice goes: the printer, the PDF, or whatever the profile says.
+const printTargetLabel = computed(() => {
+  const pref = printSetup.prefFor('Sales Invoice');
+  const target = printerFor('Sales Invoice');
+  const where = target === PDF ? 'PDF' : target || 'Profile printer';
+  return pref.format ? `${where} · ${pref.format}` : where;
+});
 const { confirm, state: confirmState } = useConfirm();
 
 const customerBox = ref<InstanceType<typeof CustomerBox> | null>(null);
@@ -464,10 +474,14 @@ const busy = ref<'' | 'hold' | 'order' | 'invoice'>('');
 const lastInvoice = ref<string | null>(null);
 const canSubmit = computed(() => !!counter.customer && counter.hasLines && !shift.needsShift && !preview.value?.error);
 
-function startNext() {
+function startNext(focus = true) {
   counter.reset(defaultCustomer.value);
   preview.value = null;
   entryRow.value?.reset();
+  if (focus) focusStart();
+}
+/** Where the next sale begins: the item box when a customer is set, else the customer box. */
+function focusStart() {
   if (counter.customer) focusEntry();
   else focusCustomer();
 }
@@ -518,7 +532,11 @@ const wizardOpen = ref(false);
 const wizardError = ref('');
 // The sheet is teleported and animated in, so the button is looked up once it is there.
 const focusWizard = () =>
-  nextTick(() => window.setTimeout(() => (document.querySelector('[role="dialog"] [data-wizard-primary]') as HTMLElement | null)?.focus(), 60));
+  nextTick(() => {
+    // Nothing behind the sheet may keep the keyboard meanwhile (an open customer list would take Enter).
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    window.setTimeout(() => (document.querySelector('[role="dialog"] [data-wizard-primary]') as HTMLElement | null)?.focus(), 60);
+  });
 
 async function submitOrder() {
   if (!canSubmit.value || busy.value) return;
@@ -536,7 +554,8 @@ async function submitOrder() {
       step: 'ask',
     };
     wizardError.value = '';
-    startNext();
+    // The sheet owns the keyboard now; the next sale's box takes focus when it closes.
+    startNext(false);
     loadQueue();
     wizardOpen.value = true;
     focusWizard();
@@ -621,7 +640,7 @@ async function createInvoice(w: Wizard) {
 watch(wizardOpen, (open) => {
   if (!open) {
     wizard.value = null;
-    focusEntry();
+    focusStart();
   }
 });
 
@@ -723,6 +742,10 @@ function onKeydown(e: KeyboardEvent) {
     case 'F7':
       e.preventDefault();
       hold();
+      break;
+    case 'F8':
+      e.preventDefault();
+      choose('Sales Invoice');
       break;
     case 'F9':
       e.preventDefault();

@@ -40,11 +40,13 @@ import frappe
 from frappe.utils import cint, escape_html, get_datetime, now_datetime
 
 from sales_pwa.sales_app.pdf import (
+	PRINTABLE_DOCTYPES,
 	SHIFT_DOCTYPES,
 	_print_profile,
 	authorize_print,
 	render_html,
 	render_pdf,
+	resolve_print_settings,
 )
 from sales_pwa.sales_app.utils import _is_manager, _manager_only
 
@@ -359,16 +361,56 @@ def _job_payload(job_name: str, printer) -> dict:
 	}
 
 
+def _chosen_printer(name: str):
+	"""An active printer the caller picked by name (the app's print setup), or a refusal."""
+	printer = _printer(name)
+	if not printer:
+		frappe.throw(frappe._("Printer {0} is not available: it or its print agent is switched off.").format(name))
+	return printer
+
+
+@frappe.whitelist()
+def print_choices(doctype: str):
+	"""What the app's print setup offers for a doctype: the enabled formats and the
+	printers that can print now, plus what the profile would pick for this person
+	when they choose nothing (the "profile default" the sheet marks).
+	"""
+	if doctype not in PRINTABLE_DOCTYPES:
+		frappe.throw(frappe._("The app does not print {0} documents.").format(doctype), frappe.PermissionError)
+	probe = frappe._dict(doctype=doctype, is_return=0, owner=None)
+	default_format, _letter_head = resolve_print_settings(probe)
+	default_printer = resolve_printer(probe)
+	formats = [{"name": "Standard"}] + frappe.get_all(
+		"Print Format", filters={"doc_type": doctype, "disabled": 0}, fields=["name"], order_by="name asc", limit_page_length=200
+	)
+	now = now_datetime()
+	agents = {a.name: a for a in frappe.get_all("Sales Print Agent", filters={"is_active": 1}, fields=["name", "last_contact_at"])}
+	printers = []
+	for printer in frappe.get_all("Sales Printer", filters={"is_active": 1}, fields=["name", "printer_type", "agent"], order_by="name asc"):
+		agent = agents.get(printer.agent)
+		if not agent:
+			continue
+		printers.append({"name": printer.name, "printer_type": printer.printer_type, "online": _online(agent.last_contact_at, now)})
+	return {
+		"doctype": doctype,
+		"formats": formats,
+		"default_format": default_format or "Standard",
+		"printers": printers,
+		"default_printer": default_printer.name if default_printer else None,
+	}
+
+
 @frappe.whitelist(methods=["POST"])
-def print_document(doctype: str, name: str, format: str | None = None):
-	"""Queue `name` for the printer the caller's profile names for its doctype.
+def print_document(doctype: str, name: str, format: str | None = None, printer: str | None = None):
+	"""Queue `name` for a printer: the one the caller names (their print setup in the
+	app), else the one their profile names for this doctype.
 
 	Returns {"job": None} when no printer applies: the app then opens the PDF, as
 	before. Same authorization as the PDF download (pdf.authorize_print). The
 	document is rendered now, so a broken format fails here, in front of the person.
 	"""
 	doc = authorize_print(doctype, name, format)
-	printer = resolve_printer(doc)
+	printer = _chosen_printer(printer) if printer else resolve_printer(doc)
 	if not printer:
 		return {"job": None}
 	html, used_format = render_html(doc, format)

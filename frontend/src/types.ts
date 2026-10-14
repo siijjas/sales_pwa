@@ -924,6 +924,18 @@ export interface PrintJobReceipt {
   online?: boolean;
 }
 
+/** print_choices: what the print setup sheet offers for one doctype. */
+export interface PrintChoices {
+  doctype: string;
+  /** "Standard" first, then the enabled formats of the doctype. */
+  formats: Array<{ name: string }>;
+  /** What the profile picks when nothing is chosen. */
+  default_format: string;
+  /** Active printers whose agent is switched on; `online` = the agent polled in the last few minutes. */
+  printers: Array<{ name: string; printer_type: PrinterType; online: boolean }>;
+  default_printer: string | null;
+}
+
 export interface PrintJobStatus {
   job: string;
   status: 'Queued' | 'Sent' | 'Printed' | 'Failed';

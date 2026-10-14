@@ -11,10 +11,10 @@
           {{ store.workspaceLabel }}<template v-if="warehouse"> · {{ warehouse }}</template><template v-if="priceList"> · {{ priceList }}</template>
         </p>
       </div>
-      <div class="hidden flex-wrap items-center gap-1.5 text-[11px] text-muted lg:flex">
-        <span v-for="k in KEYS" :key="k.key" class="inline-flex items-center gap-1 rounded-lg bg-card-muted px-2 py-1">
-          <kbd class="tnum rounded-md bg-card px-1.5 py-0.5 font-bold text-foreground shadow-card">{{ k.key }}</kbd>{{ k.label }}
-        </span>
+      <div class="flex flex-wrap items-center gap-1.5">
+        <AppButton size="sm" variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
+        <AppButton size="sm" variant="subtle" icon="printer" :disabled="!lastInvoice" @click="printLast">Print last <kbd class="ml-1 text-[11px] opacity-70">F10</kbd></AppButton>
+        <AppButton size="sm" variant="ghost" icon="trash" :disabled="!counter.hasLines && !counter.customer" @click="clear">Clear <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
       </div>
     </div>
 
@@ -166,41 +166,49 @@
           <p v-if="showRounded" class="text-right text-[11.5px] text-muted">Before rounding {{ currency }} {{ money(preview!.grand_total) }}</p>
         </AppCard>
 
-        <AppCard padding="sm" class="space-y-2.5">
-          <SegmentedControl
-            v-if="store.canCreditSale"
-            :model-value="counter.markAsPaid ? 'paid' : 'credit'"
-            :options="[{ value: 'paid', label: 'Paid now' }, { value: 'credit', label: 'Credit' }]"
-            @update:model-value="(v: string) => setPayment(v === 'paid', counter.modeOfPayment, counter.invoiceOption)"
-          />
-          <div class="grid gap-2" :class="invoiceOptions.length ? 'grid-cols-2' : ''">
-            <FormField v-if="counter.markAsPaid" label="Mode of payment">
-              <BaseSelect :model-value="counter.modeOfPayment" placeholder="Select mode" @update:model-value="(v) => setPayment(true, v, counter.invoiceOption)">
-                <option v-for="m in paymentModes" :key="m.name" :value="m.name">{{ m.name }}</option>
-              </BaseSelect>
-            </FormField>
-            <FormField v-if="invoiceOptions.length" label="Invoice option">
-              <BaseSelect :model-value="counter.invoiceOption || ''" :placeholder="applicableOptions.length ? 'Select option' : 'None fits this payment'" @update:model-value="(v) => setPayment(counter.markAsPaid, counter.modeOfPayment, v || null)">
-                <option v-for="o in applicableOptions" :key="o.name" :value="o.name">{{ o.option_name }}</option>
-              </BaseSelect>
-            </FormField>
-          </div>
-          <ToggleSwitch v-if="printsDirectly('Sales Invoice')" :model-value="counter.autoPrint" label="Print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
-        </AppCard>
-
-        <div class="grid grid-cols-2 gap-2">
-          <AppButton size="lg" block icon="file-text" class="col-span-2" :loading="busy === 'invoice'" :disabled="!canSubmit || !!busy" @click="submit(true)">Submit &amp; invoice <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
-          <AppButton size="md" block variant="secondary" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submit(false)">Submit order <kbd class="ml-1 text-[11px] opacity-70">F8</kbd></AppButton>
-          <AppButton size="md" block variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
-          <AppButton size="sm" block variant="subtle" icon="printer" :disabled="!lastInvoice" @click="printLast">Print last <kbd class="ml-1 text-[11px] opacity-70">F10</kbd></AppButton>
-          <AppButton size="sm" block variant="ghost" icon="trash" :disabled="!counter.hasLines && !counter.customer" @click="clear">Clear <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
-        </div>
+        <AppButton size="lg" block icon="file-text" :loading="busy === 'invoice' || busy === 'order'" :disabled="!canSubmit || !!busy" @click="openSubmit">Submit <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
 
         <CounterQueue ref="queuePanel" class="min-h-[14rem] flex-1" :queue="queue" :loading="queueLoading" :busy="!!busy" :currency="currency" @refresh="loadQueue" @resume="resume" @invoice="openInvoiceSheet" @print="(row) => print('Sales Invoice', row.name)" />
       </div>
     </div>
 
     <InvoiceSheet v-if="sheetOrder" v-model="sheetOpen" :order="sheetOrder" @created="onSheetInvoiced" />
+
+    <!-- Submit: payment choices and the two ways to finish, opened by the Submit button or F9 -->
+    <BottomSheet v-model="submitOpen" title="Submit sale" :subtitle="counter.customer ? `${counter.customer.customer_name} · ${counter.lines.length} lines` : ''">
+      <div class="space-y-4" @keydown="onSubmitKeydown">
+        <div class="flex items-end justify-between rounded-2xl bg-card-muted px-4 py-3">
+          <div>
+            <p class="text-[12px] font-bold uppercase tracking-wide text-muted">Total</p>
+            <p v-if="preview?.proposed_invoice_name" class="text-[11.5px] text-subtle">Next invoice {{ preview.proposed_invoice_name }}</p>
+          </div>
+          <p class="tnum text-[26px] font-bold leading-none tracking-tight text-foreground">{{ currency }} {{ money(grandTotal) }}</p>
+        </div>
+        <SegmentedControl
+          v-if="store.canCreditSale"
+          :model-value="counter.markAsPaid ? 'paid' : 'credit'"
+          :options="[{ value: 'paid', label: 'Paid now' }, { value: 'credit', label: 'Credit' }]"
+          @update:model-value="(v: string) => setPayment(v === 'paid', counter.modeOfPayment, counter.invoiceOption)"
+        />
+        <div class="grid gap-3" :class="invoiceOptions.length ? 'grid-cols-2' : ''">
+          <FormField v-if="counter.markAsPaid" label="Mode of payment">
+            <BaseSelect :model-value="counter.modeOfPayment" placeholder="Select mode" @update:model-value="(v) => setPayment(true, v, counter.invoiceOption)">
+              <option v-for="m in paymentModes" :key="m.name" :value="m.name">{{ m.name }}</option>
+            </BaseSelect>
+          </FormField>
+          <FormField v-if="invoiceOptions.length" label="Invoice option">
+            <BaseSelect :model-value="counter.invoiceOption || ''" :placeholder="applicableOptions.length ? 'Select option' : 'None fits this payment'" @update:model-value="(v) => setPayment(counter.markAsPaid, counter.modeOfPayment, v || null)">
+              <option v-for="o in applicableOptions" :key="o.name" :value="o.name">{{ o.option_name }}</option>
+            </BaseSelect>
+          </FormField>
+        </div>
+        <ToggleSwitch v-if="printsDirectly('Sales Invoice')" :model-value="counter.autoPrint" label="Print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
+        <div class="grid gap-2 pt-1">
+          <AppButton ref="submitInvoiceButton" size="lg" block icon="file-text" :loading="busy === 'invoice'" :disabled="!canSubmit || !!busy" @click="submit(true)">Submit &amp; invoice <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd></AppButton>
+          <AppButton size="md" block variant="secondary" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submit(false)">Submit order only <kbd class="ml-1 text-[11px] opacity-70">F8</kbd></AppButton>
+        </div>
+      </div>
+    </BottomSheet>
   </div>
 </template>
 
@@ -221,18 +229,7 @@ import InvoiceSheet from '../components/InvoiceSheet.vue';
 import CustomerBox from '../components/counter/CustomerBox.vue';
 import ItemEntryRow from '../components/counter/ItemEntryRow.vue';
 import CounterQueue from '../components/counter/CounterQueue.vue';
-import { AppAlert, AppButton, AppCard, AppIcon, BaseSelect, DataRow, FormField, SegmentedControl, StatusBadge, ToggleSwitch } from '../components/ui';
-
-const KEYS = [
-  { key: 'F2', label: 'Customer' },
-  { key: 'F3', label: 'Item' },
-  { key: 'F4', label: 'Discount' },
-  { key: 'F7', label: 'Hold' },
-  { key: 'F8', label: 'Submit' },
-  { key: 'F9', label: 'Invoice' },
-  { key: 'F10', label: 'Print' },
-  { key: 'Esc', label: 'Clear' },
-];
+import { AppAlert, AppButton, AppCard, AppIcon, BaseSelect, BottomSheet, DataRow, FormField, SegmentedControl, StatusBadge, ToggleSwitch } from '../components/ui';
 
 const store = useSessionStore();
 const counter = useCounterStore();
@@ -444,6 +441,25 @@ const busy = ref<'' | 'hold' | 'order' | 'invoice'>('');
 const lastInvoice = ref<string | null>(null);
 const canSubmit = computed(() => !!counter.customer && counter.hasLines && !shift.needsShift && !preview.value?.error);
 
+// The submit sheet: payment choices (prefilled from the last sale) and the two ways to finish.
+const submitOpen = ref(false);
+const submitInvoiceButton = ref<InstanceType<typeof AppButton> | null>(null);
+function openSubmit() {
+  if (!canSubmit.value || busy.value) return;
+  submitOpen.value = true;
+  nextTick(() => (submitInvoiceButton.value?.$el as HTMLElement | undefined)?.focus());
+}
+function onSubmitKeydown(e: KeyboardEvent) {
+  const onButton = (e.target as HTMLElement).tagName === 'BUTTON';
+  if (e.key === 'F9' || (e.key === 'Enter' && !onButton)) {
+    e.preventDefault();
+    submit(true);
+  } else if (e.key === 'F8') {
+    e.preventDefault();
+    submit(false);
+  }
+}
+
 function startNext() {
   counter.reset(defaultCustomer.value);
   preview.value = null;
@@ -529,6 +545,7 @@ async function submit(withInvoice: boolean) {
         duration: 6000,
       });
     }
+    submitOpen.value = false;
     startNext();
     loadQueue();
   } catch (e: any) {
@@ -632,7 +649,7 @@ function onKeydown(e: KeyboardEvent) {
       break;
     case 'F9':
       e.preventDefault();
-      submit(true);
+      openSubmit();
       break;
     case 'F10':
       e.preventDefault();

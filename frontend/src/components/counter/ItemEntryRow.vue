@@ -112,8 +112,8 @@ const props = withDefaults(
 );
 const emit = defineEmits<{
   (e: 'add', item: CounterItem, qty: number, rate: number): void;
-  /** Arrow-up out of an empty item box: the caller may move focus into the lines above. */
-  (e: 'up'): void;
+  /** Arrow-down out of an empty item box: the caller may move focus into the lines below. */
+  (e: 'down'): void;
 }>();
 
 const itemInput = ref<HTMLInputElement | null>(null);
@@ -191,17 +191,17 @@ function search(q: string) {
 }
 
 function onItemKeydown(e: KeyboardEvent) {
-  if (e.key === 'ArrowDown' && results.value.length && !picked.value) {
-    e.preventDefault();
-    highlighted.value = (highlighted.value + 1) % results.value.length;
-  } else if (e.key === 'ArrowUp') {
+  if (e.key === 'ArrowDown') {
     if (results.value.length && !picked.value && text.value.trim()) {
       e.preventDefault();
-      highlighted.value = (highlighted.value - 1 + results.value.length) % results.value.length;
+      highlighted.value = (highlighted.value + 1) % results.value.length;
     } else if (!text.value.trim()) {
       e.preventDefault();
-      emit('up');
+      emit('down');
     }
+  } else if (e.key === 'ArrowUp' && results.value.length && !picked.value && text.value.trim()) {
+    e.preventDefault();
+    highlighted.value = (highlighted.value - 1 + results.value.length) % results.value.length;
   } else if (e.key === 'Enter') {
     e.preventDefault();
     e.stopPropagation();

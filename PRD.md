@@ -86,7 +86,7 @@ The draft (customer, lines, discount, the draft order being edited) is kept per 
 | Area | Detail |
 |------|--------|
 | **Customer** | Typeahead by name, ID or mobile (F2), New customer when the profile allows, outstanding balance when it shows balances. A Counter Sales profile's default customer is preselected on every new sale. |
-| **Lines** | Grid of independent lines (the same item twice is two lines): qty and, when allowed, rate editable in place; stock from the selling warehouse; a shortage badge from the preview. The entry row below takes code, name or barcode, an exact code adds on Enter, then qty, Enter lands the line. |
+| **Lines** | Grid of independent lines (the same item twice is two lines): qty and, when allowed, rate editable in place; stock from the selling warehouse; a shortage badge from the preview. The entry row above the lines takes code, name or barcode, an exact code adds on Enter, then qty, Enter lands the line. |
 | **Totals** | ERPNext's own figures for the cart: subtotal, discount (percent or amount, capped by the profile), tax lines, grand and rounded total, proposed invoice number. A cart the profile refuses shows the reason instead of totals. |
 | **Payment** | Paid now (mode of payment) or credit, the invoice options that fit, print-at-once toggle when a printer is set. |
 | **Actions** | F7 hold (draft Sales Order), F8 submit order, F9 submit and invoice in one request, F10 print last invoice, Esc clear. |

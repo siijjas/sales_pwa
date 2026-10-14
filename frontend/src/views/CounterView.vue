@@ -47,6 +47,17 @@
         </AppCard>
 
         <AppCard padding="none" class="flex min-h-[20rem] flex-1 flex-col xl:min-h-0">
+          <div class="relative z-20 border-b border-line bg-elevated p-2.5">
+            <ItemEntryRow
+              ref="entryRow"
+              :customer="counter.customer?.name || null"
+              :currency="currency"
+              :allow-rate="allowRate"
+              :allow-without-stock="allowWithoutStock"
+              @add="onAdd"
+              @down="focusFirstLine"
+            />
+          </div>
           <div class="min-h-0 flex-1 overflow-y-auto">
             <table class="w-full table-fixed text-[14px]">
               <thead class="sticky top-0 z-10 bg-card text-[11.5px] font-bold uppercase tracking-wide text-muted shadow-[0_1px_0_rgb(var(--c-line))]">
@@ -64,7 +75,7 @@
               <tbody class="divide-y divide-line">
                 <tr v-if="!counter.lines.length">
                   <td colspan="8" class="px-4 py-10 text-center text-[13.5px] text-muted">
-                    No lines yet. Type an item code or name below, enter the quantity and press Enter.
+                    No lines yet. Type an item code or name above, enter the quantity and press Enter.
                   </td>
                 </tr>
                 <tr v-for="(line, idx) in counter.lines" :key="line.uid" class="group" :class="shortByItem[line.item.item_code] ? 'bg-warning/[0.06]' : ''">
@@ -112,17 +123,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-          <div class="border-t border-line bg-elevated p-2.5">
-            <ItemEntryRow
-              ref="entryRow"
-              :customer="counter.customer?.name || null"
-              :currency="currency"
-              :allow-rate="allowRate"
-              :allow-without-stock="allowWithoutStock"
-              @add="onAdd"
-              @up="focusLastLine"
-            />
           </div>
         </AppCard>
       </div>
@@ -386,7 +386,8 @@ function onAdd(item: CounterItem, qty: number, rate: number) {
     toast.error(`${item.item_name} is out of stock`, { message: 'Your profile does not allow selling without stock.' });
     return;
   }
-  counter.addLine(item, qty, rate);
+  const line = counter.addLine(item, qty, rate);
+  nextTick(() => qtyRefs.get(line.uid)?.scrollIntoView({ block: 'nearest' }));
 }
 
 const parseNum = (v: string) => Number(String(v).replace(/[^0-9.]/g, '')) || 0;
@@ -416,20 +417,20 @@ function onLineKeydown(e: KeyboardEvent, uid: string, idx: number) {
       if (next) qtyRefs.get(next.uid)?.focus();
       else focusEntry();
     });
-  } else if (e.key === 'ArrowUp' && idx > 0) {
+  } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    qtyRefs.get(counter.lines[idx - 1].uid)?.focus();
+    if (idx > 0) qtyRefs.get(counter.lines[idx - 1].uid)?.focus();
+    else focusEntry();
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
     const next = counter.lines[idx + 1];
     if (next) qtyRefs.get(next.uid)?.focus();
-    else focusEntry();
   }
 }
 
-function focusLastLine() {
-  const last = counter.lines[counter.lines.length - 1];
-  if (last) qtyRefs.get(last.uid)?.focus();
+function focusFirstLine() {
+  const first = counter.lines[0];
+  if (first) qtyRefs.get(first.uid)?.focus();
 }
 function focusEntry() {
   nextTick(() => entryRow.value?.focus());

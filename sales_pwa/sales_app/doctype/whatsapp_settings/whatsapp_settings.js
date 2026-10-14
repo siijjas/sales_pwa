@@ -1,7 +1,13 @@
 // Desk helpers for WhatsApp Settings: check the gateway, pair it, pick the group,
-// and send a test message. All calls go through sales_pwa.sales_app.whatsapp.
+// send a test message, preview and reset the message templates. All calls go
+// through sales_pwa.sales_app.whatsapp.
 frappe.ui.form.on('WhatsApp Settings', {
+	onload(frm) {
+		render_template_help(frm);
+	},
 	refresh(frm) {
+		frm.add_custom_button(__('Preview messages'), () => preview_messages(frm), __('Message text'));
+		frm.add_custom_button(__('Reset message text'), () => reset_templates(frm), __('Message text'));
 		const colour = { Connected: 'green', 'Not linked': 'orange', Connecting: 'orange', Down: 'red', Restricted: 'red' };
 		if (frm.doc.status) frm.page.set_indicator(__(frm.doc.status), colour[frm.doc.status] || 'gray');
 		frm.add_custom_button(__('Check connection'), () => check_connection(frm));
@@ -121,4 +127,53 @@ async function send_test(frm) {
 	} catch (e) {
 		// error already shown
 	}
+}
+
+// --------------------------------------------------------------- templates
+
+async function render_template_help(frm) {
+	let help;
+	try {
+		help = await call('get_template_help');
+	} catch (e) {
+		return;
+	}
+	for (const [field, rows] of Object.entries(help)) {
+		const items = rows
+			.map(([name, text]) => `<li><code>{{ ${esc(name)} }}</code> — ${esc(text)}</li>`)
+			.join('');
+		frm.fields_dict[`${field}_help`].$wrapper.html(
+			`<details><summary class="text-muted" style="cursor:pointer">${__('Variables')}</summary><ul class="small" style="padding-left:1.2em;margin-top:6px">${items}</ul></details>`
+		);
+	}
+}
+
+async function preview_messages(frm) {
+	let out;
+	try {
+		out = await call('preview_messages', {
+			order_template: frm.doc.order_template || '',
+			payment_template: frm.doc.payment_template || '',
+		});
+	} catch (e) {
+		return;
+	}
+	const bubble = (title, text) =>
+		`<p class="text-muted small" style="margin:12px 0 4px">${title}</p>` +
+		`<pre style="white-space:pre-wrap;background:var(--bg-light-gray);border-radius:8px;padding:10px 12px;font-family:inherit">${esc(text)}</pre>`;
+	frappe.msgprint({
+		title: __('Message preview'),
+		message: bubble(__('Order'), out.order_template) + bubble(__('Payment'), out.payment_template),
+	});
+}
+
+async function reset_templates(frm) {
+	let defaults;
+	try {
+		defaults = await call('get_default_templates');
+	} catch (e) {
+		return;
+	}
+	for (const [field, text] of Object.entries(defaults)) frm.set_value(field, text);
+	frappe.show_alert({ message: __('Built-in text loaded. Edit it and save, or clear a field to keep using the built-in text.'), indicator: 'blue' });
 }

@@ -10,7 +10,15 @@ import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from sales_pwa.sales_app import whatsapp
-from sales_pwa.sales_app.whatsapp import SETTINGS, apply_health, build_message, check_gateway_health, on_document_event
+from sales_pwa.sales_app.whatsapp import (
+	SETTINGS,
+	apply_health,
+	build_message,
+	check_gateway_health,
+	on_document_event,
+	preview_messages,
+	render_template,
+)
 
 APP_PATH = "/api/method/sales_pwa.sales_app.sales.create_sales_order"
 
@@ -30,6 +38,7 @@ class TestWhatsApp(FrappeTestCase):
 			enabled=1, gateway_url="http://127.0.0.1:1", group_id="1203630000@g.us",
 			notify_orders=1, notify_payments=1, only_sales_app=1, include_items=1, max_items=2,
 			status="", linked_number="", last_error="", failed_checks=0,
+			order_template="", payment_template="",
 		)
 
 	def tearDown(self):
@@ -72,7 +81,9 @@ class TestWhatsApp(FrappeTestCase):
 
 	def test_order_message_lists_items_up_to_the_limit(self):
 		text = build_message(self._order(), "created", "Administrator")
-		self.assertIn("*🆕 New order* · SO-TEST-1", text)
+		self.assertTrue(text.startswith("*🆕 New order*\n"))
+		self.assertNotIn("SO-TEST-1", text)
+		self.assertNotIn("Staff:", text)
 		self.assertIn("Customer: Blue Traders", text)
 		self.assertIn("Items (3):", text)
 		self.assertIn("• Water 500ml × 10 Ctn", text)
@@ -81,7 +92,7 @@ class TestWhatsApp(FrappeTestCase):
 		self.assertIn("… and 1 more", text)
 		self.assertIn("Total: AED 1,234.50", text)
 		self.assertIn("Status: Draft", text)
-		self.assertIn("13 Oct 2026, 14:32", text)
+		self.assertNotIn("13 Oct 2026", text)
 
 	def test_confirmed_and_cancelled_orders_change_the_heading(self):
 		self.assertIn("*✅ Order confirmed*", build_message(self._order(1), "confirmed"))
@@ -96,7 +107,7 @@ class TestWhatsApp(FrappeTestCase):
 		self.assertIn("Items: 3 · 13 units", text)
 		self.assertNotIn("•", text)
 
-	def test_payment_message(self):
+	def _payment(self):
 		pe = frappe.new_doc("Payment Entry")
 		pe.name = "PE-TEST-1"
 		pe.payment_type = "Receive"
@@ -110,16 +121,74 @@ class TestWhatsApp(FrappeTestCase):
 		pe.modified = "2026-10-13 14:40:00"
 		pe.append("references", {"reference_doctype": "Sales Invoice", "reference_name": "SI-1", "allocated_amount": 400})
 		pe.append("references", {"reference_doctype": "Sales Invoice", "reference_name": "SI-2", "allocated_amount": 0})
-		text = build_message(pe, "received", "Administrator")
-		self.assertIn("*💰 Payment received* · PE-TEST-1", text)
+		return pe
+
+	def test_payment_message(self):
+		text = build_message(self._payment(), "received", "Administrator")
+		self.assertTrue(text.startswith("*💰 Payment received*\n"))
+		self.assertNotIn("PE-TEST-1", text)
 		self.assertIn("Amount: AED 500.00 · Cash", text)
 		self.assertIn("Against: SI-1 (AED 400.00)", text)
 		self.assertNotIn("SI-2", text)
 		self.assertIn("Unallocated (advance): AED 100.00", text)
-		self.assertIn("Staff: Administrator", text)
+		self.assertNotIn("Staff:", text)
+		self.assertNotIn("13 Oct 2026", text)
 
 	def test_unknown_doctype_has_no_message(self):
 		self.assertIsNone(build_message(frappe.new_doc("ToDo"), "created"))
+
+	# ----------------------------------------------------------- templates
+
+	def test_custom_template_is_used_and_can_bring_back_voucher_staff_and_time(self):
+		_set_settings(order_template="{{ heading }} {{ doc.name }}\nBy {{ staff }} at {{ when }}\n{{ total }}")
+		text = build_message(self._order(1), "confirmed", "Administrator")
+		self.assertEqual(text, "✅ Order confirmed SO-TEST-1\nBy Administrator at 13 Oct 2026, 14:32\nAED 1,234.50")
+
+	def test_template_whitespace_is_tidied(self):
+		template = "  a   \n\n\n{% if x %}\nb\n{% endif %}\n{% if x %}c{% endif %}\n{% if not x %}\nhidden\n{% endif %}\nd\n\n"
+		# tag-only lines leave no gap, inline tags keep their line, blank lines survive but never pile up
+		self.assertEqual(render_template(template, {"x": True}), "a\n\nb\nc\nd")
+		self.assertEqual(render_template("a\n\n{% if x %}\nb\n{% endif %}\n\nd", {"x": False}), "a\n\nd")
+
+	def test_default_templates_render_line_for_line(self):
+		self.assertEqual(
+			build_message(self._order(1), "confirmed"),
+			"*✅ Order confirmed*\nCustomer: Blue Traders\nItems (3):\n• Water 500ml × 10 Ctn\n• Juice 1L × 2.5 Nos\n… and 1 more\nTotal: AED 1,234.50",
+		)
+		self.assertEqual(
+			build_message(self._payment(), "received"),
+			"*💰 Payment received*\nCustomer: Blue Traders\nAmount: AED 500.00 · Cash\nAgainst: SI-1 (AED 400.00)\nUnallocated (advance): AED 100.00",
+		)
+
+	def test_broken_template_at_send_time_falls_back_to_the_default(self):
+		# set_single_value bypasses validate, like a template that only breaks on real data
+		_set_settings(payment_template="{{ refs[5].name }}")
+		with patch.object(whatsapp.frappe, "log_error") as log_error:
+			text = build_message(self._payment(), "received")
+		self.assertIn("*💰 Payment received*", text)
+		self.assertIn("Amount: AED 500.00 · Cash", text)
+		log_error.assert_called_once()
+
+	def test_saving_a_bad_template_is_refused(self):
+		doc = frappe.get_doc(SETTINGS)
+		doc.order_template = "{% if %}"
+		with self.assertRaises(frappe.ValidationError) as caught:
+			doc.validate()
+		self.assertIn("Order message", str(caught.exception))
+		doc.order_template = "{{ total }}"
+		doc.payment_template = "{{ nothing.here }}"
+		self.assertRaises(frappe.ValidationError, doc.validate)
+		doc.payment_template = ""
+		doc.validate()
+
+	def test_preview_renders_defaults_and_given_templates(self):
+		frappe.set_user("Administrator")
+		out = preview_messages(order_template="", payment_template="Paid {{ amount }}")
+		self.assertIn("*✅ Order confirmed*", out["order_template"])
+		self.assertIn("• Mineral Water 500ml × 24 Nos", out["order_template"])
+		self.assertNotIn("SAL-ORD", out["order_template"])
+		self.assertEqual(out["payment_template"], "Paid AED 400.00")
+		self.assertIn("Template error", preview_messages(order_template="{{ x.")["order_template"])
 
 	# ------------------------------------------------------------- queuing
 

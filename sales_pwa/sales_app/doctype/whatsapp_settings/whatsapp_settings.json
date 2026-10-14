@@ -27,7 +27,13 @@
   "column_break_events",
   "only_sales_app",
   "include_items",
-  "max_items"
+  "max_items",
+  "section_templates",
+  "order_template",
+  "order_template_help",
+  "column_break_templates",
+  "payment_template",
+  "payment_template_help"
  ],
  "fields": [
   {
@@ -165,12 +171,45 @@
    "fieldname": "max_items",
    "fieldtype": "Int",
    "label": "Items to list"
+  },
+  {
+   "fieldname": "section_templates",
+   "fieldtype": "Section Break",
+   "label": "Message text",
+   "collapsible": 1,
+   "description": "Jinja templates for the two messages. Leave a field empty to use the built-in text. A line holding only {% if %} / {% for %} tags leaves no gap; a blank line in the template stays a blank line in the message. WhatsApp formatting works: *bold*, _italic_, ~strike~. Use Preview messages to see the result for sample documents and Reset message text to load the built-in text for editing."
+  },
+  {
+   "fieldname": "order_template",
+   "fieldtype": "Code",
+   "options": "Jinja",
+   "label": "Order message"
+  },
+  {
+   "fieldname": "order_template_help",
+   "fieldtype": "HTML",
+   "label": "Order variables"
+  },
+  {
+   "fieldname": "column_break_templates",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "payment_template",
+   "fieldtype": "Code",
+   "options": "Jinja",
+   "label": "Payment message"
+  },
+  {
+   "fieldname": "payment_template_help",
+   "fieldtype": "HTML",
+   "label": "Payment variables"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-14 00:00:00.000000",
+ "modified": "2026-10-14 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "WhatsApp Settings",

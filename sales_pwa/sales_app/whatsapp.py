@@ -10,15 +10,26 @@ same request posts once, and nothing is posted for a rolled-back change) → the
 message is built from the committed document and sent from a background job, so
 a slow or dead gateway never slows down or fails the sale itself.
 
-Adding a use case: write a `_<something>_message(doc, event, user)` builder,
-list it in MESSAGE_BUILDERS, and hook the doctype's events in hooks.py.
+Message text: each message is a Jinja template, editable on WhatsApp Settings
+(order_template, payment_template) and falling back to DEFAULT_TEMPLATES when the
+field is empty. Templates render in a sandbox with the variables listed in
+TEMPLATE_HELP; a template that fails at send time is logged and the default is
+used instead, so a typo never silences the group.
+
+Adding a use case: write a `_<something>_context(doc, event, user)` builder, add a
+default template, list both in MESSAGE_BUILDERS / DEFAULT_TEMPLATES, and hook the
+doctype's events in hooks.py.
 
 Health: check_gateway_health() runs every minute from the scheduler, asks the
 gateway for its state and records it on WhatsApp Settings (status, linked
 number, last error), raising one Error Log entry when the link goes down.
 """
 
+import re
+
 import requests
+from jinja2 import TemplateError
+from jinja2.sandbox import SandboxedEnvironment
 
 import frappe
 from frappe.utils import cint, cstr, escape_html, flt, fmt_money, format_datetime, get_fullname, now_datetime
@@ -159,61 +170,165 @@ def _dispatch(text: str):
 
 # ------------------------------------------------------------------ messages
 
+DEFAULT_TEMPLATES = {
+	"Sales Order": """*{{ heading }}*
+Customer: {{ customer }}
+{% if items %}
+Items ({{ item_count }}):
+{% for row in items %}
+• {{ row.name }} × {{ row.qty }} {{ row.uom }}
+{% endfor %}
+{% if more %}
+… and {{ more }} more
+{% endif %}
+{% else %}
+Items: {{ item_count }} · {{ total_qty }} units
+{% endif %}
+{% if discount %}
+Discount: {{ discount }}
+{% endif %}
+Total: {{ total }}
+{% if event == "cancelled" %}
+Status: Cancelled
+{% elif doc.docstatus == 0 %}
+Status: Draft, not yet confirmed
+{% endif %}""",
+	"Payment Entry": """*{{ heading }}*
+Customer: {{ customer }}
+Amount: {{ amount }} · {{ mode }}
+{% if against %}
+Against: {{ against }}
+{% endif %}
+{% if unallocated %}
+Unallocated (advance): {{ unallocated }}
+{% endif %}""",
+}
+
+# Shown on WhatsApp Settings next to the template fields.
+TEMPLATE_HELP = {
+	"Sales Order": [
+		("heading", "🆕 New order, ✏️ Order updated, ✅ Order confirmed or ❌ Order cancelled"),
+		("event", "created, updated, confirmed or cancelled"),
+		("customer", "customer name"),
+		("items", "the rows to list (empty when “List the order items” is off): row.name, row.qty, row.uom, row.amount"),
+		("item_count", "number of rows on the order"),
+		("more", "rows beyond “Items to list”"),
+		("total_qty", "units on the order"),
+		("discount", "discount with currency, empty when none"),
+		("total", "grand total with currency"),
+		("staff", "full name of the user who made the change"),
+		("when", "date and time of the change"),
+		("doc", "the Sales Order itself: doc.name, doc.delivery_date, doc.po_no, doc.customer_address …"),
+	],
+	"Payment Entry": [
+		("heading", "💰 Payment received or ↩️ Payment cancelled"),
+		("event", "received or cancelled"),
+		("customer", "customer name"),
+		("amount", "paid amount with currency"),
+		("mode", "mode of payment"),
+		("against", "“SAL-ORD-… (AED 400.00), …” for every allocated reference, empty when none"),
+		("refs", "the allocated references: ref.name, ref.amount"),
+		("unallocated", "advance with currency, empty when none"),
+		("staff", "full name of the user who made the change"),
+		("when", "date and time of the change"),
+		("doc", "the Payment Entry itself: doc.name, doc.reference_no, doc.remarks …"),
+	],
+}
+
+TEMPLATE_FIELDS = {"Sales Order": "order_template", "Payment Entry": "payment_template"}
+
 
 def build_message(doc, event: str, user: str | None = None) -> str | None:
 	builder = MESSAGE_BUILDERS.get(doc.doctype)
-	return builder(doc, event, user) if builder else None
+	if not builder:
+		return None
+	context = builder(doc, event, user)
+	template = (get_settings().get(TEMPLATE_FIELDS[doc.doctype]) or "").strip()
+	if template:
+		try:
+			return render_template(template, context)
+		except TemplateError:
+			frappe.log_error(
+				title=f"WhatsApp template for {doc.doctype} failed, default used",
+				message=frappe.get_traceback(),
+			)
+	return render_template(DEFAULT_TEMPLATES[doc.doctype], context)
 
 
-def _order_message(doc, event: str, user: str | None) -> str:
+_jenv = SandboxedEnvironment(autoescape=False)
+# A template line holding nothing but {% %} tags: its line break is removed before
+# rendering, so such a line never leaves a gap (Jinja's trim_blocks would also eat the
+# break after an inline "{% if x %}text{% endif %}", gluing it to the next line).
+_TAG_ONLY_LINE = re.compile(r"^[ \t]*((?:\{%(?:(?!%\}).)*%\}[ \t]*)+)\r?\n", re.MULTILINE)
+
+
+def render_template(template: str, context: dict) -> str:
+	"""Render a message template to plain text. Lines that only carry `{% %}` tags
+	vanish, every other line is trimmed, blank lines are kept (one at most in a row,
+	none at the ends), so a blank line in the template is a blank line in the message.
+	Raises jinja2.TemplateError on a bad template."""
+	source = _TAG_ONLY_LINE.sub(r"\1", template)
+	text = _jenv.from_string(source).render(**context)
+	lines = "\n".join(raw.strip() for raw in text.splitlines())
+	return re.sub(r"\n{3,}", "\n\n", lines).strip()
+
+
+def _order_context(doc, event: str, user: str | None) -> dict:
 	settings = get_settings()
-	lines = [
-		f"*{ORDER_HEADINGS.get(event, event.title())}* · {doc.name}",
-		f"Customer: {doc.customer_name or doc.customer}",
-		f"Staff: {_staff(user or doc.owner)}",
-	]
-	items = doc.get("items") or []
-	if settings.include_items and items:
-		limit = cint(settings.max_items) or len(items)
-		lines.append(f"Items ({len(items)}):")
-		for row in items[:limit]:
-			lines.append(f"• {row.item_name or row.item_code} × {_qty(row.qty)} {row.uom or ''}".rstrip())
-		if len(items) > limit:
-			lines.append(f"… and {len(items) - limit} more")
-	else:
-		lines.append(f"Items: {len(items)} · {_qty(doc.total_qty)} units")
-	if flt(doc.discount_amount):
-		lines.append(f"Discount: {_money(doc.discount_amount, doc.currency)}")
-	lines.append(f"Total: {_money(doc.grand_total, doc.currency)}")
-	if event == "cancelled":
-		lines.append("Status: Cancelled")
-	elif doc.docstatus == 0:
-		lines.append("Status: Draft, not yet confirmed")
-	lines.append(_when(doc))
-	return "\n".join(lines)
+	rows = doc.get("items") or []
+	limit = cint(settings.max_items) or len(rows)
+	listed = rows[:limit] if settings.include_items else []
+	return {
+		"doc": doc,
+		"event": event,
+		"heading": ORDER_HEADINGS.get(event, event.title()),
+		"customer": doc.customer_name or doc.customer,
+		"items": [
+			{
+				"name": row.item_name or row.item_code,
+				"code": row.item_code,
+				"qty": _qty(row.qty),
+				"uom": row.uom or "",
+				"rate": _money(row.rate, doc.currency),
+				"amount": _money(row.amount, doc.currency),
+			}
+			for row in listed
+		],
+		"item_count": len(rows),
+		"more": max(len(rows) - len(listed), 0) if listed else 0,
+		"total_qty": _qty(doc.total_qty),
+		"discount": _money(doc.discount_amount, doc.currency) if flt(doc.discount_amount) else "",
+		"total": _money(doc.grand_total, doc.currency),
+		"staff": _staff(user or doc.owner),
+		"when": _when(doc),
+	}
 
 
-def _payment_message(doc, event: str, user: str | None) -> str:
+def _payment_context(doc, event: str, user: str | None) -> dict:
 	currency = doc.paid_from_account_currency or doc.paid_to_account_currency
-	lines = [
-		f"*{PAYMENT_HEADINGS.get(event, event.title())}* · {doc.name}",
-		f"Customer: {doc.party_name or doc.party}",
-		f"Amount: {_money(doc.paid_amount, currency)} · {doc.mode_of_payment or 'No mode'}",
+	refs = [
+		{"name": r.reference_name, "doctype": r.reference_doctype, "amount": _money(r.allocated_amount, currency)}
+		for r in (doc.get("references") or [])
+		if flt(r.allocated_amount)
 	]
-	refs = [r for r in (doc.get("references") or []) if flt(r.allocated_amount)]
-	if refs:
-		against = ", ".join(f"{r.reference_name} ({_money(r.allocated_amount, currency)})" for r in refs)
-		lines.append(f"Against: {against}")
-	if flt(doc.unallocated_amount):
-		lines.append(f"Unallocated (advance): {_money(doc.unallocated_amount, currency)}")
-	lines.append(f"Staff: {_staff(user or doc.owner)}")
-	lines.append(_when(doc))
-	return "\n".join(lines)
+	return {
+		"doc": doc,
+		"event": event,
+		"heading": PAYMENT_HEADINGS.get(event, event.title()),
+		"customer": doc.party_name or doc.party,
+		"amount": _money(doc.paid_amount, currency),
+		"mode": doc.mode_of_payment or "No mode",
+		"refs": refs,
+		"against": ", ".join(f"{r['name']} ({r['amount']})" for r in refs),
+		"unallocated": _money(doc.unallocated_amount, currency) if flt(doc.unallocated_amount) else "",
+		"staff": _staff(user or doc.owner),
+		"when": _when(doc),
+	}
 
 
 MESSAGE_BUILDERS = {
-	"Sales Order": _order_message,
-	"Payment Entry": _payment_message,
+	"Sales Order": _order_context,
+	"Payment Entry": _payment_context,
 }
 
 
@@ -237,6 +352,94 @@ def _qty(value) -> str:
 
 def _when(doc) -> str:
 	return format_datetime(doc.modified or now_datetime(), "d MMM yyyy, HH:mm")
+
+
+# ------------------------------------------------------- template samples
+
+
+def sample_documents() -> dict:
+	"""Unsaved documents used to validate and preview the templates."""
+	so = frappe.new_doc("Sales Order")
+	so.update(
+		{
+			"name": "SAL-ORD-2026-00012",
+			"customer": "Al Noor Trading",
+			"customer_name": "Al Noor Trading",
+			"currency": "AED",
+			"docstatus": 1,
+			"total_qty": 40,
+			"discount_amount": 15,
+			"grand_total": 412.5,
+			"modified": now_datetime(),
+			"owner": frappe.session.user,
+		}
+	)
+	for name, qty, uom, rate in (("Mineral Water 500ml", 24, "Nos", 1.5), ("Chips Salted", 10, "Pkt", 2), ("Juice Orange 1L", 6, "Nos", 6.25)):
+		so.append("items", {"item_code": name, "item_name": name, "qty": qty, "uom": uom, "rate": rate, "amount": qty * rate})
+	pe = frappe.new_doc("Payment Entry")
+	pe.update(
+		{
+			"name": "ACC-PAY-2026-00031",
+			"payment_type": "Receive",
+			"party_type": "Customer",
+			"party": "Al Noor Trading",
+			"party_name": "Al Noor Trading",
+			"mode_of_payment": "Cash",
+			"paid_amount": 400,
+			"paid_from_account_currency": "AED",
+			"unallocated_amount": 0,
+			"modified": now_datetime(),
+			"owner": frappe.session.user,
+		}
+	)
+	pe.append("references", {"reference_doctype": "Sales Order", "reference_name": "SAL-ORD-2026-00012", "allocated_amount": 400})
+	return {"Sales Order": (so, "confirmed"), "Payment Entry": (pe, "received")}
+
+
+def validate_templates(settings):
+	"""Called from WhatsApp Settings.validate: a template that does not render
+	against the sample documents is refused with Jinja's error."""
+	samples = sample_documents()
+	for doctype, field in TEMPLATE_FIELDS.items():
+		template = (settings.get(field) or "").strip()
+		if not template:
+			continue
+		doc, event = samples[doctype]
+		try:
+			render_template(template, MESSAGE_BUILDERS[doctype](doc, event, frappe.session.user))
+		except TemplateError as exc:
+			label = settings.meta.get_label(field)
+			frappe.throw(f"{escape_html(label)}: {escape_html(str(exc))}", title="Template error")
+
+
+@frappe.whitelist()
+def preview_messages(order_template: str | None = None, payment_template: str | None = None) -> dict:
+	"""What the two messages would look like for sample documents. Unsaved field
+	values come from the form; empty means the built-in text."""
+	_require_manager()
+	given = {"Sales Order": order_template, "Payment Entry": payment_template}
+	samples = sample_documents()
+	out = {}
+	for doctype, field in TEMPLATE_FIELDS.items():
+		template = (given[doctype] or "").strip() or DEFAULT_TEMPLATES[doctype]
+		doc, event = samples[doctype]
+		try:
+			out[field] = render_template(template, MESSAGE_BUILDERS[doctype](doc, event, frappe.session.user))
+		except TemplateError as exc:
+			out[field] = f"Template error: {exc}"
+	return out
+
+
+@frappe.whitelist()
+def get_default_templates() -> dict:
+	_require_manager()
+	return {field: DEFAULT_TEMPLATES[doctype] for doctype, field in TEMPLATE_FIELDS.items()}
+
+
+@frappe.whitelist()
+def get_template_help() -> dict:
+	_require_manager()
+	return {field: TEMPLATE_HELP[doctype] for doctype, field in TEMPLATE_FIELDS.items()}
 
 
 # ------------------------------------------------------------------- gateway

@@ -1,6 +1,8 @@
 import frappe
 from frappe.model.document import Document
 
+from sales_pwa.sales_app.whatsapp import validate_templates
+
 
 class WhatsAppSettings(Document):
 	"""Where the Sales App posts WhatsApp notifications and which events it posts.
@@ -11,6 +13,7 @@ class WhatsAppSettings(Document):
 		self.group_id = (self.group_id or "").strip()
 		if self.max_items is None or self.max_items < 0:
 			self.max_items = 0
+		validate_templates(self)
 		if not self.enabled:
 			return
 		if not self.gateway_url:

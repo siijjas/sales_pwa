@@ -26,6 +26,8 @@ from sales_pwa.sales_app.utils import _get_driver_config, _is_manager, _validate
 SHIFT_DOCTYPES = ("Sales Shift Opening", "Sales Shift Closing")
 # Customer documents the app prints; a staff member may print those of customers they serve.
 CUSTOMER_DOCTYPES = ("Sales Order", "Sales Invoice", "Payment Entry")
+# The render below runs with full read rights, so it is offered for these alone.
+PRINTABLE_DOCTYPES = SHIFT_DOCTYPES + CUSTOMER_DOCTYPES
 
 
 @contextmanager
@@ -133,6 +135,8 @@ def download_pdf(doctype: str, name: str, format: str | None = None, no_letterhe
 	With no ``format`` the Sales Profile decides (see resolve_print_settings); the
 	shift reports name their own formats explicitly.
 	"""
+	if doctype not in PRINTABLE_DOCTYPES:
+		frappe.throw(frappe._("The app does not print {0} documents.").format(doctype), frappe.PermissionError)
 	doc = frappe.get_doc(doctype, name)
 	validate_print_permission(doc)
 	# Drivers hold a plain read/print DocPerm on shift documents; the app limits them
@@ -143,9 +147,9 @@ def download_pdf(doctype: str, name: str, format: str | None = None, no_letterhe
 		if doctype == "Payment Entry" and doc.party_type != "Customer":
 			frappe.throw(frappe._("You can only print customer payments."), frappe.PermissionError)
 		_validate_customer_access(doc.party if doctype == "Payment Entry" else doc.customer)
-	# The render below runs unrestricted, so a format must belong to this doctype.
-	if format and format != "Standard" and frappe.db.get_value("Print Format", format, "doc_type") != doctype:
-		frappe.throw(frappe._("{0} is not a {1} print format.").format(format, doctype))
+	# The render below runs unrestricted, so a format must be an enabled one of this doctype.
+	if format and format != "Standard" and not _usable_print_format(format, doctype):
+		frappe.throw(frappe._("{0} is not an enabled {1} print format.").format(format, doctype))
 
 	letterhead = None
 	if not format:

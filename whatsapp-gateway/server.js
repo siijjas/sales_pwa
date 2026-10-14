@@ -12,8 +12,9 @@
 //   POST /send              {"to": "<jid or phone>", "text": "..."}
 //   POST /logout            unlink the device so a new QR is shown
 //
-// Every route except /health needs the API key: header `x-api-key`, a bearer
-// token, or `?key=` for the browser routes.
+// Every route except /health needs the API key: header `x-api-key` or a bearer
+// token. The two browser routes (/pair, /qr.png) also accept `?key=`; /pair
+// strips it from the address bar at once and uses the header from then on.
 //
 // `state` in /status is one of:
 //   connecting   starting, or reconnecting after a drop
@@ -29,6 +30,8 @@
 //   WA_AUTH_DIR  default ./auth, the linked-device credentials (keep private)
 //   WA_PHONE     optional, pair with a code instead of a QR (digits with country code)
 //   WA_LOG_LEVEL default info; WA_BAILEYS_LOG_LEVEL default warn
+//   WA_PRINT_QR  set to 1 to also print the QR / pairing code on stdout (off by
+//                default: under systemd stdout is the journal, which persists)
 //
 // The reconnect rules (reconnect.mjs) and the console scrubbing (quiet.mjs) are
 // ported from the restaurant app's bridge, which learned them on a live pairing.
@@ -57,6 +60,7 @@ const HOST = process.env.WA_HOST || '127.0.0.1';
 const API_KEY = process.env.WA_API_KEY || '';
 const AUTH_DIR = path.resolve(here, process.env.WA_AUTH_DIR || 'auth');
 const PHONE = (process.env.WA_PHONE || '').replace(/\D/g, '');
+const PRINT_QR = /^(1|true|yes)$/i.test(process.env.WA_PRINT_QR || '');
 const BODY_LIMIT = 64 * 1024;
 
 const logger = pino({ level: process.env.WA_LOG_LEVEL || 'info' });
@@ -139,16 +143,19 @@ async function connect() {
         state.pairingRequested = true;
         try {
           state.pairingCode = await sock.requestPairingCode(PHONE);
-          logger.info({ code: state.pairingCode }, `Pairing code for +${PHONE} (WhatsApp > Linked devices > Link with phone number)`);
+          logger.info(`Pairing code for +${PHONE} is ready: open /pair or WhatsApp Settings > Pair device`);
+          if (PRINT_QR) console.log(`Pairing code: ${state.pairingCode}`);
         } catch (err) {
           logger.warn({ err }, 'Could not request a pairing code; scan the QR instead');
         }
       } else {
-        logger.info('Scan this QR with WhatsApp > Linked devices (or open /pair in a browser):');
-        try {
-          console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
-        } catch {
-          // terminal rendering is a convenience only
+        logger.info('Pairing QR is ready: open /pair or WhatsApp Settings > Pair device and scan it');
+        if (PRINT_QR) {
+          try {
+            console.log(await QRCode.toString(qr, { type: 'terminal', small: true }));
+          } catch {
+            // terminal rendering is a convenience only
+          }
         }
       }
     }
@@ -276,10 +283,14 @@ async function statusPayload() {
 
 // --------------------------------------------------------------------- HTTP
 
+// Routes a browser opens directly, so the key may come in the query string. Every other
+// route takes it only from a header: a key in a URL ends up in access logs and history.
+const QUERY_KEY_ROUTES = new Set(['/pair', '/qr.png']);
+
 function authorized(req, url) {
   const header = req.headers['x-api-key'];
   const bearer = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  const query = url.searchParams.get('key');
+  const query = req.method === 'GET' && QUERY_KEY_ROUTES.has(url.pathname) ? url.searchParams.get('key') : null;
   const given = String(header || bearer || query || '');
   const a = Buffer.from(given);
   const b = Buffer.from(API_KEY);
@@ -322,25 +333,38 @@ function readJson(req) {
 }
 
 const PAIR_PAGE = `<!doctype html>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">
 <title>Sales App WhatsApp</title>
 <style>body{font:16px system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f6f6;color:#143}
 main{text-align:center;padding:24px}img{width:280px;height:280px;background:#fff;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
 p{margin:12px 0 0;color:#466}code{font-size:28px;letter-spacing:3px}</style>
 <main><h1>Sales App WhatsApp</h1><div id="box">Loading…</div></main>
 <script>
-const key=new URLSearchParams(location.search).get('key')||'';
-async function tick(){try{const r=await fetch('/status?key='+encodeURIComponent(key));if(r.status===401){box.innerHTML='<p>Missing or wrong key: open /pair?key=YOUR_API_KEY</p>';return}
-const s=await r.json();if(s.connected){box.innerHTML='<p>Connected as <b>'+(s.user?.name||'')+'</b> '+(s.number||'')+'</p><p>You can close this page.</p>'}
-else if(s.pairing_code){box.innerHTML='<p>Pairing code</p><code>'+s.pairing_code+'</code><p>WhatsApp › Linked devices › Link with phone number</p>'}
-else if(s.qr){box.innerHTML='<img src="'+s.qr+'" alt="QR"><p>WhatsApp › Linked devices › Link a device</p>'}
-else{box.innerHTML='<p>'+(s.state+(s.last_error?': '+s.last_error:''))+'</p>'}}catch(e){box.innerHTML='<p>Gateway unreachable</p>'}}
+// The key arrives once in the query string, is kept in memory and sent as a header; the
+// address bar is rewritten so neither history nor a screenshot keeps it. Everything the
+// gateway reports is rendered as text, never as markup.
+const params=new URLSearchParams(location.search);const key=params.get('key')||'';
+if(params.has('key'))history.replaceState(null,'',location.pathname);
+const box=document.getElementById('box');
+const show=(...nodes)=>box.replaceChildren(...nodes);
+const el=(tag,text)=>{const e=document.createElement(tag);e.textContent=text;return e};
+const isPng=(v)=>typeof v==='string'&&/^data:image\\/png;base64,[A-Za-z0-9+/=]+$/.test(v);
+async function tick(){try{const r=await fetch('/status',{headers:{'x-api-key':key},cache:'no-store'});
+if(r.status===401){show(el('p','Missing or wrong key: open /pair?key=YOUR_API_KEY'));return}
+const s=await r.json();
+if(s.connected){const line=el('p','Connected as ');line.append(el('b',String(s.user?.name||'')),' '+String(s.number||''));show(line,el('p','You can close this page.'))}
+else if(s.pairing_code){show(el('p','Pairing code'),el('code',String(s.pairing_code)),el('p','WhatsApp › Linked devices › Link with phone number'))}
+else if(isPng(s.qr)){const img=document.createElement('img');img.src=s.qr;img.alt='QR';show(img,el('p','WhatsApp › Linked devices › Link a device'))}
+else{show(el('p',String(s.state)+(s.last_error?': '+String(s.last_error):'')))}}
+catch(e){show(el('p','Gateway unreachable'))}}
 tick();setInterval(tick,4000);
 </script>`;
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   try {
+    // A fixed base: the Host header is client input and an invalid one must not throw
+    // outside this try (an unhandled rejection exits the process, see below).
+    const url = new URL(req.url || '/', 'http://localhost');
     if (url.pathname === '/health') {
       return json(res, 200, { ok: true, state: state.state, connected: state.state === 'connected' });
     }
@@ -351,7 +375,12 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, await statusPayload());
     }
     if (req.method === 'GET' && url.pathname === '/pair') {
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+        'content-security-policy': "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'",
+      });
       return res.end(PAIR_PAGE);
     }
     if (req.method === 'GET' && url.pathname === '/qr.png') {
@@ -388,10 +417,11 @@ const server = http.createServer(async (req, res) => {
     }
     return json(res, 404, { error: 'Not found' });
   } catch (err) {
-    const status = err.status || 500;
-    if (status === 503) logger.warn({ path: url.pathname, error: err.message }, 'Request refused');
-    else if (status >= 500) logger.error({ err, path: url.pathname }, 'Request failed');
-    return json(res, status, { error: err.message || 'Request failed' });
+    const status = err.status || (err.code === 'ERR_INVALID_URL' ? 400 : 500);
+    const path = String(req.url || '').split('?')[0];
+    if (status === 503) logger.warn({ path, error: err.message }, 'Request refused');
+    else if (status >= 500) logger.error({ err, path }, 'Request failed');
+    return json(res, status, { error: status === 400 && err.code === 'ERR_INVALID_URL' ? 'Bad request' : err.message || 'Request failed' });
   }
 });
 

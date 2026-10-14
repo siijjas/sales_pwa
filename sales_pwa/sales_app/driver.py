@@ -57,7 +57,6 @@ def get_app_context():
 	return {
 		"user": user,
 		"full_name": full_name,
-		"sid": frappe.session.sid,
 		"roles": frappe.get_roles(user),
 		"is_manager": _is_manager(user),
 		"is_driver": _is_driver(user),

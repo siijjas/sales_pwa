@@ -1,7 +1,6 @@
 export interface UserSession {
   user: string;
   full_name: string;
-  sid: string;
   roles?: string[];
   is_manager?: boolean;
   is_driver?: boolean;

@@ -27,6 +27,7 @@ class SalesProfile(Document):
 
 		self._validate_invoice_options()
 		self._validate_print_formats()
+		self._validate_cash_accounts()
 		self._validate_drivers_are_enabled()
 		self._validate_one_active_profile_per_driver()
 
@@ -82,6 +83,27 @@ class SalesProfile(Document):
 				frappe.throw(f"{label}: {name} is a {row.doc_type} print format, not {doctype}")
 			if row.disabled:
 				frappe.throw(f"{label}: print format {name} is disabled")
+
+	def _validate_cash_accounts(self):
+		"""The drawer and back-office accounts must be Cash or Bank: cash movements post
+		Journal Entries against them without account permissions (see
+		sales_cash_movement.py), so the profile must not be able to name any ledger."""
+		from sales_pwa.sales_app.doctype.sales_cash_movement.sales_cash_movement import CASH_ACCOUNT_TYPES
+
+		for field in ("cash_account", "back_office_cash_account"):
+			name = self.get(field)
+			if not name:
+				continue
+			row = frappe.db.get_value("Account", name, ["account_type", "is_group", "company"], as_dict=True)
+			label = self.meta.get_label(field)
+			if not row:
+				frappe.throw(f"{label}: account {name} does not exist")
+			if row.is_group:
+				frappe.throw(f"{label}: {name} is a group account")
+			if self.company and row.company != self.company:
+				frappe.throw(f"{label}: {name} belongs to {row.company}, not {self.company}")
+			if row.account_type not in CASH_ACCOUNT_TYPES:
+				frappe.throw(f"{label}: {name} must be a Cash or Bank account (it is {row.account_type or 'untyped'})")
 
 	def _validate_invoice_options(self):
 		"""No duplicate options, and exactly one default when any are listed (the first

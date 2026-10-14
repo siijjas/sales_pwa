@@ -15,12 +15,15 @@ cp .env.example .env        # set WA_API_KEY to a long random string
 npm start
 ```
 
-The first start prints a QR in the terminal and also serves it at
-`http://127.0.0.1:3010/pair?key=<WA_API_KEY>`. Scan it from the phone that
-owns the number (WhatsApp › Linked devices › Link a device), or set `WA_PHONE`
-in `.env` to get a pairing code instead. The credentials land in `auth/`
-(git-ignored): keep that folder private and back it up if you don't want to
-pair again after a reinstall.
+The first start serves a pairing QR at
+`http://127.0.0.1:3010/pair?key=<WA_API_KEY>` (the page drops the key from
+the address bar at once and keeps it in memory; reload with the key again if
+needed). Scan it from the phone that owns the number (WhatsApp › Linked
+devices › Link a device), or set `WA_PHONE` in `.env` to get a pairing code
+instead. Set `WA_PRINT_QR=1` to also print the QR or code on stdout; it is off
+by default because under systemd stdout is the persistent journal. The
+credentials land in `auth/` (git-ignored): keep that folder private and back it
+up if you don't want to pair again after a reinstall.
 
 Then in the desk open **WhatsApp Settings**, enter the URL and key, save,
 and use *Pair device* (shows the same QR), *Pick group* and *Send test message*.
@@ -45,8 +48,10 @@ purpose on any unhandled rejection so a restart is always clean.
 
 ## API
 
-All routes except `/health` need the key: header `x-api-key`, `Authorization:
-Bearer`, or `?key=` on the browser routes.
+All routes except `/health` need the key: header `x-api-key` or
+`Authorization: Bearer`. Only the two browser routes, `GET /pair` and
+`GET /qr.png`, also accept `?key=`; everywhere else a key in the URL is
+ignored, so it never lands in access logs or browser history.
 
 | Route | What it does |
 | --- | --- |
@@ -78,7 +83,14 @@ console into the journal. Both are pure modules with `npm test` suites.
 
 ## Notes
 
-- Bind to `127.0.0.1` (the default) unless Frappe runs on another machine.
+- Bind to `127.0.0.1` (the default) unless Frappe runs on another machine. If
+  you do bind wider, put TLS and a rate limit in front (nginx): the gateway
+  itself has neither, and the key is the only thing between the network and
+  the WhatsApp number.
+- Frappe never follows a redirect from the gateway and only shows the desk a
+  fixed set of fields from its answers. The gateway URL and key on WhatsApp
+  Settings are System Manager only (permission level 1): whoever can set the
+  URL decides where the key is sent.
 - WhatsApp may log the device out (phone reset, "Log out from all devices").
   The gateway then wipes `auth/` and shows a new QR; the desk's *Check
   connection* button tells you when that has happened.

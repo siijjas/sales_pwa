@@ -40,13 +40,14 @@
    "fieldname": "section_gateway",
    "fieldtype": "Section Break",
    "label": "Gateway",
-   "description": "The Baileys gateway in the app's whatsapp-gateway folder. Run it next to the bench and pair it with the WhatsApp number that will post into the group."
+   "description": "The Baileys gateway in the app's whatsapp-gateway folder. Run it next to the bench and pair it with the WhatsApp number that will post into the group. Only a System Manager can change the URL and key: the key is sent to whatever the URL points at."
   },
   {
    "default": "http://127.0.0.1:3010",
    "fieldname": "gateway_url",
    "fieldtype": "Data",
-   "label": "Gateway URL"
+   "label": "Gateway URL",
+   "permlevel": 1
   },
   {
    "fieldname": "column_break_gateway",
@@ -56,7 +57,8 @@
    "fieldname": "api_key",
    "fieldtype": "Password",
    "label": "API Key",
-   "description": "The WA_API_KEY the gateway was started with."
+   "description": "The WA_API_KEY the gateway was started with.",
+   "permlevel": 1
   },
   {
    "fieldname": "section_target",
@@ -168,7 +170,7 @@
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-10-13 00:00:00.000000",
+ "modified": "2026-10-14 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "WhatsApp Settings",
@@ -190,6 +192,12 @@
    "read": 1,
    "role": "Sales Manager",
    "share": 1,
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager",
    "write": 1
   }
  ],

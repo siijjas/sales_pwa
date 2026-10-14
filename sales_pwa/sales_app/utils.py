@@ -230,6 +230,72 @@ def _require_van_user(user: str | None = None):
 		)
 
 
+def _driver_customer_scope(config: dict | None) -> tuple[list[str] | None, list[str] | None]:
+	"""(territories, customer groups) a Sales Profile confines its staff to.
+
+	None on an axis means no limit there. The territories are the delivery route and
+	every territory under it, so a route of "All Territories" covers each country
+	beneath it. A route that no longer exists narrows to itself, which matches nobody:
+	a broken profile fails closed rather than opening the whole customer list.
+	"""
+	if not config:
+		return None, None
+	territories = None
+	route = config.get("delivery_route")
+	if route:
+		territories = [route]
+		lft_rgt = frappe.db.get_value("Territory", route, ["lft", "rgt"])
+		if lft_rgt and lft_rgt[0] and lft_rgt[1]:
+			territories += frappe.get_all(
+				"Territory",
+				filters={"lft": [">", lft_rgt[0]], "rgt": ["<", lft_rgt[1]]},
+				pluck="name",
+			)
+	groups = list(config.get("allowed_customer_groups") or []) or None
+	return territories, groups
+
+
+def _driver_warehouses(config: dict | None) -> list[str]:
+	"""Warehouses whose stock (Bin) a staff member may look at: the profile's own, plus
+	the company defaults the catalog falls back to for a profile without one."""
+	if not config:
+		return []
+	names = {
+		config.get(field)
+		for field in ("selling_warehouse", "van_warehouse", "source_warehouse", "stock_warehouse")
+	}
+	company = config.get("company")
+	if company:
+		names.update(frappe.get_cached_value("Company", company, ["default_warehouse", "default_receipt_warehouse"]) or ())
+	return sorted(n for n in names if n)
+
+
+def _customer_access_error(config: dict | None, customer: str) -> str | None:
+	"""Why `config`'s staff may not deal with `customer`, or None when they may.
+
+	Either restriction left unset on the Sales Profile means unrestricted on that
+	dimension; both apply together (AND) when both are configured. A customer with no
+	territory or group recorded passes that axis, as before.
+	"""
+	territories, groups = _driver_customer_scope(config)
+	if territories is None and groups is None:
+		return None
+	customer_doc = frappe.db.get_value("Customer", customer, ["territory", "customer_group"], as_dict=True)
+	if not customer_doc:
+		return None
+	if territories is not None and customer_doc.territory and customer_doc.territory not in territories:
+		return (
+			f"Customer territory '{customer_doc.territory}' is outside your assigned delivery "
+			f"route '{config.get('delivery_route')}'. Contact your manager if this is incorrect."
+		)
+	if groups is not None and customer_doc.customer_group and customer_doc.customer_group not in groups:
+		return (
+			f"Customer group '{customer_doc.customer_group}' is not assigned to your van profile. "
+			f"Contact your manager if this is incorrect."
+		)
+	return None
+
+
 def _validate_customer_access(customer: str, user: str | None = None):
 	"""Restrict a driver's customer access to their Sales Profile's delivery route and/or
 	allowed customer groups. Both checks come from the SAME Sales Profile record (the
@@ -243,52 +309,17 @@ def _validate_customer_access(customer: str, user: str | None = None):
 	  "Qatar", "Dubai", etc.
 	- allowed_customer_groups: if set, the customer's customer_group must be one of
 	  them.
-	- Either restriction left unset on the Sales Profile means unrestricted on that
-	  dimension; both apply together (AND) when both are configured.
 
+	The same scope is applied to the REST layer by sales_pwa.permissions, so a staff
+	member sees the same customers through /api/resource as through these endpoints.
 	Assumes _require_van_user() has already been called.
 	"""
 	current_user = user or frappe.session.user
 	if current_user == "Administrator" or _is_manager(current_user):
 		return
-
 	config = _get_driver_config(user=current_user, required=False)
 	if not config:
 		return
-
-	delivery_route = config.get("delivery_route")
-	allowed_groups = config.get("allowed_customer_groups") or []
-	if not delivery_route and not allowed_groups:
-		return  # No restriction configured for this driver
-
-	customer_doc = frappe.db.get_value(
-		"Customer", customer, ["territory", "customer_group"], as_dict=True
-	)
-	if not customer_doc:
-		return
-
-	if delivery_route and customer_doc.territory and customer_doc.territory != delivery_route:
-		# Ancestry match: allow if the delivery route is a parent of the customer
-		# territory (e.g. delivery_route = "All Territories" should include child
-		# territory "Qatar").
-		is_descendant = False
-		try:
-			from frappe.utils.nestedset import get_ancestors_of
-			is_descendant = delivery_route in get_ancestors_of("Territory", customer_doc.territory)
-		except Exception:
-			# If the nestedset check fails for any reason, be permissive rather than
-			# blocking a legitimate field operation.
-			is_descendant = True
-		if not is_descendant:
-			frappe.throw(
-				f"Customer territory '{customer_doc.territory}' is outside your assigned delivery "
-				f"route '{delivery_route}'. Contact your manager if this is incorrect.",
-				frappe.PermissionError,
-			)
-
-	if allowed_groups and customer_doc.customer_group and customer_doc.customer_group not in allowed_groups:
-		frappe.throw(
-			f"Customer group '{customer_doc.customer_group}' is not assigned to your van profile. "
-			f"Contact your manager if this is incorrect.",
-			frappe.PermissionError,
-		)
+	error = _customer_access_error(config, customer)
+	if error:
+		frappe.throw(error, frappe.PermissionError)

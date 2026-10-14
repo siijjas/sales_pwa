@@ -18,12 +18,15 @@ The accounts come from the Sales Profile at validate time and are frozen on the
 document, so a later profile change never alters what a submitted movement posted.
 """
 
+from contextlib import contextmanager
+
 import frappe
 from frappe.model.document import Document
 from frappe.utils import flt, nowdate
 
 
 MOVEMENT_TYPES = ("Expense", "Deposit")
+CASH_ACCOUNT_TYPES = ("Cash", "Bank")
 
 
 class SalesCashMovement(Document):
@@ -121,6 +124,15 @@ class SalesCashMovement(Document):
 				frappe.throw(f"{label} {self.get(fieldname)} does not belong to {self.company}.")
 			if account.is_group:
 				frappe.throw(f"{label} {self.get(fieldname)} is a group account.")
+			# The drawer, and the office account a deposit lands in, hold cash. The
+			# Journal Entry below is posted without account permissions, so this is what
+			# keeps a profile from moving money between arbitrary ledgers.
+			if fieldname == "source_account" or self.movement_type == "Deposit":
+				if account.account_type not in CASH_ACCOUNT_TYPES:
+					frappe.throw(
+						f"{label} {self.get(fieldname)} must be a Cash or Bank account "
+						f"(it is {account.account_type or 'untyped'})."
+					)
 		if self.movement_type == "Expense":
 			root_type = frappe.db.get_value("Account", self.target_account, "root_type")
 			if root_type != "Expense":
@@ -146,8 +158,8 @@ class SalesCashMovement(Document):
 				# The movement keeps its link for the audit trail; cancelling through
 				# this controlled path is the only way the JE should ever go.
 				je.flags.ignore_links = True
-				frappe.flags.ignore_account_permission = True
-				je.cancel()
+				with _ignoring_account_permission():
+					je.cancel()
 
 	def _make_journal_entry(self) -> str:
 		je = frappe.new_doc("Journal Entry")
@@ -181,10 +193,22 @@ class SalesCashMovement(Document):
 		# was done by the endpoint (cash_movement.create_cash_movement) and this doc's
 		# own validate(). Same pattern as Payment Entry / Sales Invoice in sales.py.
 		je.flags.ignore_permissions = True
-		frappe.flags.ignore_account_permission = True
-		je.insert()
-		je.submit()
+		with _ignoring_account_permission():
+			je.insert()
+			je.submit()
 		return je.name
+
+
+@contextmanager
+def _ignoring_account_permission():
+	"""frappe.flags is request-wide: the account-permission bypass must not outlive
+	the one Journal Entry it is for."""
+	previous = frappe.flags.ignore_account_permission
+	frappe.flags.ignore_account_permission = True
+	try:
+		yield
+	finally:
+		frappe.flags.ignore_account_permission = previous
 
 
 # ─── Account resolution (shared with the API / profile editor) ─────────────────

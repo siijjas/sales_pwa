@@ -132,6 +132,14 @@ permission_query_conditions = {
 	"Sales Shift Opening": "sales_pwa.permissions.get_van_shift_opening_permission_query_conditions",
 	"Sales Shift Closing": "sales_pwa.permissions.get_van_shift_closing_permission_query_conditions",
 	"Sales Cash Movement": "sales_pwa.permissions.get_van_cash_movement_permission_query_conditions",
+	# ERPNext doctypes the Sales App User role reads through /api/resource (see
+	# setup.py): scoped to the staff member's Sales Profile, as the endpoints are.
+	"Customer": "sales_pwa.permissions.get_customer_permission_query_conditions",
+	"Sales Order": "sales_pwa.permissions.get_sales_order_permission_query_conditions",
+	"Sales Invoice": "sales_pwa.permissions.get_sales_invoice_permission_query_conditions",
+	"Payment Entry": "sales_pwa.permissions.get_payment_entry_permission_query_conditions",
+	"Item Price": "sales_pwa.permissions.get_item_price_permission_query_conditions",
+	"Bin": "sales_pwa.permissions.get_bin_permission_query_conditions",
 }
 
 has_permission = {
@@ -141,6 +149,12 @@ has_permission = {
 	"Sales Shift Opening": "sales_pwa.permissions.has_van_shift_opening_permission",
 	"Sales Shift Closing": "sales_pwa.permissions.has_van_shift_closing_permission",
 	"Sales Cash Movement": "sales_pwa.permissions.has_van_cash_movement_permission",
+	"Customer": "sales_pwa.permissions.has_customer_permission",
+	"Sales Order": "sales_pwa.permissions.has_sales_order_permission",
+	"Sales Invoice": "sales_pwa.permissions.has_sales_invoice_permission",
+	"Payment Entry": "sales_pwa.permissions.has_payment_entry_permission",
+	"Item Price": "sales_pwa.permissions.has_item_price_permission",
+	"Bin": "sales_pwa.permissions.has_bin_permission",
 }
 
 # Run after every bench migrate to ensure Custom DocPerm entries exist for the

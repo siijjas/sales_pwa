@@ -210,27 +210,53 @@ def _resolve_price_list(config: dict | None, customer: str | None) -> str | None
 	return config.get("selling_price_list") or None
 
 
+def _returnable_qty(customer: str, item_code: str, since: str | None) -> float:
+	"""Stock-UOM quantity of `item_code` this customer holds from submitted invoices,
+	net of the credit notes already issued (their rows carry negative stock_qty).
+	`since` limits both sides to the profile's return window."""
+	condition = "and si.posting_date >= %(since)s" if since else ""
+	rows = frappe.db.sql(
+		f"""select coalesce(sum(sii.stock_qty), 0) from `tabSales Invoice Item` sii
+		join `tabSales Invoice` si on si.name = sii.parent
+		where si.docstatus = 1 and si.customer = %(customer)s and sii.item_code = %(item_code)s
+		{condition}""",
+		{"customer": customer, "item_code": item_code, "since": since},
+	)
+	return flt(rows[0][0]) if rows else 0.0
+
+
 def _check_return_validity(customer: str, lines, config: dict | None):
-	"""Sales Profile.return_validity_days: each returned item must appear on a submitted
-	invoice for this customer within that many days. 0 = no limit; managers are exempt."""
-	days = int(flt((config or {}).get("return_validity_days")))
-	if days <= 0 or _is_manager():
+	"""A credit note may only hand back what the customer actually bought.
+
+	Per item, the quantity returned (summed over the lines, in stock UOM) must not
+	exceed what this customer's submitted invoices delivered less what earlier credit
+	notes already took back. With Sales Profile.return_validity_days set, only
+	purchases inside that window count. Managers are exempt, as they are from the
+	other profile controls; everyone else is held to it, profile or not, because the
+	credit posts straight to the customer's ledger.
+	"""
+	if _is_manager():
 		return
-	since = add_days(nowdate(), -days)
+	days = int(flt((config or {}).get("return_validity_days")))
+	since = add_days(nowdate(), -days) if days > 0 else None
+	requested: dict[str, float] = {}
 	for row in lines:
 		item_code = row.get("item_code")
-		if not item_code:
-			continue
-		bought = frappe.db.sql(
-			"""select 1 from `tabSales Invoice Item` sii
-			join `tabSales Invoice` si on si.name = sii.parent
-			where si.docstatus = 1 and si.is_return = 0 and si.customer = %s
-			and si.posting_date >= %s and sii.item_code = %s limit 1""",
-			(customer, since, item_code),
-		)
-		if not bought:
+		qty = abs(flt(row.get("qty")))
+		if item_code and qty > 0:
+			requested[item_code] = requested.get(item_code, 0.0) + qty
+	for item_code, qty in requested.items():
+		available = _returnable_qty(customer, item_code, since)
+		if available <= 0:
+			window = f" in the last {days} days" if days > 0 else ""
 			frappe.throw(
-				f"{customer} has not bought '{item_code}' in the last {days} days, so it cannot be returned.",
+				f"{customer} has not bought '{item_code}'{window}, so it cannot be returned.",
+				frappe.PermissionError,
+			)
+		if flt(qty - available, 6) > 0:
+			frappe.throw(
+				f"{customer} can return at most {flt(available, 6):g} of '{item_code}' "
+				f"({flt(qty, 6):g} requested): that is what they bought and have not already returned.",
 				frappe.PermissionError,
 			)
 
@@ -1284,6 +1310,12 @@ def create_sales_return(customer: str, items):
 		if not flt(line.rate):
 			line.rate = flt(frappe.db.get_value("Item", line.item_code, "standard_rate"))
 	doc.run_method("calculate_taxes_and_totals")
+
+	# The same price controls as an order. A credit note is money handed back to the
+	# customer, so a rate the profile would refuse on a sale must be refused here too:
+	# without this a staff member barred from changing rates could credit any amount.
+	_check_rate_change_allowed(doc)
+	_check_zero_rated_lines(doc)
 
 	# Sales Invoice is a standard ERPNext financial doctype. Sales App User does not hold
 	# broad ERPNext accounting permissions, so we use flags.ignore_permissions after

@@ -227,7 +227,7 @@ def get_transfer_item_detail(item_code: str):
 	}
 
 @frappe.whitelist()
-def create_stock_transfer(items, remarks: str | None = None, submit: int = 1, posting_date: str | None = None):
+def create_stock_transfer(items, remarks: str | None = None, submit: int = 1):
 	_require_van_user()
 	_require_capability("can_load_stock", "load stock")
 	config = _get_driver_config()
@@ -238,7 +238,9 @@ def create_stock_transfer(items, remarks: str | None = None, submit: int = 1, po
 	entry.company = config["company"] or _default_company()
 	entry.from_warehouse = config["source_warehouse"]
 	entry.to_warehouse = config["van_warehouse"]
-	entry.posting_date = posting_date or nowdate()
+	# Always now: a client-chosen date would let a load be written into the stock
+	# ledger's past.
+	entry.posting_date = nowdate()
 	entry.posting_time = nowtime()
 	entry.user_remark = remarks or f"Van stock transfer for {frappe.session.user}"
 

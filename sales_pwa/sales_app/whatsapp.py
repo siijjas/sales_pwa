@@ -21,7 +21,7 @@ number, last error), raising one Error Log entry when the link goes down.
 import requests
 
 import frappe
-from frappe.utils import cint, flt, fmt_money, format_datetime, get_fullname, now_datetime
+from frappe.utils import cint, cstr, escape_html, flt, fmt_money, format_datetime, get_fullname, now_datetime
 
 SETTINGS = "WhatsApp Settings"
 SALES_APP_PATH = "/api/method/sales_pwa."
@@ -252,17 +252,25 @@ def _gateway(settings=None):
 
 
 def gateway_request(method: str, path: str, payload: dict | None = None, settings=None) -> dict:
+	"""One call to the gateway. Redirects are never followed: the API key travels in a
+	header, and a redirect would carry it to whatever host the gateway URL pointed at."""
 	url, headers = _gateway(settings)
 	try:
-		response = requests.request(method, url + path, json=payload, headers=headers, timeout=(5, 30))
+		response = requests.request(
+			method, url + path, json=payload, headers=headers, timeout=(5, 30), allow_redirects=False
+		)
 	except requests.RequestException as exc:
 		raise GatewayError(f"Could not reach the WhatsApp gateway at {url}: {exc}") from exc
 	try:
 		data = response.json()
 	except ValueError:
 		data = {}
+	if not isinstance(data, dict):
+		data = {}
+	if 300 <= response.status_code < 400:
+		raise GatewayError(f"Gateway at {url} answered with a redirect (HTTP {response.status_code}), which is not followed.")
 	if response.status_code >= 400:
-		raise GatewayError(data.get("error") or f"Gateway returned HTTP {response.status_code}")
+		raise GatewayError(cstr(data.get("error") or "")[:300] or f"Gateway returned HTTP {response.status_code}")
 	return data
 
 
@@ -289,7 +297,7 @@ def check_gateway_health():
 	except GatewayError as exc:
 		apply_health(settings, None, str(exc))
 	else:
-		apply_health(settings, data.get("state"), data.get("last_error") or "", data.get("number") or "")
+		apply_health(settings, cstr(data.get("state") or ""), cstr(data.get("last_error") or ""), cstr(data.get("number") or ""))
 
 
 def apply_health(settings, observed: str | None, error: str = "", number: str = "") -> str | None:
@@ -342,19 +350,61 @@ def _or_throw(fn):
 	try:
 		return fn()
 	except GatewayError as exc:
-		frappe.throw(str(exc), title="WhatsApp gateway")
+		# msgprint renders HTML; the text may have come from the gateway, so escape it.
+		frappe.throw(escape_html(str(exc)), title="WhatsApp gateway")
+
+
+# What the desk gets to see of the gateway's answers: known keys only, coerced to plain
+# types, so a gateway (or whatever the gateway URL points at) cannot hand the browser
+# arbitrary structures, and a QR is only ever a PNG data URL.
+_STATUS_STR = ("state", "number", "pairing_code", "last_error", "started_at", "connected_at", "last_sent_at")
+_STATUS_INT = ("qr_age_seconds", "sent")
+
+
+def _is_png_data_url(value) -> bool:
+	return isinstance(value, str) and value.startswith("data:image/png;base64,") and len(value) < 200_000
+
+
+def public_status(data: dict) -> dict:
+	user = data.get("user") if isinstance(data.get("user"), dict) else None
+	status = {
+		"connected": bool(data.get("connected")),
+		"qr_pending": bool(data.get("qr_pending")),
+		"qr": data.get("qr") if _is_png_data_url(data.get("qr")) else None,
+		"user": {"id": cstr(user.get("id") or "")[:100], "name": cstr(user.get("name") or "")[:100]} if user else None,
+	}
+	for key in _STATUS_STR:
+		status[key] = cstr(data.get(key) or "")[:500] or None
+	for key in _STATUS_INT:
+		status[key] = cint(data.get(key))
+	return status
+
+
+def public_groups(data: dict) -> list[dict]:
+	groups = data.get("groups")
+	if not isinstance(groups, list):
+		return []
+	return [
+		{
+			"id": cstr(g.get("id"))[:100],
+			"subject": cstr(g.get("subject") or "")[:200],
+			"participants": cint(g.get("participants")),
+		}
+		for g in groups
+		if isinstance(g, dict) and g.get("id")
+	]
 
 
 @frappe.whitelist()
 def get_gateway_status() -> dict:
 	_require_manager()
-	return _or_throw(lambda: gateway_request("GET", "/status"))
+	return public_status(_or_throw(lambda: gateway_request("GET", "/status")))
 
 
 @frappe.whitelist()
 def get_groups() -> list[dict]:
 	_require_manager()
-	return _or_throw(lambda: gateway_request("GET", "/groups")).get("groups") or []
+	return public_groups(_or_throw(lambda: gateway_request("GET", "/groups")))
 
 
 @frappe.whitelist()

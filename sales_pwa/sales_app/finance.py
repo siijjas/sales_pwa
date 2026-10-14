@@ -171,8 +171,13 @@ def create_payment_entry(
 	_validate_customer_access(customer)
 	# Enforce the per-driver payment mode allowlist
 	_ensure_driver_mode_allowed(mode_of_payment)
+	if flt(paid_amount) <= 0:
+		frappe.throw("The amount collected must be greater than zero.")
 
 	refs = json.loads(references)
+	for ref in refs:
+		if flt(ref.get("allocated_amount")) < 0:
+			frappe.throw("An allocated amount cannot be negative.")
 	company = _default_company()
 
 	# Allocate to Sales Invoices

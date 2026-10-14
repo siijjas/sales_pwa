@@ -19,16 +19,22 @@ function call(method, args) {
 	return frappe.xcall(`sales_pwa.sales_app.whatsapp.${method}`, args || {});
 }
 
+// Everything below is rendered as HTML by msgprint, show_alert, Dialog and Select
+// (and __() substitutes its arguments verbatim), so every value that came from the
+// gateway or from WhatsApp (profile names, group subjects, error text) is escaped first.
+const esc = (v) => frappe.utils.escape_html(String(v == null ? '' : v));
+const is_png = (v) => typeof v === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(v);
+
 function describe(status) {
 	if (status.connected) {
 		const who = status.user ? `${status.user.name || ''} ${status.user.id || ''}`.trim() : '';
-		return __('Connected as {0}. {1} message(s) sent since the gateway started.', [who, status.sent || 0]);
+		return __('Connected as {0}. {1} message(s) sent since the gateway started.', [esc(who), cint(status.sent)]);
 	}
-	if (status.pairing_code) return __('Not paired. Pairing code: {0}', [status.pairing_code]);
+	if (status.pairing_code) return __('Not paired. Pairing code: {0}', [esc(status.pairing_code)]);
 	if (status.qr_pending) return __('Not paired yet: use Pair device to scan the QR.');
 	if (status.state === 'logged_out') return __('The phone unlinked this device. Use Pair device to link it again.');
-	if (status.state === 'restricted') return __('WhatsApp refused this number. {0}', [status.last_error || '']);
-	return __('Gateway reachable but WhatsApp is not connected ({0}). {1}', [status.state, status.last_error || '']);
+	if (status.state === 'restricted') return __('WhatsApp refused this number. {0}', [esc(status.last_error)]);
+	return __('Gateway reachable but WhatsApp is not connected ({0}). {1}', [esc(status.state), esc(status.last_error)]);
 }
 
 async function check_connection(frm) {
@@ -56,11 +62,11 @@ async function pair_device(frm) {
 				render(`<p>${describe(s)}</p>`);
 				clearInterval(timer);
 			} else if (s.pairing_code) {
-				render(`<p>${__('WhatsApp › Linked devices › Link with phone number')}</p><h2 style="letter-spacing:3px">${s.pairing_code}</h2>`);
-			} else if (s.qr) {
+				render(`<p>${__('WhatsApp › Linked devices › Link with phone number')}</p><h2 style="letter-spacing:3px">${esc(s.pairing_code)}</h2>`);
+			} else if (is_png(s.qr)) {
 				render(`<p>${__('WhatsApp › Linked devices › Link a device, then scan:')}</p><img src="${s.qr}" style="width:280px;height:280px;display:block;margin:8px auto;border-radius:8px">`);
 			} else {
-				render(`<p>${frappe.utils.escape_html(s.last_error || __('Connecting…'))}</p>`);
+				render(`<p>${esc(s.last_error || __('Connecting…'))}</p>`);
 			}
 		} catch (e) {
 			render(`<p>${__('Gateway unreachable.')}</p>`);
@@ -91,7 +97,8 @@ async function pick_group(frm) {
 				fieldname: 'group',
 				label: __('Group'),
 				reqd: 1,
-				options: groups.map((g) => ({ value: g.id, label: `${g.subject} (${g.participants})` })),
+				// Select renders labels with .html(); a group subject is set by any admin of that group.
+				options: groups.map((g) => ({ value: g.id, label: `${esc(g.subject)} (${cint(g.participants)})` })),
 			},
 		],
 		primary_action_label: __('Use this group'),
@@ -110,7 +117,7 @@ async function send_test(frm) {
 	if (frm.is_dirty()) return frappe.msgprint(__('Save the settings first.'));
 	try {
 		await call('send_test_message');
-		frappe.show_alert({ message: __('Test message sent to {0}', [frm.doc.group_name || frm.doc.group_id]), indicator: 'green' });
+		frappe.show_alert({ message: __('Test message sent to {0}', [esc(frm.doc.group_name || frm.doc.group_id)]), indicator: 'green' });
 	} catch (e) {
 		// error already shown
 	}

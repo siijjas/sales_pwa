@@ -44,13 +44,13 @@
 	</div>
 
 	<table class="meta">
-		<tr><td>Staff</td><td>{{ r.shift.driver_name or r.shift.driver }}</td></tr>
-		{%- if r.shift.van_profile %}<tr><td>Profile</td><td>{{ r.shift.van_profile }}</td></tr>{% endif %}
+		<tr><td>Staff</td><td>{{ (r.shift.driver_name or r.shift.driver) | e }}</td></tr>
+		{%- if r.shift.van_profile %}<tr><td>Profile</td><td>{{ r.shift.van_profile | e }}</td></tr>{% endif %}
 		{%- if cur %}<tr><td>Currency</td><td>{{ cur }}</td></tr>{% endif %}
 		<tr><td>Shift date</td><td>{{ frappe.format_date(r.shift.shift_date) }}</td></tr>
 		<tr><td>Opened</td><td>{{ frappe.format(r.shift.period_start, {"fieldtype": "Datetime"}) if r.shift.period_start else "" }}</td></tr>
 		{%- if r.shift.period_end %}<tr><td>Closed</td><td>{{ frappe.format(r.shift.period_end, {"fieldtype": "Datetime"}) }}</td></tr>{% endif %}
-		{%- if r.shift.closed_by %}<tr><td>Closed by</td><td>{{ r.shift.closed_by_name or r.shift.closed_by }}</td></tr>{% endif %}
+		{%- if r.shift.closed_by %}<tr><td>Closed by</td><td>{{ (r.shift.closed_by_name or r.shift.closed_by) | e }}</td></tr>{% endif %}
 		<tr><td>Opening shift</td><td>{{ r.shift.opening_shift }}</td></tr>
 		{%- if r.shift.closing_shift %}<tr><td>Closing shift</td><td>{{ r.shift.closing_shift }}</td></tr>{% endif %}
 		<tr><td>Printed</td><td>{{ frappe.format(r.generated_at, {"fieldtype": "Datetime"}) }}</td></tr>
@@ -72,7 +72,7 @@
 	<table>
 		<tr><th>Account</th><th class="num">Rate</th><th class="num">Amount</th></tr>
 		{%- for x in r.taxes %}
-		<tr><td>{{ x.account_head }}</td><td class="num">{{ qty(x.rate) }}%</td><td class="num">{{ money(x.amount) }}</td></tr>
+		<tr><td>{{ x.account_head | e }}</td><td class="num">{{ qty(x.rate) }}%</td><td class="num">{{ money(x.amount) }}</td></tr>
 		{%- endfor %}
 		<tr class="total"><td colspan="2">Total</td><td class="num">{{ money(t.total_taxes) }}</td></tr>
 	</table>
@@ -83,7 +83,7 @@
 	<table>
 		<tr><th>Mode of payment</th><th class="num">Payments</th><th class="num">Amount</th></tr>
 		{%- for c in r.collections %}
-		<tr><td>{{ c.mode_of_payment }}</td><td class="num">{{ c.count }}</td><td class="num">{{ money(c.amount) }}</td></tr>
+		<tr><td>{{ c.mode_of_payment | e }}</td><td class="num">{{ c.count }}</td><td class="num">{{ money(c.amount) }}</td></tr>
 		{%- endfor %}
 		<tr class="total"><td>Total</td><td class="num">{{ t.payments_count }}</td><td class="num">{{ money(t.total_collections) }}</td></tr>
 	</table>
@@ -119,7 +119,7 @@
 		</tr>
 		{%- for p in r.payment_reconciliation %}
 		<tr>
-			<td>{{ p.mode_of_payment }}</td>
+			<td>{{ p.mode_of_payment | e }}</td>
 			<td class="num">{{ money(p.opening_amount) }}</td>
 			<td class="num">{{ money(p.expected_amount) }}</td>
 			{%- if r.report_type == "closing" %}
@@ -157,8 +157,8 @@
 		</tr>
 		{%- for i in r["items"] %}
 		<tr>
-			<td>{{ i.item_name or i.item_code }}{% if i.item_name and i.item_name != i.item_code %}<br><small>{{ i.item_code }}</small>{% endif %}</td>
-			<td>{{ i.uom }}</td>
+			<td>{{ (i.item_name or i.item_code) | e }}{% if i.item_name and i.item_name != i.item_code %}<br><small>{{ i.item_code | e }}</small>{% endif %}</td>
+			<td>{{ i.uom | e }}</td>
 			<td class="num">{{ qty(i.sold_qty) }}</td>
 			<td class="num">{{ qty(i.returned_qty) }}</td>
 			<td class="num">{{ qty(i.net_qty) }}</td>

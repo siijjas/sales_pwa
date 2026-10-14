@@ -11,12 +11,14 @@ DRIVER_ROLE = "Sales App User"
 # cannot overwrite our additions.
 # ─────────────────────────────────────────────────────────────────────────────
 REST_DOCTYPE_PERMISSIONS: dict[str, dict[str, int]] = {
-	# Item catalogue and pricing — read-only
+	# Item catalogue and pricing — read-only. Item Price is narrowed to selling lists
+	# and Bin to the profile's warehouses by the hooks in sales_pwa/permissions.py.
 	"Item":             {"read": 1, "report": 1},
 	"Item Price":       {"read": 1, "report": 1},
 	"Bin":              {"read": 1, "report": 1},
 
-	# Customer directory — read-only (creation/editing stays in back-office)
+	# Customer directory — read-only (creation/editing stays in back-office), scoped
+	# to the profile's delivery route / customer groups by sales_pwa/permissions.py.
 	"Customer":         {"read": 1, "report": 1},
 
 	# System / company configuration — read-only
@@ -36,7 +38,11 @@ REST_DOCTYPE_PERMISSIONS: dict[str, dict[str, int]] = {
 	"Account":          {"read": 1},
 
 	# Sales Profile — drivers may read their assigned profile
-	"Sales Profile":      {"read": 1},
+	"Sales Profile":    {"read": 1},
+
+	# Transactional doctypes are scoped per staff member by sales_pwa/permissions.py
+	# (the customers their profile covers). Writes are READ-ONLY at the role level on
+	# purpose, see below.
 
 	# Transactional doctypes the PWA reads via REST. Writes are READ-ONLY at the role
 	# level on purpose: every Sales Order write now goes through a whitelisted endpoint
@@ -51,6 +57,12 @@ REST_DOCTYPE_PERMISSIONS: dict[str, dict[str, int]] = {
 	"Payment Entry":    {"read": 1},
 	"Sales Invoice":    {"read": 1},
 }
+
+# frappe.permissions.add_permission() creates a Custom DocPerm with export on, which
+# would let staff download these doctypes wholesale from the list view. Staff read
+# through the app; nothing here is theirs to export.
+for _perms in REST_DOCTYPE_PERMISSIONS.values():
+	_perms.setdefault("export", 0)
 
 
 def setup_sales_app_user_permissions():

@@ -12,7 +12,8 @@ a slow or dead gateway never slows down or fails the sale itself.
 
 Message text: each message is a Jinja template, editable on WhatsApp Settings
 (order_template, payment_template) and falling back to DEFAULT_TEMPLATES when the
-field is empty. Templates render in a sandbox with the variables listed in
+field is empty. The defaults use WhatsApp markup (*bold*, _italic_), one blank line
+between groups, and name the customer, items and amounts only. Templates render in a sandbox with the variables listed in
 TEMPLATE_HELP; a template that fails at send time is logged and the default is
 used instead, so a typo never silences the group.
 
@@ -172,35 +173,60 @@ def _dispatch(text: str):
 
 DEFAULT_TEMPLATES = {
 	"Sales Order": """*{{ heading }}*
-Customer: {{ customer }}
+
+👤 *Customer*
+{{ customer }}
+
+🧺 *Items* ({{ item_count }})
 {% if items %}
-Items ({{ item_count }}):
 {% for row in items %}
-• {{ row.name }} × {{ row.qty }} {{ row.uom }}
+• _{{ row.name }}_
+{{ row.qty }} {{ row.uom }} · {{ row.amount }}
 {% endfor %}
 {% if more %}
-… and {{ more }} more
+_… and {{ more }} more_
 {% endif %}
 {% else %}
-Items: {{ item_count }} · {{ total_qty }} units
+{{ total_qty }} units in total
 {% endif %}
+
+💵 *Amount*
 {% if discount %}
 Discount: {{ discount }}
 {% endif %}
-Total: {{ total }}
+*Total: {{ total }}*
 {% if event == "cancelled" %}
-Status: Cancelled
+
+⚠️ _This order has been cancelled._
 {% elif doc.docstatus == 0 %}
-Status: Draft, not yet confirmed
+
+⏳ _Draft, not yet confirmed._
 {% endif %}""",
 	"Payment Entry": """*{{ heading }}*
-Customer: {{ customer }}
-Amount: {{ amount }} · {{ mode }}
-{% if against %}
-Against: {{ against }}
+
+👤 *Customer*
+{{ customer }}
+
+💵 *Amount*
+*{{ amount }}* · {{ mode }}
+{% if doc.reference_no %}
+Ref: {{ doc.reference_no }}
+{% endif %}
+{% if refs %}
+
+📄 *Settles*
+{% for ref in refs %}
+• _{{ ref.name }}_ · {{ ref.amount }}
+{% endfor %}
 {% endif %}
 {% if unallocated %}
-Unallocated (advance): {{ unallocated }}
+
+🪙 *Advance*
+{{ unallocated }} left unallocated
+{% endif %}
+{% if event == "cancelled" %}
+
+⚠️ _This payment has been cancelled._
 {% endif %}""",
 }
 

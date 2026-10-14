@@ -81,30 +81,29 @@ class TestWhatsApp(FrappeTestCase):
 
 	def test_order_message_lists_items_up_to_the_limit(self):
 		text = build_message(self._order(), "created", "Administrator")
-		self.assertTrue(text.startswith("*🆕 New order*\n"))
+		self.assertTrue(text.startswith("*🆕 New order*\n\n👤 *Customer*\nBlue Traders\n\n"))
 		self.assertNotIn("SO-TEST-1", text)
-		self.assertNotIn("Staff:", text)
-		self.assertIn("Customer: Blue Traders", text)
-		self.assertIn("Items (3):", text)
-		self.assertIn("• Water 500ml × 10 Ctn", text)
-		self.assertIn("• Juice 1L × 2.5 Nos", text)
-		self.assertNotIn("Milk", text)
-		self.assertIn("… and 1 more", text)
-		self.assertIn("Total: AED 1,234.50", text)
-		self.assertIn("Status: Draft", text)
+		self.assertNotIn("Staff", text)
 		self.assertNotIn("13 Oct 2026", text)
+		self.assertIn("🧺 *Items* (3)", text)
+		self.assertIn("• _Water 500ml_\n10 Ctn · AED 0.00", text)
+		self.assertIn("• _Juice 1L_\n2.5 Nos", text)
+		self.assertNotIn("Milk", text)
+		self.assertIn("_… and 1 more_", text)
+		self.assertIn("*Total: AED 1,234.50*", text)
+		self.assertTrue(text.endswith("\n\n⏳ _Draft, not yet confirmed._"))
 
 	def test_confirmed_and_cancelled_orders_change_the_heading(self):
 		self.assertIn("*✅ Order confirmed*", build_message(self._order(1), "confirmed"))
 		cancelled = build_message(self._order(2), "cancelled")
 		self.assertIn("*❌ Order cancelled*", cancelled)
-		self.assertIn("Status: Cancelled", cancelled)
+		self.assertIn("⚠️ _This order has been cancelled._", cancelled)
 		self.assertNotIn("Draft", cancelled)
 
 	def test_order_message_without_items_shows_counts_only(self):
 		_set_settings(include_items=0)
 		text = build_message(self._order(), "created")
-		self.assertIn("Items: 3 · 13 units", text)
+		self.assertIn("🧺 *Items* (3)\n13 units in total", text)
 		self.assertNotIn("•", text)
 
 	def _payment(self):
@@ -125,13 +124,13 @@ class TestWhatsApp(FrappeTestCase):
 
 	def test_payment_message(self):
 		text = build_message(self._payment(), "received", "Administrator")
-		self.assertTrue(text.startswith("*💰 Payment received*\n"))
+		self.assertTrue(text.startswith("*💰 Payment received*\n\n👤 *Customer*\nBlue Traders\n\n💵 *Amount*\n*AED 500.00* · Cash\n"))
 		self.assertNotIn("PE-TEST-1", text)
-		self.assertIn("Amount: AED 500.00 · Cash", text)
-		self.assertIn("Against: SI-1 (AED 400.00)", text)
+		self.assertIn("📄 *Settles*\n• _SI-1_ · AED 400.00", text)
 		self.assertNotIn("SI-2", text)
-		self.assertIn("Unallocated (advance): AED 100.00", text)
-		self.assertNotIn("Staff:", text)
+		self.assertNotIn("Ref:", text)
+		self.assertIn("🪙 *Advance*\nAED 100.00 left unallocated", text)
+		self.assertNotIn("Staff", text)
 		self.assertNotIn("13 Oct 2026", text)
 
 	def test_unknown_doctype_has_no_message(self):
@@ -151,13 +150,16 @@ class TestWhatsApp(FrappeTestCase):
 		self.assertEqual(render_template("a\n\n{% if x %}\nb\n{% endif %}\n\nd", {"x": False}), "a\n\nd")
 
 	def test_default_templates_render_line_for_line(self):
+		_set_settings(include_items=0)
 		self.assertEqual(
 			build_message(self._order(1), "confirmed"),
-			"*✅ Order confirmed*\nCustomer: Blue Traders\nItems (3):\n• Water 500ml × 10 Ctn\n• Juice 1L × 2.5 Nos\n… and 1 more\nTotal: AED 1,234.50",
+			"*✅ Order confirmed*\n\n👤 *Customer*\nBlue Traders\n\n🧺 *Items* (3)\n13 units in total\n\n💵 *Amount*\n*Total: AED 1,234.50*",
 		)
+		pe = self._payment()
+		pe.unallocated_amount = 0
 		self.assertEqual(
-			build_message(self._payment(), "received"),
-			"*💰 Payment received*\nCustomer: Blue Traders\nAmount: AED 500.00 · Cash\nAgainst: SI-1 (AED 400.00)\nUnallocated (advance): AED 100.00",
+			build_message(pe, "cancelled"),
+			"*↩️ Payment cancelled*\n\n👤 *Customer*\nBlue Traders\n\n💵 *Amount*\n*AED 500.00* · Cash\n\n📄 *Settles*\n• _SI-1_ · AED 400.00\n\n⚠️ _This payment has been cancelled._",
 		)
 
 	def test_broken_template_at_send_time_falls_back_to_the_default(self):
@@ -166,7 +168,7 @@ class TestWhatsApp(FrappeTestCase):
 		with patch.object(whatsapp.frappe, "log_error") as log_error:
 			text = build_message(self._payment(), "received")
 		self.assertIn("*💰 Payment received*", text)
-		self.assertIn("Amount: AED 500.00 · Cash", text)
+		self.assertIn("*AED 500.00* · Cash", text)
 		log_error.assert_called_once()
 
 	def test_saving_a_bad_template_is_refused(self):
@@ -185,7 +187,7 @@ class TestWhatsApp(FrappeTestCase):
 		frappe.set_user("Administrator")
 		out = preview_messages(order_template="", payment_template="Paid {{ amount }}")
 		self.assertIn("*✅ Order confirmed*", out["order_template"])
-		self.assertIn("• Mineral Water 500ml × 24 Nos", out["order_template"])
+		self.assertIn("• _Mineral Water 500ml_\n24 Nos · AED 36.00", out["order_template"])
 		self.assertNotIn("SAL-ORD", out["order_template"])
 		self.assertEqual(out["payment_template"], "Paid AED 400.00")
 		self.assertIn("Template error", preview_messages(order_template="{{ x.")["order_template"])

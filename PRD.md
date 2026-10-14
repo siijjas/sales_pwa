@@ -6,6 +6,7 @@
 
 - **Van Sales** — drivers who carry stock: take orders, invoice and deliver on the spot, take returns, load the van, collect payments, and run a cash shift with an opening float, expenses and deposits out of the drawer, and a counted-cash closing.
 - **Field Sales** — order takers with no van: take orders and collect payments, see read-only stock from a chosen warehouse, and leave invoicing, delivery and returns to the back office. Shifts are optional for them.
+- **Counter Sales** — a cashier or data entry operator at a PC: keys orders in on the keyboard-first Counter screen, sells and invoices straight from one warehouse, collects payment on the spot, and can start every sale on a default (walk-in) customer. Shifts work as for a van.
 
 Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, Payment Entry, Stock Entry, Journal Entry). The app adds its own documents only for configuration (Sales Profile), shifts (Sales Shift Opening / Closing) and drawer cash movements (Sales Cash Movement). ERPNext documents are never stamped with a shift: shift totals are attributed by driver and creation time inside the shift's window.
 
@@ -13,7 +14,8 @@ Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, 
 
 ## 2. Core Features
 
-- **Profile types** — Each Sales Profile is Van Sales or Field Sales. The type drives a capability set (`can_invoice`, `can_deliver`, `can_return`, `can_load_stock`, `can_view_stock`, `uses_shifts`, `requires_open_shift`) that gates screens in the app and is enforced again on every endpoint.
+- **Profile types** — Each Sales Profile is Van Sales, Field Sales or Counter Sales. The type drives a capability set (`can_invoice`, `can_deliver`, `can_return`, `can_load_stock`, `can_view_stock`, `can_counter_sell`, `uses_shifts`, `requires_open_shift`) that gates screens in the app and is enforced again on every endpoint.
+- **Counter** (Counter Sales, and managers) — One PC screen for fast typed entry: customer box, lines grid with an always-open entry row (code, name or barcode → qty → Enter), live totals from ERPNext (re-taxed to the invoice option, with the proposed invoice number and stock shortages), payment choice, and F-key actions: hold (draft), submit order, submit and invoice (one request, one transaction, printed at once when a printer is set), print last. A side panel holds the cashier's held orders, orders still to invoice and today's invoices.
 - **Field Order Entry** — Select a customer, browse a price-list-aware catalog with stock from the van (or the Field Sales stock warehouse, read-only), build a cart with editable rates and discounts, and submit Sales Orders into ERPNext.
 - **Payment Collection & Allocation** — Collect receivables with Auto-FIFO, Manual, or Advance allocation against outstanding Sales Invoices or Sales Orders.
 - **Van Stock Management** (Van Sales) — Real-time stock dashboard for the van warehouse with low-stock alerts, plus a guided Material Transfer from the source warehouse.
@@ -32,6 +34,7 @@ Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, 
 |---|---------|-------|
 | 1 | **Van driver** | *As a van driver, I want to browse my catalog filtered by the customer's price list and instantly see van stock levels so I can place accurate orders on-site without calling the office.* |
 | 2 | **Field sales rep** | *As a field rep without a van, I want to take orders and collect payments and see what the warehouse has, without being offered invoicing or delivery actions I am not allowed to do.* |
+| 2b | **Cashier** | *As a cashier at the shop PC, I want to type item codes and quantities and press one key to turn the sale into a submitted order, or an order plus a paid invoice, so nobody has to re-key it in the desk.* |
 | 3 | **Driver** | *As a driver collecting a cheque, I want to allocate the payment against the customer's oldest invoices (FIFO) or manually pick specific invoices, so the customer's ledger is updated in real-time.* |
 | 4 | **Van driver** | *As a driver returning unsold goods, I want to select items and quantities so a Credit Note is created and the customer's outstanding balance is reduced automatically.* |
 | 5 | **Van driver** | *As a driver paying for fuel or handing cash to the office mid-route, I want to record it from the app so my expected cash at closing is right and the accounts are posted without a cashier re-keying it.* |
@@ -76,6 +79,18 @@ The app is organised around five tabs (phone) or a rail (tablet/desktop). Everyo
 | **Review** | Lines with quantity and editable price (when allowed), discount (percent or amount, capped by the profile), totals, then **Submit order** or **Submit & invoice**. The second opens the invoice sheet (below) on the freshly submitted order. Both end on the order page. |
 
 The draft (customer, lines, discount, the draft order being edited) is kept per user in local storage.
+
+### 5.3b Counter
+**Route:** `/counter` (Counter Sales staff; managers too)
+
+| Area | Detail |
+|------|--------|
+| **Customer** | Typeahead by name, ID or mobile (F2), New customer when the profile allows, outstanding balance when it shows balances. A Counter Sales profile's default customer is preselected on every new sale. |
+| **Lines** | Grid of independent lines (the same item twice is two lines): qty and, when allowed, rate editable in place; stock from the selling warehouse; a shortage badge from the preview. The entry row below takes code, name or barcode, an exact code adds on Enter, then qty, Enter lands the line. |
+| **Totals** | ERPNext's own figures for the cart: subtotal, discount (percent or amount, capped by the profile), tax lines, grand and rounded total, proposed invoice number. A cart the profile refuses shows the reason instead of totals. |
+| **Payment** | Paid now (mode of payment) or credit, the invoice options that fit, print-at-once toggle when a printer is set. |
+| **Actions** | F7 hold (draft Sales Order), F8 submit order, F9 submit and invoice in one request, F10 print last invoice, Esc clear. |
+| **Queue** | Held (Resume), To invoice (opens the invoice sheet), Today's invoices (Print). |
 
 ### 5.4 Invoice sheet (shared)
 Opened from Review ("Submit & invoice") and from an order. Step 1: credit or paid now, mode of payment, and the invoice options that fit that payment rule (one option is pre-selected). Step 2: the proposed invoice number, lines, taxes and totals as ERPNext computes them, a note when the order is re-taxed to the option, and the stock shortage rule. Confirm creates the Sales Invoice (and the payment when paid now).
@@ -193,6 +208,7 @@ graph TD
 | Module | Responsibility |
 |--------|---------------|
 | `sales.py` | Sales Order CRUD, invoicing, delivery of pending items, returns, daily summary and log |
+| `counter.py` | The Counter: ranked item search with price and stock, cart totals preview, order+invoice+payment in one request, the cashier's queue |
 | `finance.py` | Payment Entry creation, outstanding invoices, customer summary / ledger, payment modes |
 | `inventory.py` | Stock dashboard, stock transfer, transfer item search / detail |
 | `shift.py` | Open / close / reopen shifts, closing summary, window aggregation (`_compute_closing`), `require_open_shift` |

@@ -4,7 +4,7 @@ from frappe.model.document import Document
 DRIVER_ROLE = "Sales App User"
 
 
-PROFILE_TYPES = ("Van Sales", "Field Sales")
+PROFILE_TYPES = ("Van Sales", "Field Sales", "Counter Sales")
 
 
 class SalesProfile(Document):
@@ -39,10 +39,22 @@ class SalesProfile(Document):
 		stock-transfer tools switch off and the Main Warehouse becomes the selling
 		warehouse). Field Sales has no van: the warehouses are cleared so nothing
 		downstream can accidentally treat the profile as a van, and the optional
-		stock_warehouse is only ever read for display."""
+		stock_warehouse is only ever read for display. Counter Sales is a cashier at
+		a PC: it sells and invoices straight from the Main Warehouse, so it is a van
+		without a warehouse of its own as far as stock goes, plus a default customer
+		the Counter screen starts every sale on."""
 		self.profile_type = self.profile_type or "Van Sales"
 		if self.profile_type not in PROFILE_TYPES:
 			frappe.throw(f"Profile Type must be one of: {', '.join(PROFILE_TYPES)}")
+
+		if not self.is_counter_sales():
+			self.default_customer = None
+		elif self.default_customer:
+			row = frappe.db.get_value("Customer", self.default_customer, ["disabled"], as_dict=True)
+			if not row:
+				frappe.throw(f"Default Customer: customer {self.default_customer} does not exist")
+			if row.disabled:
+				frappe.throw(f"Default Customer: customer {self.default_customer} is disabled")
 
 		if self.is_field_sales():
 			self.source_warehouse = None
@@ -56,6 +68,15 @@ class SalesProfile(Document):
 			return
 
 		self.stock_warehouse = None
+		if self.is_counter_sales():
+			# The counter has no van: it sells from the Main Warehouse, nothing to load.
+			self.separate_van_warehouse = 0
+			self.van_warehouse = None
+			if not self.source_warehouse:
+				frappe.throw("A Counter Sales profile needs a Main Warehouse to sell from")
+			if not self.use_shifts:
+				self.require_open_shift = 0
+			return
 		if not self.source_warehouse:
 			frappe.throw("A Van Sales profile needs a Main Warehouse")
 		if self.separate_van_warehouse:
@@ -139,6 +160,9 @@ class SalesProfile(Document):
 
 	def is_field_sales(self) -> bool:
 		return (self.profile_type or "Van Sales") == "Field Sales"
+
+	def is_counter_sales(self) -> bool:
+		return (self.profile_type or "Van Sales") == "Counter Sales"
 
 	@property
 	def selling_warehouse(self) -> str | None:

@@ -29,6 +29,7 @@
 
       <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <ActionTile label="New sale" icon="cart" tone="primary" hint="On behalf of a customer" :to="{ name: 'sell' }" />
+        <ActionTile label="Counter" icon="monitor" tone="primary" hint="Fast order entry on a PC" :to="{ name: 'counter' }" />
         <ActionTile label="Reports" icon="list" tone="info" hint="Any period, any staff" :to="{ name: 'reports' }" />
         <ActionTile label="Staff" icon="user" tone="success" hint="Profiles and assignments" :to="{ name: 'staff' }" />
         <ActionTile label="Setup" icon="settings" tone="neutral" hint="Invoice options" :to="{ name: 'setup' }" />

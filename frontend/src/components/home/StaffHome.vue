@@ -57,6 +57,7 @@
       <!-- Shortcuts -->
       <section>
         <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <ActionTile v-if="caps.can_counter_sell" label="Counter" icon="monitor" tone="primary" hint="Fast order entry on a PC" :to="{ name: 'counter' }" />
           <ActionTile label="Collect payment" icon="wallet" tone="success" hint="Against invoices" @click="go({ name: 'customers' }, true)" />
           <ActionTile v-if="caps.can_return" label="Return" icon="rotate-ccw" tone="danger" hint="Credit note" @click="go({ name: 'customers' }, true)" />
           <ActionTile v-if="canLoadStock" label="Load van" icon="truck" tone="warning" hint="From main warehouse" :to="{ name: 'stock-load' }" />

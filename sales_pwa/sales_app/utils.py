@@ -86,6 +86,7 @@ def _get_driver_config(user: str | None = None, required: bool = True, use_cache
 
 PROFILE_TYPE_VAN = "Van Sales"
 PROFILE_TYPE_FIELD = "Field Sales"
+PROFILE_TYPE_COUNTER = "Counter Sales"
 
 
 def _selling_warehouse(config: dict | None) -> str | None:
@@ -112,7 +113,10 @@ def _capabilities(config: dict | None) -> dict:
 	if not config:
 		return {
 			"is_field_sales": False,
+			"is_counter_sales": False,
 			"has_van_warehouse": False,
+			# Managers see every screen, the Counter included.
+			"can_counter_sell": True,
 			"can_invoice": True,
 			"can_deliver": True,
 			"can_return": True,
@@ -127,12 +131,18 @@ def _capabilities(config: dict | None) -> dict:
 			"shows_customer_balance": True,
 			"blind_shift_close": False,
 		}
-	is_field = (config.get("profile_type") or PROFILE_TYPE_VAN) == PROFILE_TYPE_FIELD
-	has_van_warehouse = not is_field and bool(config.get("van_warehouse"))
+	profile_type = config.get("profile_type") or PROFILE_TYPE_VAN
+	is_field = profile_type == PROFILE_TYPE_FIELD
+	is_counter = profile_type == PROFILE_TYPE_COUNTER
+	has_van_warehouse = not is_field and not is_counter and bool(config.get("van_warehouse"))
 	uses_shifts = _coerce_check(config.get("use_shifts", True))
 	return {
 		"is_field_sales": is_field,
+		"is_counter_sales": is_counter,
 		"has_van_warehouse": has_van_warehouse,
+		# The Counter screen (fast keyboard entry on a PC) is for Counter Sales staff;
+		# managers pass _require_capability() without a profile.
+		"can_counter_sell": is_counter,
 		# Field Sales takes orders and collects payments only; invoicing, delivery and
 		# returns are back-office work, and there is no van to load or count.
 		"can_invoice": not is_field,

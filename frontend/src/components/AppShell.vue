@@ -75,7 +75,7 @@ const router = useRouter();
 const toast = useToast();
 
 const nav = computed(() => useNavigation());
-const brandIcon = computed(() => (store.isManager && !store.driverConfig ? 'activity' : store.isFieldSales ? 'users' : 'truck'));
+const brandIcon = computed(() => (store.isManager && !store.driverConfig ? 'activity' : store.isFieldSales ? 'users' : store.isCounterSales ? 'monitor' : 'truck'));
 // Flows (sale steps, shift open/close) hide the tabs so the primary action owns the bottom edge.
 const showTabs = computed(() => route.meta.tabs !== false);
 

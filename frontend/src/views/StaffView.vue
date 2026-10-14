@@ -24,7 +24,7 @@
             </div>
             <p class="mt-1 truncate text-sm text-muted">{{ p.company }}</p>
             <p class="mt-1 text-xs text-subtle">
-              <span class="font-semibold" :class="p.profile_type === 'Field Sales' ? 'text-info' : 'text-primary'">{{ p.profile_type || 'Van Sales' }}</span>
+              <span class="font-semibold" :class="p.profile_type === 'Field Sales' ? 'text-info' : p.profile_type === 'Counter Sales' ? 'text-success' : 'text-primary'">{{ p.profile_type || 'Van Sales' }}</span>
               · {{ p.assigned_drivers?.length || 0 }} staff
             </p>
           </AppCard>
@@ -52,10 +52,10 @@
 
         <!-- Identity -->
         <FormSection title="Identity & core" icon="user">
-          <FormField label="Profile type" required :hint="isFieldSales ? 'Staff take orders and collect payments. Invoicing, delivery and returns stay in the back office.' : 'Staff load a van, sell and deliver from it, take returns and reconcile cash at shift close.'">
+          <FormField label="Profile type" required :hint="profileTypeHint">
             <SegmentedControl
               :model-value="form.profile_type || 'Van Sales'"
-              :options="[{ value: 'Van Sales', label: 'Van Sales' }, { value: 'Field Sales', label: 'Field Sales' }]"
+              :options="[{ value: 'Van Sales', label: 'Van Sales' }, { value: 'Field Sales', label: 'Field Sales' }, { value: 'Counter Sales', label: 'Counter Sales' }]"
               @update:modelValue="setProfileType"
             />
           </FormField>
@@ -73,23 +73,29 @@
         </FormSection>
 
         <!-- Warehouses -->
-        <FormSection :title="isFieldSales ? 'Stock display & routing' : 'Warehouses & routing'" icon="boxes">
+        <FormSection :title="isFieldSales ? 'Stock display & routing' : isCounterSales ? 'Warehouse, default customer & routing' : 'Warehouses & routing'" icon="boxes">
           <ToggleSwitch
-            v-if="!isFieldSales" :model-value="!!form.separate_van_warehouse"
+            v-if="!isFieldSales && !isCounterSales" :model-value="!!form.separate_van_warehouse"
             label="Van has its own warehouse (stock is loaded into it from the main warehouse)"
             class="mb-4" @update:model-value="(v: boolean) => (form.separate_van_warehouse = v)"
           />
-          <p v-if="!isFieldSales && !form.separate_van_warehouse" class="mb-4 text-xs text-muted">
+          <p v-if="!isFieldSales && !isCounterSales && !form.separate_van_warehouse" class="mb-4 text-xs text-muted">
             This van sells straight from the main warehouse: orders, invoices, returns and the stock dashboard use it, and stock loading is hidden.
+          </p>
+          <p v-if="isCounterSales" class="mb-4 text-xs text-muted">
+            The counter sells and invoices straight from this warehouse; the Counter screen shows its stock next to each item.
           </p>
           <div class="grid gap-4 md:grid-cols-2">
             <template v-if="!isFieldSales">
-              <FormField :label="form.separate_van_warehouse ? 'Main warehouse' : 'Main (selling) warehouse'" required>
+              <FormField :label="isCounterSales ? 'Selling warehouse' : form.separate_van_warehouse ? 'Main warehouse' : 'Main (selling) warehouse'" required>
                 <BaseSelect :model-value="form.source_warehouse ?? ''" @update:model-value="(v) => (form.source_warehouse = v)" placeholder="Select main warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
               </FormField>
-              <FormField v-if="form.separate_van_warehouse" label="Van warehouse" required>
+              <FormField v-if="isCounterSales" label="Default customer" hint="Every new sale on the Counter starts on this customer (a walk-in customer, say). Optional.">
+                <CustomerBox :model-value="defaultCustomer" placeholder="Search a customer" @update:model-value="setDefaultCustomer" />
+              </FormField>
+              <FormField v-else-if="form.separate_van_warehouse" label="Van warehouse" required>
                 <BaseSelect :model-value="form.van_warehouse ?? ''" @update:model-value="(v) => (form.van_warehouse = v)" placeholder="Select van warehouse">
                   <option v-for="w in filteredWarehouses" :key="w.name" :value="w.name">{{ w.name }}</option>
                 </BaseSelect>
@@ -426,6 +432,8 @@ import { useSessionStore } from '../stores/session';
 import { useToast } from '../composables/useToast';
 import { useConfirm } from '../composables/useConfirm';
 import WorkspacePage from '../components/WorkspacePage.vue';
+import CustomerBox from '../components/counter/CustomerBox.vue';
+import type { Customer } from '../types';
 import { AppCard, AppButton, AppAlert, AppIcon, FormField, BaseInput, BaseSelect, SearchBar, StatusBadge, SkeletonList, EmptyState, StickyBar, SegmentedControl, ToggleSwitch } from '../components/ui';
 
 // Collapsible-free section wrapper used throughout the editor.
@@ -487,6 +495,8 @@ const defaultForm = (): Partial<SalesProfile> => ({
   source_warehouse: '',
   van_warehouse: '',
   stock_warehouse: '',
+  default_customer: '',
+  default_customer_name: '',
   delivery_route: '',
   default_cash_mode: '',
   selling_price_list: '',
@@ -618,11 +628,33 @@ const allowedCashModes = computed(() => {
 });
 
 const isFieldSales = computed(() => form.value.profile_type === 'Field Sales');
+const isCounterSales = computed(() => form.value.profile_type === 'Counter Sales');
+const profileTypeHint = computed(() =>
+  isFieldSales.value
+    ? 'Staff take orders and collect payments. Invoicing, delivery and returns stay in the back office.'
+    : isCounterSales.value
+      ? 'A cashier or data entry operator at a PC keys orders in on the Counter screen, sells from one warehouse and invoices on the spot.'
+      : 'Staff load a van, sell and deliver from it, take returns and reconcile cash at shift close.',
+);
+// The default customer is a Customer on the form and a name on the profile.
+const defaultCustomer = computed<Customer | null>(() =>
+  form.value.default_customer
+    ? { name: form.value.default_customer, customer_name: form.value.default_customer_name || form.value.default_customer, customer_group: '', territory: '' }
+    : null,
+);
+function setDefaultCustomer(c: Customer | null) {
+  form.value.default_customer = c?.name || '';
+  form.value.default_customer_name = c?.customer_name || '';
+}
 
 // Switching type resets what the other type can't use, mirroring the server-side
 // SalesProfile._validate_profile_type() so the form never shows stale values.
 function setProfileType(type: string) {
   form.value.profile_type = type as SalesProfile['profile_type'];
+  if (type !== 'Counter Sales') {
+    form.value.default_customer = '';
+    form.value.default_customer_name = '';
+  }
   if (type === 'Field Sales') {
     form.value.source_warehouse = '';
     form.value.van_warehouse = '';
@@ -631,6 +663,12 @@ function setProfileType(type: string) {
     form.value.allow_offline_stock_dashboard = false;
     // Field staff default to no shifts; a manager can switch them back on.
     if (!selectedProfile.value?.name) form.value.use_shifts = false;
+  } else if (type === 'Counter Sales') {
+    // No van: the counter sells from one warehouse, nothing to load.
+    form.value.stock_warehouse = '';
+    form.value.van_warehouse = '';
+    form.value.separate_van_warehouse = false;
+    if (!selectedProfile.value?.name) form.value.use_shifts = true;
   } else {
     form.value.stock_warehouse = '';
     if (!selectedProfile.value?.name) form.value.use_shifts = true;
@@ -643,7 +681,7 @@ const isValid = computed(() => {
   if (isFieldSales.value) return true;
   if (!form.value.source_warehouse) return false;
   // Without a separate van warehouse the main warehouse is the selling warehouse.
-  if (!form.value.separate_van_warehouse) return true;
+  if (isCounterSales.value || !form.value.separate_van_warehouse) return true;
   return !!form.value.van_warehouse && form.value.source_warehouse !== form.value.van_warehouse;
 });
 

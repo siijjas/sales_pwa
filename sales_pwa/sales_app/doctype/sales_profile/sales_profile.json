@@ -13,6 +13,7 @@
   "is_active",
   "column_break_identity",
   "delivery_route",
+  "default_customer",
   "selling_price_list",
   "currency",
   "section_warehouses",
@@ -101,13 +102,13 @@
   },
   {
    "default": "Van Sales",
-   "description": "Van Sales: the staff sells and delivers from a van warehouse (stock loading, invoicing, delivery and returns in the app). Field Sales: the staff only takes orders and collects payments; invoicing, delivery and returns are done in the back office.",
+   "description": "Van Sales: the staff sells and delivers from a van warehouse (stock loading, invoicing, delivery and returns in the app). Field Sales: the staff only takes orders and collects payments; invoicing, delivery and returns are done in the back office. Counter Sales: a cashier or data entry operator at a PC keys orders in fast on the Counter screen, sells from the Main Warehouse and invoices on the spot.",
    "fieldname": "profile_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Profile Type",
-   "options": "Van Sales\nField Sales",
+   "options": "Van Sales\nField Sales\nCounter Sales",
    "reqd": 1
   },
   {
@@ -137,6 +138,14 @@
    "options": "Territory"
   },
   {
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\"",
+   "description": "Counter Sales only. Every new sale on the Counter screen starts on this customer (a walk-in customer, say), so the cashier can go straight to the items. They can still pick another customer.",
+   "fieldname": "default_customer",
+   "fieldtype": "Link",
+   "label": "Default Customer",
+   "options": "Customer"
+  },
+  {
    "fieldname": "selling_price_list",
    "fieldtype": "Link",
    "label": "Price List",
@@ -155,7 +164,7 @@
   },
   {
    "default": "1",
-   "depends_on": "eval:doc.profile_type != \"Field Sales\"",
+   "depends_on": "eval:doc.profile_type == \"Van Sales\"",
    "description": "On: stock is loaded from the Main Warehouse into the van's own warehouse and sold from there. Off: the van has no warehouse of its own and sells straight from the Main Warehouse (no stock loading).",
    "fieldname": "separate_van_warehouse",
    "fieldtype": "Check",
@@ -169,7 +178,7 @@
    "options": "Warehouse",
    "depends_on": "eval:doc.profile_type != \"Field Sales\"",
    "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\"",
-   "description": "The warehouse the van is loaded from. Without a separate van warehouse this is also the warehouse the van sells from."
+   "description": "The warehouse the van is loaded from. Without a separate van warehouse this is also the warehouse the van sells from. A Counter Sales profile sells from it directly."
   },
   {
    "fieldname": "van_warehouse",
@@ -177,8 +186,8 @@
    "in_list_view": 1,
    "label": "Van Warehouse",
    "options": "Warehouse",
-   "depends_on": "eval:doc.profile_type != \"Field Sales\" && doc.separate_van_warehouse",
-   "mandatory_depends_on": "eval:doc.profile_type != \"Field Sales\" && doc.separate_van_warehouse"
+   "depends_on": "eval:doc.profile_type == \"Van Sales\" && doc.separate_van_warehouse",
+   "mandatory_depends_on": "eval:doc.profile_type == \"Van Sales\" && doc.separate_van_warehouse"
   },
   {
    "depends_on": "eval:doc.profile_type == \"Field Sales\"",

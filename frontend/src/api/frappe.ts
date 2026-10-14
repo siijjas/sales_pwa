@@ -1391,3 +1391,77 @@ export async function assignDriverToProfile(driverUser: string, vanProfile: stri
   });
   await handleResponse(res);
 }
+
+// ─── Counter (fast keyboard order entry on a PC) ─────────────────────────────
+
+async function counterCall<T>(method: string, body: Record<string, unknown>): Promise<T> {
+  await refreshCsrfToken();
+  const res = await fetch(`/api/method/sales_pwa.sales_app.counter.${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  const data = await handleResponse(res);
+  return data.message as T;
+}
+
+/** One query for code, name, barcode, price, stock and UOM rule, ranked for typing. */
+export function searchCounterItems(search: string, customer?: string | null, limit = 15, signal?: AbortSignal) {
+  const params = new URLSearchParams({ search, limit: String(limit), ...(customer ? { customer } : {}) });
+  return fetch(`/api/method/sales_pwa.sales_app.counter.search_counter_items?${params.toString()}`, {
+    method: 'GET',
+    headers: defaultHeaders(),
+    credentials: 'include',
+    signal,
+  })
+    .then(handleResponse)
+    .then((data) => data.message as import('../types').CounterSearchResult);
+}
+
+export interface CounterCartPayload {
+  customer: string;
+  items: Array<{ item_code: string; qty: number; rate?: number }>;
+  discountPercent?: number;
+  discountAmount?: number;
+}
+
+export interface CounterPaymentPayload {
+  markAsPaid?: boolean;
+  modeOfPayment?: string | null;
+  invoiceOption?: string | null;
+}
+
+function counterCartBody(cart: CounterCartPayload, payment?: CounterPaymentPayload) {
+  return {
+    customer: cart.customer,
+    items: cart.items,
+    discount_percent: cart.discountPercent || 0,
+    discount_amount: cart.discountAmount || 0,
+    ...(payment?.markAsPaid ? { mark_as_paid: 1, mode_of_payment: payment.modeOfPayment || null } : { mark_as_paid: 0 }),
+    ...(payment?.invoiceOption ? { invoice_option: payment.invoiceOption } : {}),
+  };
+}
+
+/** What ERPNext would put on the order for the cart as it stands. Nothing is saved. */
+export function previewCounterTotals(cart: CounterCartPayload, payment?: CounterPaymentPayload) {
+  return counterCall<import('../types').CounterPreview>('preview_counter_totals', counterCartBody(cart, payment));
+}
+
+/** Order → submit → (invoice → payment) in one request and one transaction. */
+export function createCounterSale(
+  cart: CounterCartPayload,
+  options: CounterPaymentPayload & { orderName?: string | null; invoice?: boolean; allowWithoutStock?: boolean } = {},
+) {
+  return counterCall<import('../types').CounterSaleResult>('create_counter_sale', {
+    ...counterCartBody(cart, options),
+    ...(options.orderName ? { order_name: options.orderName } : {}),
+    invoice: options.invoice ? 1 : 0,
+    ...(options.allowWithoutStock ? { allow_without_stock: 1 } : {}),
+  });
+}
+
+/** The cashier's own held orders, orders still to invoice, and today's invoices. */
+export function getCounterQueue() {
+  return counterCall<import('../types').CounterQueue>('get_counter_queue', {});
+}

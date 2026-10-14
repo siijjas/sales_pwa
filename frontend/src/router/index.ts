@@ -24,6 +24,9 @@ const routes: RouteRecordRaw[] = [
   { path: '/sell/items', name: 'sell-items', component: () => import('../views/sale/SaleItemsView.vue'), meta: { tabs: false } },
   { path: '/sell/review', name: 'sell-review', component: () => import('../views/sale/SaleReviewView.vue'), meta: { tabs: false } },
 
+  // ── Counter: fast keyboard order entry on a PC ──────────────────────────
+  { path: '/counter', name: 'counter', component: () => import('../views/CounterView.vue'), meta: { capability: 'can_counter_sell' } },
+
   // ── Customers ───────────────────────────────────────────────────────────
   { path: '/customers', name: 'customers', component: () => import('../views/CustomersView.vue') },
   { path: '/customers/:name', name: 'customer', component: () => import('../views/CustomerView.vue') },

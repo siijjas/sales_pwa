@@ -8,7 +8,7 @@ export interface UserSession {
   capabilities?: Capabilities;
 }
 
-export type ProfileType = 'Van Sales' | 'Field Sales';
+export type ProfileType = 'Van Sales' | 'Field Sales' | 'Counter Sales';
 
 /**
  * What the app lets this staff member do, computed server-side from their Van
@@ -17,6 +17,10 @@ export type ProfileType = 'Van Sales' | 'Field Sales';
  */
 export interface Capabilities {
   is_field_sales: boolean;
+  /** Counter Sales: a cashier at a PC keying orders in on the Counter screen. */
+  is_counter_sales: boolean;
+  /** The Counter screen (fast keyboard entry). Managers pass without a profile. */
+  can_counter_sell: boolean;
   /** Van Sales with its own warehouse (loaded from the main one). Off: sells from the main warehouse. */
   has_van_warehouse: boolean;
   can_invoice: boolean;
@@ -52,6 +56,11 @@ export interface DriverConfig {
   selling_warehouse?: string | null;
   /** Field Sales only: catalog qty is read from here for display. */
   stock_warehouse?: string | null;
+  /** Counter Sales: every new sale on the Counter starts on this customer. */
+  default_customer?: string | null;
+  default_customer_name?: string | null;
+  /** The Mode of Payment treated as the cash drawer; the Counter starts on it. */
+  default_cash_mode?: string | null;
   /** Resolved invoice options (numbering + tax) this staff member may pick when invoicing. */
   invoice_options?: InvoiceOption[];
   delivery_route?: string;
@@ -247,6 +256,9 @@ export interface SalesProfile {
   source_warehouse: string | null;
   van_warehouse: string | null;
   stock_warehouse?: string | null;
+  /** Counter Sales: the customer every new sale on the Counter starts on. */
+  default_customer?: string | null;
+  default_customer_name?: string | null;
   assigned_drivers: SalesProfileDriver[];
   allowed_payment_modes: string[];
   allowed_customer_groups: string[];
@@ -938,4 +950,107 @@ export interface PrinterStatusRow {
   last_contact_at: string | null;
   waiting: number;
   failed_today: number;
+}
+
+// ─── Counter (fast keyboard order entry on a PC) ─────────────────────────────
+
+/** search_counter_items(): an item with everything the entry row needs. */
+export interface CounterItem {
+  item_code: string;
+  item_name: string;
+  item_group: string;
+  stock_uom: string;
+  must_be_whole_number: boolean;
+  is_stock_item: boolean;
+  has_batch_no: boolean;
+  has_serial_no: boolean;
+  /** From the price list the order will be priced with, else Item.standard_rate. */
+  price_list_rate: number;
+  standard_rate: number;
+  /** Stock in the selling warehouse; null when the counter has no warehouse to read. */
+  actual_qty: number | null;
+  /** The typed text is exactly this item's code or barcode. */
+  exact: boolean;
+}
+
+export interface CounterSearchResult {
+  items: CounterItem[];
+  price_list: string | null;
+  warehouse: string | null;
+}
+
+/** A line on the Counter. Lines are independent: the same item can appear twice. */
+export interface CounterLine {
+  uid: string;
+  item: CounterItem;
+  qty: number;
+  rate: number;
+}
+
+/** preview_counter_totals(): what ERPNext would put on the order for the cart as it stands. */
+export interface CounterPreview {
+  customer: string;
+  lines: InvoicePreviewLine[];
+  total_qty: number;
+  total: number;
+  net_total: number;
+  discount_amount: number;
+  taxes: InvoicePreviewTax[];
+  total_taxes_and_charges: number;
+  grand_total: number;
+  rounding_adjustment: number;
+  rounded_total: number;
+  disable_rounded_total: boolean;
+  taxes_and_charges: string | null;
+  invoice_option: InvoiceOption | null;
+  /** The series' next number, read without consuming it. May move on before confirm. */
+  proposed_invoice_name: string | null;
+  short_items: InvoiceStockShortage[];
+  allow_sale_without_stock: boolean;
+  warehouse: string | null;
+  /** The profile refuses this cart as it stands (rate, discount or zero-rated rule). */
+  error: string | null;
+}
+
+/** create_counter_sale(): the submitted order and, when asked for, the invoice. */
+export interface CounterSaleResult {
+  order: string;
+  customer: string;
+  customer_name: string | null;
+  order_grand_total: number;
+  invoice: string | null;
+  grand_total: number;
+  rounded_total: number;
+  outstanding_amount: number | null;
+  short_items: InvoiceStockShortage[];
+}
+
+export interface CounterQueueOrder {
+  name: string;
+  customer: string;
+  customer_name: string | null;
+  transaction_date: string;
+  grand_total: number;
+  total_qty: number;
+  status: string;
+  creation: string;
+  modified: string;
+}
+
+export interface CounterQueueInvoice {
+  name: string;
+  customer: string;
+  customer_name: string | null;
+  grand_total: number;
+  rounded_total: number;
+  outstanding_amount: number;
+  status: string;
+  creation: string;
+}
+
+/** get_counter_queue(): the cashier's own worklist for the side panel. */
+export interface CounterQueue {
+  held: CounterQueueOrder[];
+  to_invoice: CounterQueueOrder[];
+  invoices_today: CounterQueueInvoice[];
 }

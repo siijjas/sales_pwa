@@ -4,10 +4,13 @@ import * as api from '../api/frappe';
 import { useSaleStore } from './sale';
 import { useReturnStore } from './returns';
 import { useShiftStore } from './shift';
+import { useCounterStore } from './counter';
 
 // A manager with no profile keeps the historical behaviour (see utils._capabilities).
 const DEFAULT_CAPABILITIES: Capabilities = {
   is_field_sales: false,
+  is_counter_sales: false,
+  can_counter_sell: true,
   can_invoice: true,
   can_deliver: true,
   can_return: true,
@@ -49,6 +52,13 @@ export const useSessionStore = defineStore('session', {
     isFieldSales(): boolean {
       return this.capabilities.is_field_sales;
     },
+    isCounterSales(): boolean {
+      return this.capabilities.is_counter_sales;
+    },
+    /** The Counter screen: Counter Sales staff, and managers (who see every screen). */
+    canCounterSell(): boolean {
+      return this.isManager || this.capabilities.can_counter_sell;
+    },
     usesShifts(): boolean {
       return this.capabilities.uses_shifts;
     },
@@ -78,7 +88,7 @@ export const useSessionStore = defineStore('session', {
     /** What the app is for this person: a van, a field team, or fleet management. */
     workspaceLabel(): string {
       if (this.isManager && !this.driverConfig) return 'Manager';
-      return this.driverConfig?.profile_name || (this.isFieldSales ? 'Field Sales' : 'Van Sales');
+      return this.driverConfig?.profile_name || (this.isFieldSales ? 'Field Sales' : this.isCounterSales ? 'Counter Sales' : 'Van Sales');
     },
   },
   actions: {
@@ -102,6 +112,7 @@ export const useSessionStore = defineStore('session', {
       const user = this.session?.user || null;
       useSaleStore().hydrate(user);
       useReturnStore().hydrate(user);
+      useCounterStore().hydrate(user);
       useShiftStore().reset();
     },
     async logout(): Promise<string | null> {
@@ -114,6 +125,7 @@ export const useSessionStore = defineStore('session', {
         this.session = null;
         useSaleStore().hydrate(null);
         useReturnStore().hydrate(null);
+        useCounterStore().hydrate(null);
         useShiftStore().reset();
       }
       return warning;

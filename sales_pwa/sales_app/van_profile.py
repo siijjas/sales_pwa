@@ -195,6 +195,7 @@ def list_van_profiles():
 			"van_warehouse",
 			"stock_warehouse",
 			"delivery_route",
+			"default_customer",
 			"default_cash_mode",
 			"selling_price_list",
 			"currency",
@@ -293,6 +294,9 @@ def list_van_profiles():
 				order_by="idx asc",
 			)
 		]
+		row.default_customer_name = (
+			frappe.db.get_value("Customer", row.default_customer, "customer_name") if row.get("default_customer") else None
+		)
 		# Coerce booleans
 		row.profile_type = row.profile_type or "Van Sales"
 		for check_field in (
@@ -329,6 +333,7 @@ def save_van_profile(payload):
 	doc.van_warehouse = data.get("van_warehouse") or None
 	doc.stock_warehouse = data.get("stock_warehouse") or None
 	doc.delivery_route = data.get("delivery_route") or None
+	doc.default_customer = data.get("default_customer") or None
 	doc.default_cash_mode = data.get("default_cash_mode") or None
 	doc.selling_price_list = data.get("selling_price_list") or None
 	doc.currency = data.get("currency") or None
@@ -537,6 +542,11 @@ def _build_van_profile_payload(doc) -> dict:
 		"selling_warehouse": doc.van_warehouse or doc.source_warehouse,
 		"stock_warehouse": doc.stock_warehouse,
 		"delivery_route": doc.delivery_route,
+		# Counter Sales: the customer every new sale on the Counter screen starts on.
+		"default_customer": doc.get("default_customer") or None,
+		"default_customer_name": (
+			frappe.db.get_value("Customer", doc.default_customer, "customer_name") if doc.get("default_customer") else None
+		),
 		"default_cash_mode": doc.default_cash_mode,
 		"selling_price_list": doc.selling_price_list,
 		"currency": doc.currency,

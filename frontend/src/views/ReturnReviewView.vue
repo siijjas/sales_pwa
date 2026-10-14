@@ -50,6 +50,7 @@ import { useReturnStore } from '../stores/returns';
 import { useShiftStore } from '../stores/shift';
 import { lineRate } from '../stores/sale';
 import { useToast } from '../composables/useToast';
+import { usePrint } from '../composables/usePrint';
 import { useConfirm } from '../composables/useConfirm';
 import { money, plural, qty } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
@@ -61,6 +62,7 @@ const store = useSessionStore();
 const returns = useReturnStore();
 const shift = useShiftStore();
 const toast = useToast();
+const { print } = usePrint();
 const { confirm } = useConfirm();
 
 const name = computed(() => String(route.params.name));
@@ -99,7 +101,7 @@ const submit = async () => {
     returns.clear();
     toast.success(`Credit note ${creditNote} issued`, {
       message: `${currency.value} ${money(total)} credited`,
-      action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', creditNote) },
+      action: { label: 'Print', run: () => print('Sales Invoice', creditNote, { isReturn: true }) },
       duration: 8000,
     });
     router.replace({ name: 'customer', params: { name: customer } });

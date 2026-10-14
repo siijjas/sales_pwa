@@ -204,7 +204,11 @@ doc_events = {
 scheduler_events = {
 	# Managers get a Notification Log (desk bell + email per their settings) listing
 	# every shift still open from an earlier day.
-	"daily": ["sales_pwa.sales_app.tasks.notify_stale_shifts"],
+	"daily": [
+		"sales_pwa.sales_app.tasks.notify_stale_shifts",
+		# Print jobs older than a week (printing.KEEP_JOBS) go, rendered content and all.
+		"sales_pwa.sales_app.printing.purge_old_jobs",
+	],
 	# Records the WhatsApp gateway's state on WhatsApp Settings; returns at once when
 	# no gateway URL is configured.
 	"cron": {"* * * * *": ["sales_pwa.sales_app.whatsapp.check_gateway_health"]},

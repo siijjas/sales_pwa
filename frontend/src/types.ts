@@ -79,6 +79,13 @@ export interface DriverConfig {
   /** Credit notes; blank = the invoice format. */
   return_print_format?: string;
   payment_print_format?: string;
+  /** Sales Printers each document goes to on Print (Staff → Printing). Blank = the PDF opens here. */
+  order_printer?: string | null;
+  invoice_printer?: string | null;
+  /** Credit notes; blank = the invoice printer. */
+  return_printer?: string | null;
+  payment_printer?: string | null;
+  shift_report_printer?: string | null;
   letter_head?: string;
   income_account?: string;
   expense_account?: string;
@@ -263,6 +270,12 @@ export interface SalesProfile {
   /** Credit notes; blank = the invoice format. */
   return_print_format?: string;
   payment_print_format?: string;
+  /** Sales Printers each document goes to on Print. Blank = the PDF opens on the phone. */
+  order_printer?: string | null;
+  invoice_printer?: string | null;
+  return_printer?: string | null;
+  payment_printer?: string | null;
+  shift_report_printer?: string | null;
   letter_head?: string;
   income_account?: string;
   expense_account?: string;
@@ -306,6 +319,8 @@ export interface SalesProfileOptions {
   invoice_options: InvoiceOption[];
   currencies: Array<{ name: string }>;
   print_formats: Array<{ name: string; doc_type: string }>;
+  /** Active Sales Printers (desk: Sales Printer), reached through a print agent on the shop's LAN. */
+  printers: Array<{ name: string; printer_type: PrinterType }>;
   letter_heads: Array<{ name: string; is_default?: number }>;
   users: Array<{ name: string; full_name: string }>;
   cash_accounts: Array<{ name: string; account_name: string; company: string; account_type: string }>;
@@ -882,4 +897,45 @@ export interface PeriodReport {
 export interface FleetOptions {
   drivers: FleetDriverInfo[];
   vans: Array<{ van_profile: string; van_name: string }>;
+}
+
+// ─── Direct printing (sales_pwa.sales_app.printing) ───────────────────────────
+
+export type PrinterType = 'Receipt (ESC/POS)' | 'Document (PDF)';
+
+/** What print_document returns: the queued job, or job: null when the PDF should open instead. */
+export interface PrintJobReceipt {
+  job: string | null;
+  printer?: string;
+  printer_type?: PrinterType;
+  /** The printer's agent has polled in the last few minutes. */
+  online?: boolean;
+}
+
+export interface PrintJobStatus {
+  job: string;
+  status: 'Queued' | 'Sent' | 'Printed' | 'Failed';
+  error: string;
+  printer: string;
+  attempts: number;
+}
+
+/** A row of printer_status (managers): one active printer and how its agent is doing. */
+export interface PrinterStatusRow {
+  name: string;
+  printer_type: PrinterType;
+  host: string;
+  port: number;
+  protocol: string;
+  /** The queue name on the agent's computer, for a System printer. */
+  system_printer: string;
+  paper_width?: string;
+  agent: string;
+  agent_active: boolean;
+  agent_online: boolean;
+  agent_host: string;
+  last_status: string;
+  last_contact_at: string | null;
+  waiting: number;
+  failed_today: number;
 }

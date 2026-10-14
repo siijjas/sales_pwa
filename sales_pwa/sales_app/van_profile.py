@@ -53,6 +53,10 @@ PRINT_FORMAT_DOCTYPES = {
 	"return_print_format": "Sales Invoice",
 	"payment_print_format": "Payment Entry",
 }
+# Sales Profile direct-printing fields: the Sales Printer each document goes to when staff
+# tap Print (printing.py). Blank = the PDF opens on the phone; a credit note falls back to
+# the invoice printer.
+PRINTER_FIELDS = ("order_printer", "invoice_printer", "return_printer", "payment_printer", "shift_report_printer")
 
 
 @frappe.whitelist()
@@ -122,6 +126,15 @@ def get_van_profile_options():
 			filters={"disabled": 0, "doc_type": ["in", list(PRINT_FORMAT_DOCTYPES.values())]},
 			fields=["name", "doc_type"],
 			limit_page_length=500,
+			order_by="name asc",
+		),
+		# Active printers staff can print on directly (see printing.py), with their type so
+		# the editor can say what each one is good for.
+		"printers": frappe.get_all(
+			"Sales Printer",
+			filters={"is_active": 1},
+			fields=["name", "printer_type"],
+			limit_page_length=100,
 			order_by="name asc",
 		),
 		"letter_heads": frappe.get_all(
@@ -200,6 +213,7 @@ def list_van_profiles():
 			"ignore_pricing_rule",
 			"disable_rounded_total",
 			*PRINT_FORMAT_DOCTYPES,
+			*PRINTER_FIELDS,
 			"letter_head",
 			"income_account",
 			"expense_account",
@@ -335,6 +349,8 @@ def save_van_profile(payload):
 	doc.ignore_pricing_rule = 1 if _coerce_check(data.get("ignore_pricing_rule")) else 0
 	doc.disable_rounded_total = 1 if _coerce_check(data.get("disable_rounded_total")) else 0
 	for field in PRINT_FORMAT_DOCTYPES:
+		doc.set(field, data.get(field) or None)
+	for field in PRINTER_FIELDS:
 		doc.set(field, data.get(field) or None)
 	doc.letter_head = data.get("letter_head") or None
 	doc.income_account = data.get("income_account") or None
@@ -539,6 +555,7 @@ def _build_van_profile_payload(doc) -> dict:
 		"ignore_pricing_rule": _coerce_check(doc.ignore_pricing_rule),
 		"disable_rounded_total": _coerce_check(doc.disable_rounded_total),
 		**{field: doc.get(field) for field in PRINT_FORMAT_DOCTYPES},
+		**{field: doc.get(field) for field in PRINTER_FIELDS},
 		"letter_head": doc.letter_head,
 		"income_account": doc.income_account,
 		"expense_account": doc.expense_account,

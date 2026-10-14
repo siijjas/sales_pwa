@@ -1,0 +1,170 @@
+{
+ "actions": [],
+ "autoname": "format:PRN-{YYYY}-{MM}-{DD}-{#####}",
+ "creation": "2026-10-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Document",
+ "engine": "InnoDB",
+ "field_order": [
+  "printer",
+  "status",
+  "label",
+  "column_break_identity",
+  "ref_doctype",
+  "ref_name",
+  "print_format",
+  "requested_by",
+  "section_delivery",
+  "payload_type",
+  "attempts",
+  "sent_at",
+  "column_break_delivery",
+  "done_at",
+  "error",
+  "section_content",
+  "content"
+ ],
+ "fields": [
+  {
+   "fieldname": "printer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Printer",
+   "options": "Sales Printer",
+   "reqd": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Queued\nSent\nPrinted\nFailed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Label"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "ref_doctype",
+   "fieldtype": "Link",
+   "label": "Document Type",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "ref_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Document",
+   "options": "ref_doctype"
+  },
+  {
+   "fieldname": "print_format",
+   "fieldtype": "Data",
+   "label": "Print Format"
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Requested By",
+   "options": "User"
+  },
+  {
+   "fieldname": "section_delivery",
+   "fieldtype": "Section Break",
+   "label": "Delivery"
+  },
+  {
+   "fieldname": "payload_type",
+   "fieldtype": "Select",
+   "label": "Payload",
+   "options": "escpos\npdf",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Attempts",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sent_at",
+   "fieldtype": "Datetime",
+   "label": "Handed to Agent",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_delivery",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "done_at",
+   "fieldtype": "Datetime",
+   "label": "Finished",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "section_content",
+   "fieldtype": "Section Break",
+   "label": "Content"
+  },
+  {
+   "fieldname": "content",
+   "fieldtype": "Long Text",
+   "label": "Content (base64)",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "Sales Print Job",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

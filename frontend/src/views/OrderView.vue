@@ -64,7 +64,7 @@
           >
             <template #trailing>
               <p class="tnum text-[14px] font-bold text-foreground">{{ currency }} {{ money(Math.abs(inv.grand_total)) }}</p>
-              <AppButton variant="ghost" size="sm" icon="printer" :aria-label="`Print ${inv.name}`" @click="api.downloadPdf('Sales Invoice', inv.name)" />
+              <AppButton variant="ghost" size="sm" icon="printer" :aria-label="`Print ${inv.name}`" @click="print('Sales Invoice', inv.name)" />
             </template>
           </ListRow>
         </div>
@@ -109,6 +109,7 @@ import type { OrderInvoice, SalesOrder } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useSaleStore } from '../stores/sale';
 import { useToast } from '../composables/useToast';
+import { usePrint } from '../composables/usePrint';
 import { money, qty, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import InvoiceSheet from '../components/InvoiceSheet.vue';
@@ -119,6 +120,7 @@ const router = useRouter();
 const store = useSessionStore();
 const sale = useSaleStore();
 const toast = useToast();
+const { print } = usePrint();
 
 const orderId = route.params.name as string;
 const currency = computed(() => store.currencyDisplay);
@@ -199,7 +201,7 @@ function editOrder() {
 async function onInvoiceCreated(invoiceName: string, note: string) {
   invoiceOpen.value = false;
   deferredNote.value = note;
-  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', invoiceName) }, duration: 8000 });
+  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) }, duration: 8000 });
   await load();
 }
 
@@ -220,5 +222,5 @@ async function deliverPending() {
   }
 }
 
-const printPdf = () => api.downloadPdf('Sales Order', orderId);
+const printPdf = () => print('Sales Order', orderId);
 </script>

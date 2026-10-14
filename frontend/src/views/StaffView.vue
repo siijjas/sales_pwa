@@ -252,8 +252,9 @@
         <!-- Printing -->
         <FormSection title="Printing" icon="printer">
           <p class="text-xs text-muted">
-            What staff get when they tap Print on a phone. Blank uses the doctype's default format
-            and the company's default letter head.
+            What staff get when they tap Print on a phone: a print format, and where it goes. "Open as PDF"
+            shows the PDF on the phone; a printer prints it straight away through the print agent on the
+            shop's LAN. Blank format = the doctype's default; blank letter head = the company's default.
           </p>
           <div class="grid gap-4 md:grid-cols-2">
             <FormField label="Order print format">
@@ -261,9 +262,19 @@
                 <option v-for="f in formatsFor('Sales Order')" :key="f.name" :value="f.name">{{ f.name }}</option>
               </BaseSelect>
             </FormField>
+            <FormField label="Orders print on">
+              <BaseSelect :model-value="form.order_printer ?? ''" @update:model-value="(v) => (form.order_printer = v)" placeholder="Open as PDF">
+                <option v-for="p in options.printers" :key="p.name" :value="p.name">{{ printerLabel(p) }}</option>
+              </BaseSelect>
+            </FormField>
             <FormField label="Payment receipt print format">
               <BaseSelect :model-value="form.payment_print_format ?? ''" @update:model-value="(v) => (form.payment_print_format = v)" placeholder="Default (Standard)">
                 <option v-for="f in formatsFor('Payment Entry')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField label="Payment receipts print on">
+              <BaseSelect :model-value="form.payment_printer ?? ''" @update:model-value="(v) => (form.payment_printer = v)" placeholder="Open as PDF">
+                <option v-for="p in options.printers" :key="p.name" :value="p.name">{{ printerLabel(p) }}</option>
               </BaseSelect>
             </FormField>
             <FormField v-if="!isFieldSales" label="Invoice print format">
@@ -271,9 +282,24 @@
                 <option v-for="f in formatsFor('Sales Invoice')" :key="f.name" :value="f.name">{{ f.name }}</option>
               </BaseSelect>
             </FormField>
+            <FormField v-if="!isFieldSales" label="Invoices print on">
+              <BaseSelect :model-value="form.invoice_printer ?? ''" @update:model-value="(v) => (form.invoice_printer = v)" placeholder="Open as PDF">
+                <option v-for="p in options.printers" :key="p.name" :value="p.name">{{ printerLabel(p) }}</option>
+              </BaseSelect>
+            </FormField>
             <FormField v-if="!isFieldSales && form.allow_return" label="Credit note print format" hint="A Sales Invoice format for returns. Blank = the invoice format.">
               <BaseSelect :model-value="form.return_print_format ?? ''" @update:model-value="(v) => (form.return_print_format = v)" placeholder="Same as invoice">
                 <option v-for="f in formatsFor('Sales Invoice')" :key="f.name" :value="f.name">{{ f.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField v-if="!isFieldSales && form.allow_return" label="Credit notes print on" hint="Blank = the invoice printer.">
+              <BaseSelect :model-value="form.return_printer ?? ''" @update:model-value="(v) => (form.return_printer = v)" placeholder="Same as invoices">
+                <option v-for="p in options.printers" :key="p.name" :value="p.name">{{ printerLabel(p) }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField v-if="form.use_shifts" label="Shift reports print on">
+              <BaseSelect :model-value="form.shift_report_printer ?? ''" @update:model-value="(v) => (form.shift_report_printer = v)" placeholder="Open as PDF">
+                <option v-for="p in options.printers" :key="p.name" :value="p.name">{{ printerLabel(p) }}</option>
               </BaseSelect>
             </FormField>
             <FormField label="Letter head">
@@ -281,6 +307,29 @@
                 <option v-for="l in options.letter_heads" :key="l.name" :value="l.name">{{ l.name }}{{ l.is_default ? ' (default)' : '' }}</option>
               </BaseSelect>
             </FormField>
+          </div>
+
+          <!-- Printers: set up in the desk (Sales Print Agent, Sales Printer); watched and tested from here. -->
+          <div class="rounded-2xl bg-card-muted p-3.5">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-xs font-bold uppercase tracking-[0.06em] text-muted">Printers</p>
+              <AppButton variant="ghost" size="sm" icon="refresh" :disabled="printersLoading" @click="loadPrinters">Refresh</AppButton>
+            </div>
+            <p v-if="!printers.length" class="mt-2 text-xs text-muted">
+              No active printer yet. In the desk, create a <b>Sales Print Agent</b> (one per shop LAN), run the
+              agent from the app's <code>print-agent</code> folder on a computer next to the printers, then add each
+              <b>Sales Printer</b>: by IP address on the LAN, or as a printer installed on that computer.
+            </p>
+            <ul v-else class="mt-2 divide-y divide-line">
+              <li v-for="p in printers" :key="p.name" class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2.5">
+                <span class="h-2.5 w-2.5 shrink-0 rounded-full" :class="printerDotClass(p)" :title="printerState(p)" />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-semibold text-foreground">{{ p.name }} <span class="font-normal text-muted">· {{ p.printer_type === 'Receipt (ESC/POS)' ? 'receipt' : 'PDF' }} · {{ p.protocol === 'System printer' ? `${p.system_printer} on ${p.agent_host || p.agent}` : `${p.host}:${p.port}` }}</span></p>
+                  <p class="truncate text-xs text-muted">{{ printerState(p) }}<span v-if="p.waiting"> · {{ p.waiting }} waiting</span><span v-if="p.failed_today"> · {{ p.failed_today }} failed today</span></p>
+                </div>
+                <AppButton variant="secondary" size="sm" icon="printer" :disabled="testing === p.name" @click="testPrint(p.name)">Test</AppButton>
+              </li>
+            </ul>
           </div>
         </FormSection>
 
@@ -371,8 +420,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, defineComponent, h } from 'vue';
 import { useRouter } from 'vue-router';
-import { listSalesProfiles, getSalesProfileOptions, saveSalesProfile, deleteSalesProfile } from '../api/frappe';
-import type { SalesProfile, SalesProfileOptions } from '../types';
+import { listSalesProfiles, getSalesProfileOptions, saveSalesProfile, deleteSalesProfile, getPrinterStatus, testPrinter } from '../api/frappe';
+import type { SalesProfile, SalesProfileOptions, PrinterStatusRow } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useToast } from '../composables/useToast';
 import { useConfirm } from '../composables/useConfirm';
@@ -421,6 +470,7 @@ const options = ref<SalesProfileOptions>({
   invoice_options: [],
   currencies: [],
   print_formats: [],
+  printers: [],
   letter_heads: [],
   users: [],
   cash_accounts: [],
@@ -459,6 +509,11 @@ const defaultForm = (): Partial<SalesProfile> => ({
   invoice_print_format: '',
   return_print_format: '',
   payment_print_format: '',
+  order_printer: '',
+  invoice_printer: '',
+  return_printer: '',
+  payment_printer: '',
+  shift_report_printer: '',
   letter_head: '',
   income_account: '',
   expense_account: '',
@@ -501,6 +556,44 @@ const filteredWarehouses = computed(() =>
   form.value.company ? options.value.warehouses.filter((w) => w.company === form.value.company) : options.value.warehouses,
 );
 const formatsFor = (doctype: string) => options.value.print_formats.filter((f) => f.doc_type === doctype);
+const printerLabel = (p: { name: string; printer_type: string }) => `${p.name} (${p.printer_type === 'Receipt (ESC/POS)' ? 'receipt' : 'PDF'})`;
+
+// The printer strip: who is reachable, and a test page.
+const printers = ref<PrinterStatusRow[]>([]);
+const printersLoading = ref(false);
+const testing = ref('');
+async function loadPrinters() {
+  printersLoading.value = true;
+  try {
+    printers.value = await getPrinterStatus();
+  } catch (e: any) {
+    toast.error('Could not load printers', { message: e?.message });
+  } finally {
+    printersLoading.value = false;
+  }
+}
+const printerState = (p: PrinterStatusRow) => {
+  if (!p.agent_active) return `Agent ${p.agent} is inactive`;
+  if (!p.agent_online) return p.last_contact_at ? `Agent ${p.agent} offline` : `Agent ${p.agent} has never connected`;
+  return p.last_status || `Agent ${p.agent} online`;
+};
+const printerDotClass = (p: PrinterStatusRow) => {
+  if (!p.agent_active || !p.agent_online) return 'bg-danger';
+  if (/^(Unreachable|Failed)/.test(p.last_status || '')) return 'bg-warning';
+  return 'bg-success';
+};
+async function testPrint(name: string) {
+  testing.value = name;
+  try {
+    const r = await testPrinter(name);
+    toast.success(`Test page sent to ${name}`, { message: r.online ? 'It prints within a few seconds.' : 'The agent is offline; it prints when the agent reconnects.' });
+    window.setTimeout(loadPrinters, 4000);
+  } catch (e: any) {
+    toast.error(`Could not test ${name}`, { message: e?.message });
+  } finally {
+    testing.value = '';
+  }
+}
 const filteredTaxTemplates = computed(() =>
   form.value.company ? options.value.tax_templates.filter((t) => t.company === form.value.company) : options.value.tax_templates,
 );
@@ -594,6 +687,7 @@ async function loadData() {
     options.value = optsRes;
     profiles.value = profilesRes;
     if (profiles.value.length > 0 && !selectedProfile.value) selectProfile(profiles.value[0]);
+    void loadPrinters();
   } catch (err: any) {
     errorMsg.value = err.message || 'Failed to load profiles';
   } finally {

@@ -1,0 +1,130 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:agent_name",
+ "creation": "2026-10-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "agent_name",
+  "is_active",
+  "column_break_identity",
+  "token",
+  "section_status",
+  "last_contact_at",
+  "last_status",
+  "column_break_status",
+  "agent_version",
+  "agent_host",
+  "system_printers"
+ ],
+ "fields": [
+  {
+   "fieldname": "agent_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Agent Name",
+   "reqd": 1,
+   "unique": 1,
+   "description": "Where the agent runs, e.g. Shop PC or Warehouse Pi. One agent serves every printer on its LAN."
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Active"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Agent Token",
+   "read_only": 1,
+   "description": "Generated when the agent is created. Put it in the agent's .env as SP_AGENT_TOKEN; use Regenerate token if it leaks."
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "last_contact_at",
+   "fieldtype": "Datetime",
+   "label": "Last Contact",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_status",
+   "fieldtype": "Data",
+   "label": "Last Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "agent_version",
+   "fieldtype": "Data",
+   "label": "Agent Version",
+   "read_only": 1
+  },
+  {
+   "fieldname": "agent_host",
+   "fieldtype": "Data",
+   "label": "Agent Host",
+   "read_only": 1,
+   "description": "The machine's hostname, as the agent reports it."
+  },
+  {
+   "fieldname": "system_printers",
+   "fieldtype": "Small Text",
+   "label": "Printers on the Agent's Computer",
+   "read_only": 1,
+   "description": "What the agent's operating system lists, refreshed every minute while the agent runs. A System printer Sales Printer picks one of these."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "Sales Print Agent",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

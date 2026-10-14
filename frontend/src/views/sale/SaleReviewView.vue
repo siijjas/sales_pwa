@@ -130,6 +130,7 @@ import type { CartLine, SalesOrder } from '../../types';
 import { useSessionStore } from '../../stores/session';
 import { useSaleStore, lineRate, type DiscountMode } from '../../stores/sale';
 import { useToast } from '../../composables/useToast';
+import { usePrint } from '../../composables/usePrint';
 import { useConfirm } from '../../composables/useConfirm';
 import { money, isoToday } from '../../utils/format';
 import WorkspacePage from '../../components/WorkspacePage.vue';
@@ -142,6 +143,7 @@ const store = useSessionStore();
 const sale = useSaleStore();
 const router = useRouter();
 const toast = useToast();
+const { print } = usePrint();
 const { confirm } = useConfirm();
 
 const caps = computed(() => store.capabilities);
@@ -259,7 +261,7 @@ async function submit(withInvoice: boolean) {
 function onInvoiceCreated(invoiceName: string) {
   const name = submittedOrder.value!.name;
   invoiceOpen.value = false;
-  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => api.downloadPdf('Sales Invoice', invoiceName) }, duration: 8000 });
+  toast.success(`Invoice ${invoiceName} created`, { action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) }, duration: 8000 });
   finish(name);
 }
 // Sheet dismissed without an invoice: the order is still submitted.

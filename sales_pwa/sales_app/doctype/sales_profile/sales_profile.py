@@ -27,6 +27,7 @@ class SalesProfile(Document):
 
 		self._validate_invoice_options()
 		self._validate_print_formats()
+		self._validate_printers()
 		self._validate_cash_accounts()
 		self._validate_drivers_are_enabled()
 		self._validate_one_active_profile_per_driver()
@@ -83,6 +84,21 @@ class SalesProfile(Document):
 				frappe.throw(f"{label}: {name} is a {row.doc_type} print format, not {doctype}")
 			if row.disabled:
 				frappe.throw(f"{label}: print format {name} is disabled")
+
+	def _validate_printers(self):
+		"""Each printer field must name an active Sales Printer (a deactivated one is cleared
+		with a note rather than failing the save: the printer may well come back)."""
+		from sales_pwa.sales_app.van_profile import PRINTER_FIELDS
+
+		for field in PRINTER_FIELDS:
+			name = self.get(field)
+			if not name:
+				continue
+			active = frappe.db.get_value("Sales Printer", name, "is_active")
+			if active is None:
+				frappe.throw(f"{self.meta.get_label(field)}: printer {name} does not exist")
+			if not active:
+				frappe.msgprint(f"{self.meta.get_label(field)}: printer {name} is inactive; its documents open as PDFs until it is active again.", alert=True)
 
 	def _validate_cash_accounts(self):
 		"""The drawer and back-office accounts must be Cash or Bank: cash movements post

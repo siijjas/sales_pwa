@@ -75,6 +75,13 @@
   "return_print_format",
   "payment_print_format",
   "letter_head",
+  "section_printers",
+  "order_printer",
+  "invoice_printer",
+  "return_printer",
+  "column_break_printers",
+  "payment_printer",
+  "shift_report_printer",
   "section_accounting",
   "income_account",
   "expense_account",
@@ -537,6 +544,47 @@
    "options": "Letter Head"
   },
   {
+   "fieldname": "section_printers",
+   "fieldtype": "Section Break",
+   "label": "Direct Printing",
+   "description": "Where each document goes when staff tap Print. Blank = the PDF opens on the phone. Printers are set up under Sales Printer and reached through a Sales Print Agent on the shop's LAN."
+  },
+  {
+   "fieldname": "order_printer",
+   "fieldtype": "Link",
+   "label": "Sales Order Printer",
+   "options": "Sales Printer"
+  },
+  {
+   "fieldname": "invoice_printer",
+   "fieldtype": "Link",
+   "label": "Sales Invoice Printer",
+   "options": "Sales Printer"
+  },
+  {
+   "fieldname": "return_printer",
+   "fieldtype": "Link",
+   "label": "Credit Note Printer",
+   "options": "Sales Printer",
+   "description": "Blank = the invoice printer."
+  },
+  {
+   "fieldname": "column_break_printers",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "payment_printer",
+   "fieldtype": "Link",
+   "label": "Payment Receipt Printer",
+   "options": "Sales Printer"
+  },
+  {
+   "fieldname": "shift_report_printer",
+   "fieldtype": "Link",
+   "label": "Shift Report Printer",
+   "options": "Sales Printer"
+  },
+  {
    "fieldname": "section_accounting",
    "fieldtype": "Section Break",
    "label": "Accounting"
@@ -573,7 +621,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-12 00:00:00.000000",
+ "modified": "2026-10-14 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "Sales Profile",

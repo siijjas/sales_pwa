@@ -128,12 +128,13 @@ def resolve_print_settings(doc) -> tuple[str | None, str | None]:
 	return print_format, letter_head
 
 
-@frappe.whitelist()
-def download_pdf(doctype: str, name: str, format: str | None = None, no_letterhead: int = 0):
-	"""Drop-in for ``frappe.utils.print_format.download_pdf`` (same query parameters).
+def authorize_print(doctype: str, name: str, format: str | None = None):
+	"""The document, once the caller may print it with `format`.
 
-	With no ``format`` the Sales Profile decides (see resolve_print_settings); the
-	shift reports name their own formats explicitly.
+	Shared by the PDF download and direct printing (printing.py): drivers print their
+	own shift documents and the documents of customers they serve; managers print
+	anything in PRINTABLE_DOCTYPES. A named format must be an enabled one of this
+	doctype, because the render runs unrestricted.
 	"""
 	if doctype not in PRINTABLE_DOCTYPES:
 		frappe.throw(frappe._("The app does not print {0} documents.").format(doctype), frappe.PermissionError)
@@ -150,17 +151,35 @@ def download_pdf(doctype: str, name: str, format: str | None = None, no_letterhe
 	# The render below runs unrestricted, so a format must be an enabled one of this doctype.
 	if format and format != "Standard" and not _usable_print_format(format, doctype):
 		frappe.throw(frappe._("{0} is not an enabled {1} print format.").format(format, doctype))
+	return doc
 
+
+def render_html(doc, format: str | None = None, no_letterhead: int = 0) -> tuple[str, str | None]:
+	"""(HTML with the print stylesheet inlined, the format it was rendered with).
+
+	With no `format` the Sales Profile decides (resolve_print_settings); the shift
+	reports name their own formats explicitly.
+	"""
 	letterhead = None
 	if not format:
 		format, letterhead = resolve_print_settings(doc)
-
 	with _render_with_full_read():
 		html = frappe.get_print(
-			doctype, name, format, doc=doc, no_letterhead=cint(no_letterhead), letterhead=letterhead
+			doc.doctype, doc.name, format, doc=doc, no_letterhead=cint(no_letterhead), letterhead=letterhead
 		)
-	html = _inline_stylesheets(html)
-	pdf = get_pdf(html, options={"load-media-error-handling": "ignore"})
+	return _inline_stylesheets(html), format
+
+
+def render_pdf(html: str) -> bytes:
+	return get_pdf(html, options={"load-media-error-handling": "ignore"})
+
+
+@frappe.whitelist()
+def download_pdf(doctype: str, name: str, format: str | None = None, no_letterhead: int = 0):
+	"""Drop-in for ``frappe.utils.print_format.download_pdf`` (same query parameters)."""
+	doc = authorize_print(doctype, name, format)
+	html, _format = render_html(doc, format, no_letterhead)
+	pdf = render_pdf(html)
 
 	frappe.local.response.filename = "{}.pdf".format(name.replace(" ", "-").replace("/", "-"))
 	frappe.local.response.filecontent = pdf

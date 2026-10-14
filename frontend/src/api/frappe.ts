@@ -1299,6 +1299,43 @@ export function downloadPdf(doctype: string, name: string, format?: string) {
   window.open(`/api/method/sales_pwa.sales_app.pdf.download_pdf?${params.toString()}`, '_blank');
 }
 
+// ─── Direct printing ───────────────────────────────────────────────────────────
+
+/**
+ * Queue the document on the Sales Printer the profile names for it (see
+ * composables/usePrint for the full tap-to-paper flow). `job` is null when no
+ * printer applies and the PDF should open instead.
+ */
+export async function printDocument(doctype: string, name: string, format?: string): Promise<import('../types').PrintJobReceipt> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.printing.print_document', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    body: JSON.stringify({ doctype, name, format: format || undefined }),
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').PrintJobReceipt;
+}
+
+export const getPrintJobStatus = (job: string) =>
+  getMethod<import('../types').PrintJobStatus>('sales_pwa.sales_app.printing.job_status', { job });
+
+/** Managers: every active printer with its agent's state. */
+export const getPrinterStatus = () => getMethod<import('../types').PrinterStatusRow[]>('sales_pwa.sales_app.printing.printer_status');
+
+export async function testPrinter(printer: string): Promise<import('../types').PrintJobReceipt> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.printing.test_printer', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    body: JSON.stringify({ printer }),
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').PrintJobReceipt;
+}
+
 // ─── Sales Profile API ─────────────────────────────────────────────────────────
 
 export async function listSalesProfiles(): Promise<import('../types').SalesProfile[]> {

@@ -1,0 +1,15 @@
+{
+  "name": "sales-pwa-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pulls print jobs from the Sales App and feeds the printers on this LAN (ESC/POS raw, PDF over IPP)",
+  "type": "module",
+  "main": "agent.mjs",
+  "scripts": {
+    "start": "node agent.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

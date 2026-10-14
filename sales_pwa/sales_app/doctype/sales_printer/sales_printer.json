@@ -1,0 +1,224 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:printer_name",
+ "creation": "2026-10-14 00:00:00.000000",
+ "doctype": "DocType",
+ "document_type": "Setup",
+ "engine": "InnoDB",
+ "field_order": [
+  "printer_name",
+  "printer_type",
+  "is_active",
+  "column_break_identity",
+  "agent",
+  "section_network",
+  "host",
+  "port",
+  "column_break_network",
+  "protocol",
+  "ipp_path",
+  "system_printer",
+  "section_receipt",
+  "paper_width",
+  "scale",
+  "column_break_receipt",
+  "cut_paper",
+  "open_drawer",
+  "section_status",
+  "last_contact_at",
+  "column_break_status",
+  "last_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "printer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Printer Name",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "default": "Receipt (ESC/POS)",
+   "fieldname": "printer_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Printer Type",
+   "options": "Receipt (ESC/POS)\nDocument (PDF)",
+   "reqd": 1,
+   "description": "Receipt: a thermal printer such as the Epson TM-T20; the print format is rendered as an image and sent as ESC/POS. Document: an office printer such as a Brother laser; the print format is sent as a PDF."
+  },
+  {
+   "default": "1",
+   "fieldname": "is_active",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Active"
+  },
+  {
+   "fieldname": "column_break_identity",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "agent",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Print Agent",
+   "options": "Sales Print Agent",
+   "reqd": 1,
+   "description": "The agent on the same LAN as this printer. Jobs wait on the server until that agent collects them."
+  },
+  {
+   "fieldname": "section_network",
+   "fieldtype": "Section Break",
+   "label": "Connection"
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Data",
+   "label": "IP Address or Hostname",
+   "reqd": 0,
+   "description": "The printer's address on the LAN, e.g. 192.168.1.50. Give the printer a fixed IP (or a DHCP reservation) so it does not change.",
+   "depends_on": "eval:doc.protocol != 'System printer'",
+   "mandatory_depends_on": "eval:doc.protocol != 'System printer'"
+  },
+  {
+   "fieldname": "port",
+   "fieldtype": "Int",
+   "label": "Port",
+   "description": "Blank = 9100 for Raw, 631 for IPP.",
+   "depends_on": "eval:doc.protocol != 'System printer'"
+  },
+  {
+   "fieldname": "column_break_network",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Raw (port 9100)",
+   "fieldname": "protocol",
+   "fieldtype": "Select",
+   "label": "Protocol",
+   "options": "Raw (port 9100)\nIPP\nSystem printer",
+   "reqd": 1,
+   "description": "Raw: the printer's own network port, for receipt printers. IPP: office printers that speak AirPrint. System printer: a printer installed on the agent's computer (USB or network, any driver); receipts go to it as raw bytes, PDFs through SumatraPDF on Windows or CUPS elsewhere."
+  },
+  {
+   "default": "/ipp/print",
+   "depends_on": "eval:doc.protocol == 'IPP'",
+   "fieldname": "ipp_path",
+   "fieldtype": "Data",
+   "label": "IPP Path",
+   "description": "/ipp/print for Brother and most AirPrint printers."
+  },
+  {
+   "depends_on": "eval:doc.protocol == 'System printer'",
+   "mandatory_depends_on": "eval:doc.protocol == 'System printer'",
+   "fieldname": "system_printer",
+   "fieldtype": "Autocomplete",
+   "label": "Printer on the Agent's Computer",
+   "description": "Its name exactly as the agent's computer lists it (Windows: Settings \u2192 Printers; Linux/macOS: the CUPS queue). The list fills in once the agent has polled."
+  },
+  {
+   "depends_on": "eval:doc.printer_type == 'Receipt (ESC/POS)'",
+   "fieldname": "section_receipt",
+   "fieldtype": "Section Break",
+   "label": "Receipt Paper"
+  },
+  {
+   "default": "80",
+   "fieldname": "paper_width",
+   "fieldtype": "Select",
+   "label": "Paper Width (mm)",
+   "options": "80\n58"
+  },
+  {
+   "default": "100",
+   "fieldname": "scale",
+   "fieldtype": "Int",
+   "label": "Scale (%)",
+   "description": "100 prints a format designed in millimetres at true size. Lower it to fit a wider format, raise it for bigger text."
+  },
+  {
+   "fieldname": "column_break_receipt",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "1",
+   "fieldname": "cut_paper",
+   "fieldtype": "Check",
+   "label": "Cut after printing"
+  },
+  {
+   "default": "0",
+   "fieldname": "open_drawer",
+   "fieldtype": "Check",
+   "label": "Open the cash drawer",
+   "description": "Pulse the drawer connected to the printer on every receipt."
+  },
+  {
+   "fieldname": "section_status",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "last_contact_at",
+   "fieldtype": "Datetime",
+   "label": "Last Checked",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_status",
+   "fieldtype": "Data",
+   "label": "Last Status",
+   "read_only": 1,
+   "description": "What the agent found the last time it checked or printed."
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-14 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Sales App",
+ "name": "Sales Printer",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales App User"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

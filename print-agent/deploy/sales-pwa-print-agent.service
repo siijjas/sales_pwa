@@ -1,0 +1,38 @@
+# The Sales App print agent as a systemd user unit on a Linux box or Raspberry Pi
+# on the printers' LAN, no root needed:
+#
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/sales-pwa-print-agent.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now sales-pwa-print-agent
+#   journalctl --user -u sales-pwa-print-agent -f
+#
+# (`loginctl enable-linger <user>` once, so it runs while nobody is logged in.)
+#
+# Settings come from print-agent/.env (SP_SERVER_URL, SP_AGENT_TOKEN; see .env.example),
+# reached through the environment, never the command line. SP_NODE may name a node binary
+# (20+) when the one on PATH is older. %h is the home directory; the paths below assume
+# the folder was copied to ~/print-agent.
+
+[Unit]
+Description=Sales App print agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/print-agent/.env
+Environment=NODE_ENV=production
+WorkingDirectory=%h/print-agent
+ExecStart=/bin/sh -c 'exec "${SP_NODE:-node}" agent.mjs'
+Restart=always
+RestartSec=10
+
+MemoryHigh=100M
+MemoryMax=150M
+
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

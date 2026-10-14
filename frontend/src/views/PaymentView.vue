@@ -53,7 +53,8 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useSessionStore } from '../stores/session';
-import { getPaymentEntry, downloadPdf } from '../api/frappe';
+import { getPaymentEntry } from '../api/frappe';
+import { usePrint } from '../composables/usePrint';
 import { money, relativeDate, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, Avatar, DataRow, ListRow, SectionHeader, StatusBadge, SkeletonList } from '../components/ui';
@@ -76,5 +77,6 @@ onMounted(async () => {
   }
 });
 
-const printPdf = () => payment.value && downloadPdf('Payment Entry', payment.value.name);
+const { print } = usePrint();
+const printPdf = () => payment.value && print('Payment Entry', payment.value.name);
 </script>

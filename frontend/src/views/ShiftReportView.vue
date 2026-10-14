@@ -322,6 +322,7 @@ import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
 import { useConfirm } from '../composables/useConfirm';
 import { useToast } from '../composables/useToast';
+import { usePrint } from '../composables/usePrint';
 import { money as fmt, qty, shortDate, dateTime, time } from '../utils/format';
 import type { ShiftReport } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
@@ -332,6 +333,7 @@ const router = useRouter();
 const store = useSessionStore();
 const { confirm } = useConfirm();
 const toast = useToast();
+const { print } = usePrint();
 const currency = computed(() => store.currencyDisplay);
 
 const isSummary = computed(() => route.name === 'shift-summary');
@@ -449,8 +451,8 @@ const load = async () => {
 
 const printPdf = () => {
   if (!report.value) return;
-  if (isSummary.value) api.downloadPdf('Sales Shift Opening', report.value.shift.opening_shift, 'Sales Shift Summary');
-  else api.downloadPdf('Sales Shift Closing', report.value.shift.closing_shift!, 'Sales Shift Closing Report');
+  if (isSummary.value) print('Sales Shift Opening', report.value.shift.opening_shift, { format: 'Sales Shift Summary' });
+  else print('Sales Shift Closing', report.value.shift.closing_shift!, { format: 'Sales Shift Closing Report' });
 };
 
 watch(() => route.fullPath, load, { immediate: true });

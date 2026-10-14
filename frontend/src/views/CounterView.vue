@@ -166,7 +166,7 @@
           <p v-if="showRounded" class="text-right text-[11.5px] text-muted">Before rounding {{ currency }} {{ money(preview!.grand_total) }}</p>
         </AppCard>
 
-        <AppButton size="lg" block icon="file-text" :loading="busy === 'invoice' || busy === 'order'" :disabled="!canSubmit || !!busy" @click="openSubmit">Submit <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
+        <AppButton size="lg" block icon="send" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submitOrder">Submit order <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
 
         <CounterQueue ref="queuePanel" class="min-h-[14rem] flex-1" :queue="queue" :loading="queueLoading" :busy="!!busy" :currency="currency" @refresh="loadQueue" @resume="resume" @invoice="openInvoiceSheet" @print="(row) => print('Sales Invoice', row.name)" />
       </div>
@@ -174,39 +174,62 @@
 
     <InvoiceSheet v-if="sheetOrder" v-model="sheetOpen" :order="sheetOrder" @created="onSheetInvoiced" />
 
-    <!-- Submit: payment choices and the two ways to finish, opened by the Submit button or F9 -->
-    <BottomSheet v-model="submitOpen" title="Submit sale" :subtitle="counter.customer ? `${counter.customer.customer_name} · ${counter.lines.length} lines` : ''">
-      <div class="space-y-4" @keydown="onSubmitKeydown">
-        <div class="flex items-end justify-between rounded-2xl bg-card-muted px-4 py-3">
-          <div>
-            <p class="text-[12px] font-bold uppercase tracking-wide text-muted">Total</p>
-            <p v-if="preview?.proposed_invoice_name" class="text-[11.5px] text-subtle">Next invoice {{ preview.proposed_invoice_name }}</p>
+    <!-- After the order: invoice it as well? Then the payment, then the invoice option. -->
+    <BottomSheet
+      v-model="wizardOpen"
+      :title="wizard?.step === 'ask' ? `Order ${wizard.order} submitted` : wizard?.step === 'payment' ? 'How is it paid?' : 'Invoice option'"
+      :subtitle="wizard ? `${wizard.customerName} · ${currency} ${money(wizard.total)}` : ''"
+      :back="wizard?.step === 'option'"
+      @back="wizard && (wizard.step = 'payment')"
+    >
+      <div v-if="wizard" class="space-y-4">
+        <template v-if="wizard.step === 'ask'">
+          <p class="text-[14px] text-foreground">Create the invoice as well?</p>
+          <div class="grid gap-2">
+            <AppButton data-wizard-primary size="lg" block icon="file-text" @click="wizardNext">Yes, invoice it <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd></AppButton>
+            <AppButton size="md" block variant="secondary" @click="wizardOpen = false">Not now <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
           </div>
-          <p class="tnum text-[26px] font-bold leading-none tracking-tight text-foreground">{{ currency }} {{ money(grandTotal) }}</p>
-        </div>
-        <SegmentedControl
-          v-if="store.canCreditSale"
-          :model-value="counter.markAsPaid ? 'paid' : 'credit'"
-          :options="[{ value: 'paid', label: 'Paid now' }, { value: 'credit', label: 'Credit' }]"
-          @update:model-value="(v: string) => setPayment(v === 'paid', counter.modeOfPayment, counter.invoiceOption)"
-        />
-        <div class="grid gap-3" :class="invoiceOptions.length ? 'grid-cols-2' : ''">
+          <p class="text-[12px] text-muted">An order left without an invoice waits in the To invoice list.</p>
+        </template>
+
+        <template v-else-if="wizard.step === 'payment'">
+          <SegmentedControl
+            v-if="store.canCreditSale"
+            :model-value="counter.markAsPaid ? 'paid' : 'credit'"
+            :options="[{ value: 'paid', label: 'Paid now' }, { value: 'credit', label: 'Credit' }]"
+            @update:model-value="(v: string) => setPayment(v === 'paid', counter.modeOfPayment, counter.invoiceOption)"
+          />
           <FormField v-if="counter.markAsPaid" label="Mode of payment">
-            <BaseSelect :model-value="counter.modeOfPayment" placeholder="Select mode" @update:model-value="(v) => setPayment(true, v, counter.invoiceOption)">
-              <option v-for="m in paymentModes" :key="m.name" :value="m.name">{{ m.name }}</option>
-            </BaseSelect>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <ChoiceCard v-for="m in paymentModes" :key="m.name" :selected="counter.modeOfPayment === m.name" :title="m.name" :subtitle="m.type" @click="setPayment(true, m.name, counter.invoiceOption)" />
+            </div>
           </FormField>
-          <FormField v-if="invoiceOptions.length" label="Invoice option">
-            <BaseSelect :model-value="counter.invoiceOption || ''" :placeholder="applicableOptions.length ? 'Select option' : 'None fits this payment'" @update:model-value="(v) => setPayment(counter.markAsPaid, counter.modeOfPayment, v || null)">
-              <option v-for="o in applicableOptions" :key="o.name" :value="o.name">{{ o.option_name }}</option>
-            </BaseSelect>
-          </FormField>
-        </div>
-        <ToggleSwitch v-if="printsDirectly('Sales Invoice')" :model-value="counter.autoPrint" label="Print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
-        <div class="grid gap-2 pt-1">
-          <AppButton ref="submitInvoiceButton" size="lg" block icon="file-text" :loading="busy === 'invoice'" :disabled="!canSubmit || !!busy" @click="submit(true)">Submit &amp; invoice <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd></AppButton>
-          <AppButton size="md" block variant="secondary" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submit(false)">Submit order only <kbd class="ml-1 text-[11px] opacity-70">F8</kbd></AppButton>
-        </div>
+          <ToggleSwitch v-if="printsDirectly('Sales Invoice')" :model-value="counter.autoPrint" label="Print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
+          <AppAlert v-if="wizardError" tone="danger" :message="wizardError" />
+          <AppButton data-wizard-primary size="lg" block :loading="busy === 'invoice'" :disabled="(counter.markAsPaid && !counter.modeOfPayment) || !!busy" :trailing-icon="invoiceOptions.length ? 'arrow-right' : undefined" :icon="invoiceOptions.length ? undefined : 'file-text'" @click="wizardNext">
+            {{ invoiceOptions.length ? 'Continue' : 'Create invoice' }} <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd>
+          </AppButton>
+        </template>
+
+        <template v-else>
+          <AppAlert v-if="!applicableOptions.length" tone="warning" :message="counter.markAsPaid ? `None of your invoice options is available for payment by ${counter.modeOfPayment}.` : 'None of your invoice options is available for credit invoices.'" />
+          <div v-else class="grid gap-2">
+            <ChoiceCard
+              v-for="opt in applicableOptions"
+              :key="opt.name"
+              :selected="counter.invoiceOption === opt.name"
+              :title="opt.option_name"
+              :subtitle="`${opt.naming_series} · ${opt.taxes_and_charges || 'No tax'}${opt.description ? ` · ${opt.description}` : ''}`"
+              @click="setPayment(counter.markAsPaid, counter.modeOfPayment, opt.name)"
+            >
+              <template v-if="opt.is_default" #trailing>
+                <StatusBadge tone="primary" :dot="false">Default</StatusBadge>
+              </template>
+            </ChoiceCard>
+          </div>
+          <AppAlert v-if="wizardError" tone="danger" :message="wizardError" />
+          <AppButton data-wizard-primary size="lg" block icon="file-text" :loading="busy === 'invoice'" :disabled="!counter.invoiceOption || !!busy" @click="wizardNext">Create invoice <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd></AppButton>
+        </template>
       </div>
     </BottomSheet>
   </div>
@@ -229,7 +252,7 @@ import InvoiceSheet from '../components/InvoiceSheet.vue';
 import CustomerBox from '../components/counter/CustomerBox.vue';
 import ItemEntryRow from '../components/counter/ItemEntryRow.vue';
 import CounterQueue from '../components/counter/CounterQueue.vue';
-import { AppAlert, AppButton, AppCard, AppIcon, BaseSelect, BottomSheet, DataRow, FormField, SegmentedControl, StatusBadge, ToggleSwitch } from '../components/ui';
+import { AppAlert, AppButton, AppCard, AppIcon, BottomSheet, ChoiceCard, DataRow, FormField, SegmentedControl, StatusBadge, ToggleSwitch } from '../components/ui';
 
 const store = useSessionStore();
 const counter = useCounterStore();
@@ -237,7 +260,7 @@ const shift = useShiftStore();
 const router = useRouter();
 const toast = useToast();
 const { print, printsDirectly } = usePrint();
-const { confirm } = useConfirm();
+const { confirm, state: confirmState } = useConfirm();
 
 const customerBox = ref<InstanceType<typeof CustomerBox> | null>(null);
 const entryRow = ref<InstanceType<typeof ItemEntryRow> | null>(null);
@@ -441,25 +464,6 @@ const busy = ref<'' | 'hold' | 'order' | 'invoice'>('');
 const lastInvoice = ref<string | null>(null);
 const canSubmit = computed(() => !!counter.customer && counter.hasLines && !shift.needsShift && !preview.value?.error);
 
-// The submit sheet: payment choices (prefilled from the last sale) and the two ways to finish.
-const submitOpen = ref(false);
-const submitInvoiceButton = ref<InstanceType<typeof AppButton> | null>(null);
-function openSubmit() {
-  if (!canSubmit.value || busy.value) return;
-  submitOpen.value = true;
-  nextTick(() => (submitInvoiceButton.value?.$el as HTMLElement | undefined)?.focus());
-}
-function onSubmitKeydown(e: KeyboardEvent) {
-  const onButton = (e.target as HTMLElement).tagName === 'BUTTON';
-  if (e.key === 'F9' || (e.key === 'Enter' && !onButton)) {
-    e.preventDefault();
-    submit(true);
-  } else if (e.key === 'F8') {
-    e.preventDefault();
-    submit(false);
-  }
-}
-
 function startNext() {
   counter.reset(defaultCustomer.value);
   preview.value = null;
@@ -499,18 +503,85 @@ async function hold() {
   }
 }
 
-async function submit(withInvoice: boolean) {
+// After the order is submitted: invoice it as well? Then how it is paid, then which option.
+interface Wizard {
+  order: string;
+  customerName: string;
+  total: number;
+  /** Shortages the preview showed for this cart, and whether the profile may invoice past them. */
+  shortItems: InvoiceStockShortage[];
+  allowSaleWithoutStock: boolean;
+  step: 'ask' | 'payment' | 'option';
+}
+const wizard = ref<Wizard | null>(null);
+const wizardOpen = ref(false);
+const wizardError = ref('');
+// The sheet is teleported and animated in, so the button is looked up once it is there.
+const focusWizard = () =>
+  nextTick(() => window.setTimeout(() => (document.querySelector('[role="dialog"] [data-wizard-primary]') as HTMLElement | null)?.focus(), 60));
+
+async function submitOrder() {
   if (!canSubmit.value || busy.value) return;
-  if (withInvoice && counter.markAsPaid && !counter.modeOfPayment) {
-    toast.warning('Select a mode of payment');
+  busy.value = 'order';
+  try {
+    const short = preview.value?.short_items || [];
+    const allowSaleWithoutStock = !!preview.value?.allow_sale_without_stock;
+    const result = await api.createCounterSale(cartPayload(), { orderName: counter.orderName, invoice: false });
+    wizard.value = {
+      order: result.order,
+      customerName: result.customer_name || result.customer,
+      total: result.rounded_total || result.grand_total,
+      shortItems: short,
+      allowSaleWithoutStock,
+      step: 'ask',
+    };
+    wizardError.value = '';
+    startNext();
+    loadQueue();
+    wizardOpen.value = true;
+    focusWizard();
+  } catch (e: any) {
+    toast.error('Could not submit the order', { message: e?.message, duration: 8000 });
+  } finally {
+    busy.value = '';
+  }
+}
+
+async function wizardNext() {
+  const w = wizard.value;
+  if (!w || busy.value) return;
+  wizardError.value = '';
+  if (w.step === 'ask') {
+    w.step = 'payment';
+    focusWizard();
     return;
   }
+  if (w.step === 'payment') {
+    if (counter.markAsPaid && !counter.modeOfPayment) {
+      wizardError.value = 'Pick a mode of payment.';
+      return;
+    }
+    if (invoiceOptions.value.length) {
+      // Enter must be able to carry straight through: start on the default, else the first that fits.
+      const opts = applicableOptions.value;
+      if (!opts.some((o) => o.name === counter.invoiceOption) && opts.length) {
+        counter.setPayment(counter.markAsPaid, counter.modeOfPayment, (opts.find((o) => o.is_default) || opts[0]).name);
+      }
+      w.step = 'option';
+      focusWizard();
+      return;
+    }
+  }
+  if (w.step === 'option' && !counter.invoiceOption) return;
+  await createInvoice(w);
+}
+
+async function createInvoice(w: Wizard) {
   let allowWithoutStock = false;
-  const short = preview.value?.short_items || [];
-  if (withInvoice && short.length) {
-    const list = short.map((r) => `${r.item_name}: need ${qtyFmt(r.required_qty)}, have ${qtyFmt(r.available_qty)} ${r.stock_uom}`).join('\n');
-    if (!preview.value?.allow_sale_without_stock) {
-      toast.error('Not enough stock', { message: list, duration: 8000 });
+  if (w.shortItems.length) {
+    const list = w.shortItems.map((r) => `${r.item_name}: need ${qtyFmt(r.required_qty)}, have ${qtyFmt(r.available_qty)} ${r.stock_uom}`).join('\n');
+    if (!w.allowSaleWithoutStock) {
+      wizardError.value = `Not enough stock. ${list}`;
       return;
     }
     allowWithoutStock = await confirm({
@@ -522,38 +593,37 @@ async function submit(withInvoice: boolean) {
     });
     if (!allowWithoutStock) return;
   }
-  busy.value = withInvoice ? 'invoice' : 'order';
+  busy.value = 'invoice';
   try {
-    const result = await api.createCounterSale(cartPayload(), {
-      ...paymentPayload(),
-      orderName: counter.orderName,
-      invoice: withInvoice,
+    const invoiceName = await api.createSalesInvoice(w.order, {
+      markAsPaid: counter.markAsPaid,
+      modeOfPayment: counter.markAsPaid ? counter.modeOfPayment : undefined,
+      invoiceOption: invoiceOptions.value.length ? counter.invoiceOption : null,
       allowWithoutStock,
     });
-    if (result.invoice) {
-      lastInvoice.value = result.invoice;
-      const total = `${currency.value} ${money(result.rounded_total || result.grand_total)}`;
-      toast.success(`Invoice ${result.invoice} · ${total}`, {
-        message: result.short_items.length ? 'Available stock delivered; the rest is pending on the order.' : counter.markAsPaid ? `Paid by ${counter.modeOfPayment}` : 'Credit invoice',
-        action: { label: 'Print', run: () => print('Sales Invoice', result.invoice!) },
-        duration: 8000,
-      });
-      if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', result.invoice);
-    } else {
-      toast.success(`Order ${result.order} submitted`, {
-        action: { label: 'View', run: () => router.push({ name: 'order', params: { name: result.order } }) },
-        duration: 6000,
-      });
-    }
-    submitOpen.value = false;
-    startNext();
+    lastInvoice.value = invoiceName;
+    wizardOpen.value = false;
+    toast.success(`Invoice ${invoiceName} · ${currency.value} ${money(w.total)}`, {
+      message: allowWithoutStock ? 'Available stock delivered; the rest is pending on the order.' : counter.markAsPaid ? `Paid by ${counter.modeOfPayment}` : 'Credit invoice',
+      action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) },
+      duration: 8000,
+    });
+    if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', invoiceName);
     loadQueue();
   } catch (e: any) {
-    toast.error(withInvoice ? 'Could not invoice the sale' : 'Could not submit the order', { message: e?.message, duration: 8000 });
+    wizardError.value = e?.message || 'Could not create the invoice';
   } finally {
     busy.value = '';
   }
 }
+
+// Closing the sheet at any step leaves the order in the To invoice list.
+watch(wizardOpen, (open) => {
+  if (!open) {
+    wizard.value = null;
+    focusEntry();
+  }
+});
 
 function printLast() {
   if (lastInvoice.value) print('Sales Invoice', lastInvoice.value);
@@ -625,6 +695,17 @@ function onSheetInvoiced(invoiceName: string, deferredNote: string) {
 
 // ─── Keyboard ───────────────────────────────────────────────────────────
 function onKeydown(e: KeyboardEvent) {
+  if (wizardOpen.value && !confirmState.pending) {
+    const tag = (e.target as HTMLElement).tagName;
+    if (e.key === 'Enter' && tag !== 'BUTTON') {
+      e.preventDefault();
+      wizardNext();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      wizardOpen.value = false;
+    }
+    return;
+  }
   if (document.querySelector('[role="dialog"]')) return; // a sheet or confirm owns the keys
   switch (e.key) {
     case 'F2':
@@ -643,13 +724,9 @@ function onKeydown(e: KeyboardEvent) {
       e.preventDefault();
       hold();
       break;
-    case 'F8':
-      e.preventDefault();
-      submit(false);
-      break;
     case 'F9':
       e.preventDefault();
-      openSubmit();
+      submitOrder();
       break;
     case 'F10':
       e.preventDefault();

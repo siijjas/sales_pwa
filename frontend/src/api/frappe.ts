@@ -1544,3 +1544,6 @@ export function getPurchaseQueue() {
 export function getCounterPurchase(name: string) {
   return purchaseCall<import('../types').PurchaseOrderDetail>('get_counter_purchase', { name });
 }
+
+export const getFleetEntries = (kind: import('../types').FleetEntryKind, driver?: string) =>
+  getMethod<import('../types').FleetEntries>('sales_pwa.sales_app.manager_report.get_fleet_entries', { kind, driver });

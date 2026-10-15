@@ -55,6 +55,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/shift/closing-report/:name', name: 'closing-report', component: () => import('../views/ShiftReportView.vue') },
 
   // ── Manager ─────────────────────────────────────────────────────────────
+  { path: '/fleet/:kind', name: 'fleet-entries', component: () => import('../views/FleetEntriesView.vue'), meta: { requiresManager: true } },
   { path: '/reports', name: 'reports', component: () => import('../views/ReportsView.vue'), meta: { requiresManager: true } },
   { path: '/staff', name: 'staff', component: () => import('../views/StaffView.vue'), meta: { requiresManager: true } },
   { path: '/setup', name: 'setup', component: () => import('../views/SetupView.vue'), meta: { requiresManager: true } },

@@ -42,12 +42,12 @@
         <section>
           <SectionHeader title="Fleet today" action-label="Full reports" @action="router.push({ name: 'reports' })" />
           <div class="grid grid-cols-2 gap-2.5 md:grid-cols-3">
-            <KpiTile label="Sales" :value="money(t!.sales)" :sub="plural(t!.orders_count, 'order')" icon="cart" tone="primary" />
-            <KpiTile label="Collections" :value="money(t!.collections)" :sub="plural(t!.payments_count, 'payment')" icon="wallet" tone="success" />
-            <KpiTile label="Expenses" :value="money(t!.expenses)" :sub="plural(t!.expenses_count, 'entry', 'entries')" icon="file-text" tone="warning" />
-            <KpiTile label="Returns" :value="money(t!.returns)" :sub="plural(t!.returns_count, 'credit note')" icon="rotate-ccw" tone="danger" />
-            <KpiTile label="Cash on open shifts" :value="money(t!.expected_cash_open)" :sub="`${t!.open_shifts || 0} on the road`" icon="banknote" tone="info" />
-            <KpiTile label="Avg. order" :value="money(t!.avg_order)" :sub="`Net ${money(t!.net_sales)}`" icon="activity" tone="primary" />
+            <KpiTile label="Sales" :value="money(t!.sales)" :sub="plural(t!.orders_count, 'order')" icon="cart" tone="primary" interactive @click="drill('sales')" />
+            <KpiTile label="Collections" :value="money(t!.collections)" :sub="plural(t!.payments_count, 'payment')" icon="wallet" tone="success" interactive @click="drill('collections')" />
+            <KpiTile label="Expenses" :value="money(t!.expenses)" :sub="plural(t!.expenses_count, 'entry', 'entries')" icon="file-text" tone="warning" interactive @click="drill('expenses')" />
+            <KpiTile label="Returns" :value="money(t!.returns)" :sub="plural(t!.returns_count, 'credit note')" icon="rotate-ccw" tone="danger" interactive @click="drill('returns')" />
+            <KpiTile label="Cash on open shifts" :value="money(t!.expected_cash_open)" :sub="`${t!.open_shifts || 0} on the road`" icon="banknote" tone="info" interactive @click="drill('open_shifts')" />
+            <KpiTile label="Avg. order" :value="money(t!.avg_order)" :sub="`Net ${money(t!.net_sales)}`" icon="activity" tone="primary" interactive @click="drill('sales', 'largest')" />
           </div>
         </section>
 
@@ -126,7 +126,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import * as api from '../../api/frappe';
 import { useSessionStore } from '../../stores/session';
-import type { ManagerDashboard, ManagerDashboardVan } from '../../types';
+import type { FleetEntryKind, ManagerDashboard, ManagerDashboardVan } from '../../types';
 import { money, signedMoney, plural, longDate, time } from '../../utils/format';
 import WorkspacePage from '../WorkspacePage.vue';
 import { AppAlert, AppButton, AppCard, ActionTile, Avatar, EmptyState, KpiTile, SectionHeader, SkeletonList, StatusBadge } from '../ui';
@@ -170,6 +170,8 @@ const reportRoute = (v: ManagerDashboardVan) => {
   if (v.shift_status === 'closed' && v.closing_shift) return { name: 'closing-report', params: { name: v.closing_shift } };
   return null;
 };
+const drill = (kind: FleetEntryKind, sort?: 'largest') =>
+  router.push({ name: 'fleet-entries', params: { kind }, query: sort ? { sort } : {} });
 const closeShift = (opening: string) => router.push({ name: 'shift-close', query: { opening } });
 const openVan = (v: ManagerDashboardVan) => {
   const to = reportRoute(v);

@@ -555,3 +555,103 @@ def get_manager_dashboard():
 	totals["closed_shifts"] = sum(1 for v in vans if v["shift_status"] == "closed")
 	totals["expected_cash_open"] = sum(flt(v["expected_cash"]) for v in vans if v["shift_status"] == "open")
 	return {"date": str(today), "totals": totals, "vans": vans, "alerts": alerts}
+
+
+ENTRY_KINDS = ("sales", "collections", "expenses", "returns", "open_shifts")
+MAX_ENTRIES = 500
+
+
+def _entry_rows(kind: str, owners: tuple, day) -> list[dict]:
+	"""The documents behind one Fleet-today figure, on the same basis as _period_totals."""
+	params = {"owners": owners, "day": day, "limit": MAX_ENTRIES}
+	if kind == "sales":
+		return frappe.db.sql(
+			"""select name, owner as driver, customer, customer_name, base_grand_total as amount,
+				status, creation
+			from `tabSales Order`
+			where docstatus = 1 and transaction_date = %(day)s and owner in %(owners)s
+			order by creation desc limit %(limit)s""",
+			params,
+			as_dict=True,
+		)
+	if kind == "collections":
+		return frappe.db.sql(
+			"""select name, owner as driver, party as customer, party_name as customer_name,
+				base_paid_amount as amount, coalesce(mode_of_payment, 'Unspecified') as mode_of_payment, creation
+			from `tabPayment Entry`
+			where docstatus = 1 and payment_type = 'Receive' and posting_date = %(day)s and owner in %(owners)s
+			order by creation desc limit %(limit)s""",
+			params,
+			as_dict=True,
+		)
+	if kind == "returns":
+		return frappe.db.sql(
+			"""select name, owner as driver, customer, customer_name, -base_grand_total as amount,
+				return_against, creation
+			from `tabSales Invoice`
+			where docstatus = 1 and is_return = 1 and posting_date = %(day)s and owner in %(owners)s
+			order by creation desc limit %(limit)s""",
+			params,
+			as_dict=True,
+		)
+	if kind == "expenses":
+		return frappe.db.sql(
+			"""select * from (
+				select name, driver, coalesce(expense_type, 'Other') as expense_type, amount,
+					notes as remarks, creation
+				from `tabSales Expense Log`
+				where docstatus < 2 and expense_date = %(day)s and driver in %(owners)s
+				union all
+				select m.name, m.driver, coalesce(acc.account_name, m.target_account) as expense_type, m.amount,
+					m.remarks, m.creation
+				from `tabSales Cash Movement` m
+				left join `tabAccount` acc on acc.name = m.target_account
+				where m.docstatus = 1 and m.movement_type = 'Expense'
+					and m.posting_date = %(day)s and m.driver in %(owners)s
+			) as e order by creation desc limit %(limit)s""",
+			params,
+			as_dict=True,
+		)
+	# open_shifts: today's open shifts with the cash each one should be holding.
+	rows = []
+	for opening in frappe.get_all(
+		"Sales Shift Opening",
+		filters={"docstatus": 1, "status": "Open", "shift_date": day, "driver": ["in", owners]},
+		fields=["name", "driver", "period_start"],
+		order_by="period_start asc",
+	):
+		closing = _compute_closing(_serialize_opening(frappe.get_doc("Sales Shift Opening", opening.name)))
+		rows.append({
+			"name": opening.name,
+			"driver": opening.driver,
+			"since": str(opening.period_start) if opening.period_start else None,
+			"amount": flt(closing["expected_cash"]),
+			"opening_float": flt(closing["total_opening_float"]),
+			"collections": flt(closing["total_collections"]),
+			"expenses": flt(closing["total_expenses"]),
+			"deposits": flt(closing["total_deposits"]),
+			"sales": flt(closing["total_sales"]),
+		})
+	rows.sort(key=lambda r: -r["amount"])
+	return rows
+
+
+@frappe.whitelist()
+def get_fleet_entries(kind: str, driver: str | None = None):
+	"""Today's documents behind one Fleet-today card: orders, payments, expenses, credit
+	notes or open shifts, each with the staff member it is attributed to."""
+	_manager_only()
+	if kind not in ENTRY_KINDS:
+		frappe.throw(f"Unknown entry kind: {kind}")
+	today = getdate(nowdate())
+	fleet = _fleet(driver or None)
+	if not fleet:
+		return {"date": str(today), "kind": kind, "entries": []}
+	entries = _entry_rows(kind, tuple(fleet), today)
+	for row in entries:
+		info = fleet.get(row["driver"], {})
+		row["driver_name"] = info.get("driver_name") or row["driver"]
+		row["van_name"] = info.get("van_name")
+		if row.get("creation"):
+			row["creation"] = str(row["creation"])
+	return {"date": str(today), "kind": kind, "entries": entries}

@@ -945,6 +945,37 @@ export interface ManagerDashboard {
   alerts: ManagerAlert[];
 }
 
+export type FleetEntryKind = 'sales' | 'collections' | 'expenses' | 'returns' | 'open_shifts';
+
+/** One document behind a Fleet-today card; which optional fields are set depends on the kind. */
+export interface FleetEntry {
+  name: string;
+  driver: string;
+  driver_name: string;
+  van_name?: string | null;
+  amount: number;
+  creation?: string | null;
+  customer?: string | null;
+  customer_name?: string | null;
+  status?: string | null;
+  mode_of_payment?: string | null;
+  return_against?: string | null;
+  expense_type?: string | null;
+  remarks?: string | null;
+  since?: string | null;
+  opening_float?: number;
+  collections?: number;
+  expenses?: number;
+  deposits?: number;
+  sales?: number;
+}
+
+export interface FleetEntries {
+  date: string;
+  kind: FleetEntryKind;
+  entries: FleetEntry[];
+}
+
 export interface PeriodComparisonRow {
   metric: keyof FleetTotals;
   label: string;

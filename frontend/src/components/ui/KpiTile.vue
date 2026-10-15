@@ -12,7 +12,10 @@
       </span>
     </div>
     <p class="tnum mt-2 text-[28px] font-semibold leading-none text-foreground md:text-[32px]">{{ value }}</p>
-    <p v-if="sub" class="tnum mt-1.5 text-[13px] font-medium text-muted">{{ sub }}</p>
+    <div v-if="sub || interactive" class="mt-1.5 flex items-center justify-between gap-2">
+      <p class="tnum min-w-0 text-[13px] font-medium text-muted" :class="{ truncate: interactive }">{{ sub }}</p>
+      <AppIcon v-if="interactive" name="chevron-right" :size="16" class="shrink-0 text-subtle" />
+    </div>
   </component>
 </template>
 

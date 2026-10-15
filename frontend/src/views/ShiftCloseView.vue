@@ -1,5 +1,5 @@
 <template>
-  <WorkspacePage :back="{ name: 'shift' }" title="Close shift" :subtitle="summary ? (isOwnShift ? longDate(summary.shift_date) : `${summary.driver_name} · ${longDate(summary.shift_date)}`) : 'Count and reconcile'">
+  <WorkspacePage :back="['counter', 'counter-purchase'].includes(route.query.back as string) ? { name: route.query.back as string } : { name: 'shift' }" title="Close shift" :subtitle="summary ? (isOwnShift ? longDate(summary.shift_date) : `${summary.driver_name} · ${longDate(summary.shift_date)}`) : 'Count and reconcile'">
     <SkeletonList v-if="loading" :rows="3" height="7rem" />
 
     <div v-else-if="summary" class="space-y-4 pb-28">
@@ -27,6 +27,20 @@
         :message="`${outsideText} on ${shortDate(summary.shift_date)} before the shift opened and on no other closing. They are not in this closing's totals.`"
       />
       <AppAlert
+        v-if="summary.handover_to"
+        tone="info"
+        icon="arrow-right-left"
+        title="Hand your cash to the counter"
+        :message="`What you count here is handed over to the counter ${summary.handover_to}: it is added to that counter's drawer on its shift.`"
+      />
+      <AppAlert
+        v-if="summary.linked?.open_shifts?.length"
+        tone="warning"
+        icon="clock"
+        :title="`${plural(summary.linked.open_shifts.length, 'linked shift')} still open`"
+        :message="`${summary.linked.open_shifts.map((s) => s.driver_name).join(', ')} ${summary.linked.open_shifts.length === 1 ? 'has' : 'have'} not closed yet. Their cash is handed over when they close; close after them, or it lands on this counter's next shift.`"
+      />
+      <AppAlert
         v-if="summary.blind"
         tone="info"
         title="Blind count"
@@ -40,7 +54,29 @@
         <KpiTile v-if="!summary.blind" label="Expected cash" :value="money(summary.expected_cash ?? 0)" icon="banknote" tone="primary" />
         <KpiTile v-if="summary.total_expenses > 0" :class="summary.total_deposits > 0 ? '' : 'col-span-2'" label="Expenses paid" :value="money(summary.total_expenses)" icon="file-text" tone="warning" />
         <KpiTile v-if="summary.total_deposits > 0" :class="summary.total_expenses > 0 ? '' : 'col-span-2'" label="Deposited to office" :value="money(summary.total_deposits)" icon="banknote" tone="info" />
+        <KpiTile v-if="summary.total_supplier_payments > 0" :class="summary.total_purchases > 0 ? '' : 'col-span-2'" label="Paid to suppliers" :value="money(summary.total_supplier_payments)" sub="Already taken off each mode" icon="truck" tone="warning" />
+        <KpiTile v-if="summary.total_purchases > 0" :class="summary.total_supplier_payments > 0 ? '' : 'col-span-2'" label="Purchase orders" :value="money(summary.total_purchases)" icon="boxes" tone="info" />
       </div>
+
+      <!-- Overall shift: what linked staff handed over -->
+      <AppCard v-if="summary.linked?.handovers?.length || summary.total_linked_collections > 0 || summary.total_linked_sales > 0" padding="lg" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-[15px] font-bold text-foreground">Linked staff</p>
+          <p class="tnum text-[13px] text-muted">Sales {{ currency }} {{ money(summary.total_linked_sales) }}</p>
+        </div>
+        <div v-for="h in summary.linked.handovers" :key="h.closing" class="flex items-start justify-between gap-3 border-t border-line pt-2 text-[13px] first-of-type:border-0">
+          <span class="min-w-0">
+            <span class="block font-semibold text-foreground">{{ h.driver_name }}</span>
+            <span class="block text-xs text-muted">{{ h.profile }} · closed {{ h.closing }}<template v-if="h.net_difference"> · their variance {{ money(h.net_difference) }}</template></span>
+          </span>
+          <span class="tnum shrink-0 font-bold text-foreground">+ {{ currency }} {{ money(h.handed_over) }}</span>
+        </div>
+        <div v-if="summary.total_linked_collections > 0" class="flex items-center justify-between border-t border-line pt-2 text-[13px]">
+          <span class="text-foreground">Collected by staff without shifts</span>
+          <span class="tnum font-bold text-foreground">+ {{ currency }} {{ money(summary.total_linked_collections) }}</span>
+        </div>
+        <p class="text-xs text-muted">Already in the expected amounts below.</p>
+      </AppCard>
 
       <AppCard padding="lg" class="space-y-4">
         <div>

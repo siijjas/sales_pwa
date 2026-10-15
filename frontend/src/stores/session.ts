@@ -5,6 +5,7 @@ import { useSaleStore } from './sale';
 import { useReturnStore } from './returns';
 import { useShiftStore } from './shift';
 import { useCounterStore } from './counter';
+import { useCounterPurchaseStore } from './counterPurchase';
 import { usePrintSetupStore } from './printSetup';
 
 // A manager with no profile keeps the historical behaviour (see utils._capabilities).
@@ -12,6 +13,8 @@ const DEFAULT_CAPABILITIES: Capabilities = {
   is_field_sales: false,
   is_counter_sales: false,
   can_counter_sell: true,
+  can_counter_purchase: true,
+  can_record_expense: true,
   can_invoice: true,
   can_deliver: true,
   can_return: true,
@@ -59,6 +62,10 @@ export const useSessionStore = defineStore('session', {
     /** The Counter screen: Counter Sales staff, and managers (who see every screen). */
     canCounterSell(): boolean {
       return this.isManager || this.capabilities.can_counter_sell;
+    },
+    /** The Counter's Purchase screen. */
+    canCounterPurchase(): boolean {
+      return this.isManager || this.capabilities.can_counter_purchase;
     },
     usesShifts(): boolean {
       return this.capabilities.uses_shifts;
@@ -114,6 +121,7 @@ export const useSessionStore = defineStore('session', {
       useSaleStore().hydrate(user);
       useReturnStore().hydrate(user);
       useCounterStore().hydrate(user);
+      useCounterPurchaseStore().hydrate(user);
       usePrintSetupStore().hydrate(user);
       useShiftStore().reset();
     },
@@ -128,6 +136,7 @@ export const useSessionStore = defineStore('session', {
         useSaleStore().hydrate(null);
         useReturnStore().hydrate(null);
         useCounterStore().hydrate(null);
+        useCounterPurchaseStore().hydrate(null);
         usePrintSetupStore().hydrate(null);
         useShiftStore().reset();
       }

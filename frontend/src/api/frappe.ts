@@ -1468,3 +1468,79 @@ export function createCounterSale(
 export function getCounterQueue() {
   return counterCall<import('../types').CounterQueue>('get_counter_queue', {});
 }
+
+// ─── Counter purchases (Purchase Orders keyed in like a sale) ────────────────
+
+async function purchaseCall<T>(method: string, body: Record<string, unknown>): Promise<T> {
+  await refreshCsrfToken();
+  const res = await fetch(`/api/method/sales_pwa.sales_app.counter_purchase.${method}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify(body),
+  });
+  const data = await handleResponse(res);
+  return data.message as T;
+}
+
+export interface PurchaseCartPayload {
+  supplier: string;
+  items: Array<{ item_code: string; qty: number; rate: number }>;
+}
+
+export function getPurchaseContext() {
+  return purchaseCall<import('../types').PurchaseContext>('get_purchase_context', {});
+}
+
+export function searchSuppliers(search: string, limit = 12) {
+  return purchaseCall<import('../types').Supplier[]>('search_suppliers', { search, limit });
+}
+
+/** Same shape as the Counter's item search; the rate is the supplier's, the price list's, or the last purchase rate. */
+export function searchPurchaseItems(search: string, supplier?: string | null, limit = 15, signal?: AbortSignal) {
+  const params = new URLSearchParams({ search, limit: String(limit), ...(supplier ? { supplier } : {}) });
+  return fetch(`/api/method/sales_pwa.sales_app.counter_purchase.search_purchase_items?${params.toString()}`, {
+    method: 'GET',
+    headers: defaultHeaders(),
+    credentials: 'include',
+    signal,
+  })
+    .then(handleResponse)
+    .then((data) => data.message as import('../types').CounterSearchResult);
+}
+
+export function previewCounterPurchase(cart: PurchaseCartPayload) {
+  return purchaseCall<import('../types').PurchasePreview>('preview_counter_purchase', { supplier: cart.supplier, items: cart.items });
+}
+
+/** Save the cart as a Purchase Order: a draft with `hold`, else submitted. */
+export function createCounterPurchase(cart: PurchaseCartPayload, options: { orderName?: string | null; hold?: boolean } = {}) {
+  return purchaseCall<import('../types').PurchaseOrderResult>('create_counter_purchase', {
+    supplier: cart.supplier,
+    items: cart.items,
+    ...(options.orderName ? { order_name: options.orderName } : {}),
+    hold: options.hold ? 1 : 0,
+  });
+}
+
+/** Purchase Order → Purchase Invoice receiving the stock → (Payment Entry), in one request. */
+export function billCounterPurchase(
+  orderName: string,
+  options: { markAsPaid?: boolean; modeOfPayment?: string | null; billNo?: string | null; billDate?: string | null } = {},
+) {
+  return purchaseCall<import('../types').PurchaseBillResult>('bill_counter_purchase', {
+    order_name: orderName,
+    mark_as_paid: options.markAsPaid ? 1 : 0,
+    ...(options.markAsPaid ? { mode_of_payment: options.modeOfPayment || null } : {}),
+    ...(options.billNo ? { bill_no: options.billNo } : {}),
+    ...(options.billDate ? { bill_date: options.billDate } : {}),
+  });
+}
+
+export function getPurchaseQueue() {
+  return purchaseCall<import('../types').PurchaseQueue>('get_purchase_queue', {});
+}
+
+export function getCounterPurchase(name: string) {
+  return purchaseCall<import('../types').PurchaseOrderDetail>('get_counter_purchase', { name });
+}

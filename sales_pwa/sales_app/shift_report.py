@@ -119,6 +119,7 @@ def _build_report(
 	taxes: list[dict] | None = None,
 	draft_orders: list[dict] | None = None,
 	cash_mode: str | None = None,
+	linked_open_shifts: list[dict] | None = None,
 ) -> dict:
 	"""Assemble the report shape the summary and closing report share, from a shift's
 	transaction references.
@@ -129,8 +130,22 @@ def _build_report(
 	of the shift's orders; `draft_orders` the unsubmitted orders still hanging (only
 	meaningful on a summary, where they can still be submitted).
 	"""
+	# Records a counter's linked staff handed over (an overall shift) are reported
+	# apart: the rest of the report is the shift's own driver's activity.
+	linked_transactions = [t for t in transactions if t.get("linked_profile")]
+	transactions = [t for t in transactions if not t.get("linked_profile")]
+
 	order_names = _names(transactions, "Sales Order")
 	payment_amounts = _amounts(transactions, "Payment Entry")
+	# Supplier payments (Pay) share the doctype with collections (Receive): split them.
+	paid_out_amounts = {}
+	if payment_amounts:
+		for name in frappe.get_all(
+			"Payment Entry", filters={"name": ["in", list(payment_amounts)], "payment_type": "Pay"}, pluck="name"
+		):
+			paid_out_amounts[name] = payment_amounts.pop(name)
+	purchase_order_amounts = _amounts(transactions, "Purchase Order")
+	purchase_invoice_amounts = _amounts(transactions, "Purchase Invoice")
 	expense_amounts = _amounts(transactions, "Sales Expense Log")
 	movement_amounts = _amounts(transactions, "Sales Cash Movement")
 	invoice_amounts = _amounts(transactions, "Sales Invoice")
@@ -244,6 +259,53 @@ def _build_report(
 			)
 		]
 
+	# Purchases raised on the Counter, and what was paid to suppliers (by mode).
+	documents["purchases"] = []
+	if purchase_order_amounts:
+		billed = {}
+		if purchase_invoice_amounts:
+			for row in frappe.get_all(
+				"Purchase Invoice Item",
+				filters={"parent": ["in", list(purchase_invoice_amounts)], "purchase_order": ["in", list(purchase_order_amounts)]},
+				fields=["parent", "purchase_order"],
+			):
+				billed.setdefault(row.purchase_order, row.parent)
+		documents["purchases"] = [
+			{
+				"name": po.name,
+				"supplier": po.supplier,
+				"supplier_name": po.supplier_name,
+				"amount": purchase_order_amounts[po.name],
+				"invoice": billed.get(po.name),
+				"status": po.status,
+				"creation": po.creation,
+			}
+			for po in frappe.get_all(
+				"Purchase Order",
+				filters={"name": ["in", list(purchase_order_amounts)]},
+				fields=["name", "supplier", "supplier_name", "status", "creation"],
+				order_by="creation asc",
+			)
+		]
+	supplier_payments = []
+	if paid_out_amounts:
+		supplier_payments = [
+			{
+				"name": pe.name,
+				"party": pe.party,
+				"party_name": pe.party_name,
+				"mode_of_payment": pe.mode_of_payment or "Cash",
+				"amount": paid_out_amounts[pe.name],
+				"creation": pe.creation,
+			}
+			for pe in frappe.get_all(
+				"Payment Entry",
+				filters={"name": ["in", list(paid_out_amounts)]},
+				fields=["name", "party", "party_name", "mode_of_payment", "creation"],
+				order_by="creation asc",
+			)
+		]
+
 	# The drawer mode expenses and deposits were deducted from (see shift._compute_closing).
 	if cash_mode is None:
 		cash_mode = _drawer_mode([r["mode_of_payment"] for r in reconciliation], _cash_modes(), header["driver"])
@@ -266,14 +328,104 @@ def _build_report(
 			"expenses_count": len(expenses),
 			"deposits_count": len(deposits),
 			"total_deposits": flt(totals.get("total_deposits")) or sum(d["amount"] for d in deposits),
+			"purchases_count": len(purchase_order_amounts),
+			"total_purchases": flt(totals.get("total_purchases")) or sum(purchase_order_amounts.values()),
+			"supplier_payments_count": len(supplier_payments),
+			"total_supplier_payments": flt(totals.get("total_supplier_payments")) or sum(p["amount"] for p in supplier_payments),
 		},
 		"payment_reconciliation": reconciliation,
 		"collections": list(collections.values()),
 		"taxes": taxes or [],
 		"expenses": expenses,
 		"deposits": deposits,
+		"supplier_payments": supplier_payments,
+		"linked": _linked_section(linked_transactions, linked_open_shifts, cash_mode),
 		"items": _item_rows(order_names, returns),
 		"draft_orders": draft_orders or [],
+	}
+
+
+def _linked_section(transactions: list[dict], open_shifts: list[dict] | None, cash_mode: str | None) -> dict:
+	"""The overall shift's linked staff: the closings they handed over (what each
+	counted, per mode) and, for staff without shifts, their orders and payments
+	grouped per person. `open_shifts` (a live summary only) are those still out."""
+	cash_modes = _cash_modes()
+	closing_amounts = _amounts(transactions, "Sales Shift Closing")
+	order_amounts = _amounts(transactions, "Sales Order")
+	payment_amounts = _amounts(transactions, "Payment Entry")
+	profile_of = {t["reference_name"]: t.get("linked_profile") for t in transactions}
+
+	handovers = []
+	drawer_amount = 0.0
+	if closing_amounts:
+		for c in frappe.get_all(
+			"Sales Shift Closing",
+			filters={"name": ["in", list(closing_amounts)]},
+			fields=["name", "opening_shift", "driver", "van_profile", "shift_date", "period_end", "total_sales", "total_collections", "net_difference"],
+			order_by="creation asc",
+		):
+			by_mode = [
+				{"mode_of_payment": r.mode_of_payment, "amount": flt(r.closing_amount)}
+				for r in frappe.get_all(
+					"Sales Shift Payment Reconciliation",
+					filters={"parent": c.name, "parenttype": "Sales Shift Closing"},
+					fields=["mode_of_payment", "closing_amount"],
+					order_by="idx asc",
+				)
+				if flt(r.closing_amount)
+			]
+			drawer_amount += sum(m["amount"] for m in by_mode if m["mode_of_payment"] in cash_modes)
+			handovers.append(
+				{
+					"closing": c.name,
+					"opening_shift": c.opening_shift,
+					"driver": c.driver,
+					"driver_name": frappe.utils.get_fullname(c.driver),
+					"profile": c.van_profile,
+					"shift_date": str(c.shift_date),
+					"period_end": str(c.period_end) if c.period_end else None,
+					"total_sales": flt(c.total_sales),
+					"total_collections": flt(c.total_collections),
+					"handed_over": closing_amounts[c.name],
+					"net_difference": flt(c.net_difference),
+					"by_mode": by_mode,
+				}
+			)
+
+	staff: dict[str, dict] = {}
+
+	def person(owner: str, profile: str | None) -> dict:
+		return staff.setdefault(
+			owner,
+			{"driver": owner, "driver_name": frappe.utils.get_fullname(owner), "profile": profile, "orders_count": 0, "sales_total": 0.0, "payments_count": 0, "collections_total": 0.0, "by_mode": {}},
+		)
+
+	if order_amounts:
+		for so in frappe.get_all("Sales Order", filters={"name": ["in", list(order_amounts)]}, fields=["name", "owner"]):
+			row = person(so.owner, profile_of.get(so.name))
+			row["orders_count"] += 1
+			row["sales_total"] += order_amounts[so.name]
+	if payment_amounts:
+		for pe in frappe.get_all("Payment Entry", filters={"name": ["in", list(payment_amounts)]}, fields=["name", "owner", "mode_of_payment"]):
+			row = person(pe.owner, profile_of.get(pe.name))
+			mode = pe.mode_of_payment or "Cash"
+			row["payments_count"] += 1
+			row["collections_total"] += payment_amounts[pe.name]
+			row["by_mode"][mode] = row["by_mode"].get(mode, 0.0) + payment_amounts[pe.name]
+			if not pe.mode_of_payment or pe.mode_of_payment in cash_modes:
+				drawer_amount += payment_amounts[pe.name]
+	direct = [{**row, "by_mode": [{"mode_of_payment": m, "amount": a} for m, a in row["by_mode"].items()]} for row in staff.values()]
+
+	return {
+		"handovers": handovers,
+		"direct": direct,
+		"open_shifts": open_shifts or [],
+		# What of it went into the counter's drawer (cash-type modes), for the cash breakdown.
+		"drawer_amount": drawer_amount,
+		"cash_mode": cash_mode,
+		"total_handover": sum(h["handed_over"] for h in handovers),
+		"total_linked_sales": sum(h["total_sales"] for h in handovers) + sum(r["sales_total"] for r in direct),
+		"total_linked_collections": sum(r["collections_total"] for r in direct),
 	}
 
 
@@ -308,7 +460,8 @@ def build_shift_summary(opening_doc) -> dict:
 		key: computed[key]
 		for key in (
 			"total_sales", "net_total", "total_taxes", "total_quantity", "total_returns",
-			"total_collections", "total_expenses", "total_deposits", "total_opening_float", "expected_cash",
+			"total_collections", "total_expenses", "total_deposits", "total_purchases", "total_supplier_payments",
+			"total_handover", "total_linked_sales", "total_linked_collections", "total_opening_float", "expected_cash",
 		)
 	}
 	totals["variance_tolerance"] = _variance_tolerance(opening_doc.van_profile)
@@ -325,6 +478,7 @@ def build_shift_summary(opening_doc) -> dict:
 		taxes=computed["taxes"],
 		draft_orders=computed["draft_orders"],
 		cash_mode=computed["cash_mode"],
+		linked_open_shifts=computed["linked"]["open_shifts"],
 	)
 
 
@@ -334,7 +488,7 @@ def build_closing_report(closing_doc) -> dict:
 		frappe.throw("The closing report is only available for a submitted shift closing.")
 
 	transactions = [
-		{"reference_doctype": t.reference_doctype, "reference_name": t.reference_name, "amount": flt(t.amount)}
+		{"reference_doctype": t.reference_doctype, "reference_name": t.reference_name, "amount": flt(t.amount), "linked_profile": t.get("linked_profile")}
 		for t in closing_doc.transactions
 	]
 	recorded = {t["reference_doctype"] for t in transactions}
@@ -345,8 +499,9 @@ def build_closing_report(closing_doc) -> dict:
 		key: flt(closing_doc.get(key))
 		for key in (
 			"total_sales", "net_total", "total_taxes", "total_quantity", "total_returns",
-			"total_collections", "total_expenses", "total_deposits", "total_opening_float",
-			"expected_cash", "net_difference", "variance_tolerance",
+			"total_collections", "total_expenses", "total_deposits", "total_purchases", "total_supplier_payments",
+			"total_handover", "total_linked_sales", "total_linked_collections",
+			"total_opening_float", "expected_cash", "net_difference", "variance_tolerance",
 		)
 	}
 	totals["variance_status"] = closing_doc.get("variance_status") or variance_status(

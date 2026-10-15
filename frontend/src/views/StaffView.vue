@@ -190,6 +190,50 @@
           </div>
         </FormSection>
 
+        <!-- Counter purchases -->
+        <FormSection v-if="isCounterSales" title="Purchases on the Counter" icon="truck">
+          <ToggleSwitch
+            :model-value="form.allow_counter_purchase !== false"
+            label="Allow purchase orders"
+            hint="The Counter's Purchase screen: Purchase Orders for suppliers, billed to receive the stock into the selling warehouse, paid from the drawer or on credit."
+            @update:model-value="(v: boolean) => (form.allow_counter_purchase = v)"
+          />
+          <div v-if="form.allow_counter_purchase !== false" class="mt-4 grid gap-4 md:grid-cols-2">
+            <FormField label="Buying price list" hint="The rate a purchase line starts on; the cashier can change it.">
+              <BaseSelect :model-value="form.buying_price_list ?? ''" @update:model-value="(v) => (form.buying_price_list = v)" placeholder="Default from buying settings">
+                <option v-for="p in options.buying_price_lists || []" :key="p.name" :value="p.name">{{ p.name }}</option>
+              </BaseSelect>
+            </FormField>
+            <FormField label="Purchase taxes template" hint="Blank: no purchase tax.">
+              <BaseSelect :model-value="form.purchase_taxes_and_charges ?? ''" @update:model-value="(v) => (form.purchase_taxes_and_charges = v)" placeholder="No purchase tax">
+                <option v-for="t in (options.purchase_tax_templates || []).filter((t) => !form.company || t.company === form.company)" :key="t.name" :value="t.name">{{ t.name }}</option>
+              </BaseSelect>
+            </FormField>
+          </div>
+        </FormSection>
+
+        <!-- Overall shift: linked staff hand over to this counter -->
+        <FormSection v-if="isCounterSales" title="Overall shift (linked staff)" icon="clock" :badge="`${form.linked_profiles?.length || 0}`">
+          <p class="text-xs text-muted">
+            Staff on these profiles hand over to this counter, so its shift becomes the overall shift. Staff on shifts hand over when they close theirs: the cash they counted is added to this counter's expected amounts. Staff without shifts roll in directly: their orders and payments count on this counter's shift. Only what they do from the moment they are linked counts.
+          </p>
+          <p v-if="!linkableProfiles.length" class="text-sm text-muted">No Van Sales or Field Sales profile in this company yet.</p>
+          <div v-else class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <label
+              v-for="p in linkableProfiles"
+              :key="p.name"
+              class="flex items-center gap-3 rounded-2xl border p-3 transition"
+              :class="[(form.linked_profiles || []).includes(p.name) ? 'border-success/40 bg-success/[0.06]' : 'border-line hover:bg-card-muted', p.linkedElsewhere ? 'cursor-not-allowed opacity-60' : 'cursor-pointer']"
+            >
+              <input type="checkbox" :value="p.name" v-model="form.linked_profiles" :disabled="!!p.linkedElsewhere" class="h-4 w-4 accent-primary" />
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-semibold text-foreground">{{ p.profile_name }}</span>
+                <span class="block truncate text-xs text-muted">{{ p.profile_type }} · {{ p.use_shifts ? 'hands over at shift close' : 'no shifts: rolls in directly' }}<template v-if="p.linkedElsewhere"> · linked to {{ p.linkedElsewhere }}</template></span>
+              </span>
+            </label>
+          </div>
+        </FormSection>
+
         <!-- Pricing & tax -->
         <FormSection title="Pricing & tax" icon="receipt">
           <div class="grid gap-4 md:grid-cols-2">
@@ -497,6 +541,10 @@ const defaultForm = (): Partial<SalesProfile> => ({
   stock_warehouse: '',
   default_customer: '',
   default_customer_name: '',
+  allow_counter_purchase: true,
+  buying_price_list: '',
+  purchase_taxes_and_charges: '',
+  linked_profiles: [],
   delivery_route: '',
   default_cash_mode: '',
   selling_price_list: '',
@@ -629,6 +677,16 @@ const allowedCashModes = computed(() => {
 
 const isFieldSales = computed(() => form.value.profile_type === 'Field Sales');
 const isCounterSales = computed(() => form.value.profile_type === 'Counter Sales');
+// Van and Field Sales profiles of the same company; one already handing over to another active counter can't be picked.
+const linkableProfiles = computed(() =>
+  profiles.value
+    .filter((p) => p.profile_type !== 'Counter Sales' && p.name !== form.value.name && (!form.value.company || p.company === form.value.company))
+    .map((p) => ({
+      ...p,
+      linkedElsewhere:
+        profiles.value.find((c) => c.profile_type === 'Counter Sales' && c.is_active && c.name !== form.value.name && (c.linked_profiles || []).includes(p.name))?.profile_name || '',
+    })),
+);
 const profileTypeHint = computed(() =>
   isFieldSales.value
     ? 'Staff take orders and collect payments. Invoicing, delivery and returns stay in the back office.'
@@ -742,6 +800,7 @@ function startNew() {
 function selectProfile(p: SalesProfile) {
   selectedProfile.value = p;
   form.value = JSON.parse(JSON.stringify(p));
+  form.value.linked_profiles ||= [];
   errorMsg.value = '';
 }
 

@@ -25,7 +25,7 @@ export function useNavigation() {
     : { name: 'home', label: 'Home', icon: 'home', to: { name: 'home' }, names: ['home'] };
 
   const sell: NavItem = { name: 'sell', label: 'Sell', icon: 'cart', to: { name: 'sell' }, names: ['sell', 'sell-customer', 'sell-items', 'sell-review'], hint: 'New order, invoice and collect' };
-  const counter: NavItem = { name: 'counter', label: 'Counter', icon: 'monitor', to: { name: 'counter' }, names: ['counter'], hint: 'Fast keyboard order entry on a PC' };
+  const counter: NavItem = { name: 'counter', label: 'Counter', icon: 'monitor', to: { name: 'counter' }, names: ['counter', 'counter-purchase'], hint: 'Fast keyboard sales, purchases and expenses on a PC' };
   const customers: NavItem = { name: 'customers', label: 'Customers', icon: 'users', to: { name: 'customers' }, names: ['customers', 'customer', 'collect', 'ledger', 'return-items', 'return-review'], hint: 'Balances, payments, returns' };
   const activity: NavItem = { name: 'activity', label: 'Activity', icon: 'receipt', to: { name: 'activity' }, names: ['activity', 'order', 'payment'], hint: 'Orders and payments' };
   const stock: NavItem = { name: 'stock', label: 'Stock', icon: 'boxes', to: { name: 'stock' }, names: ['stock', 'stock-load'], hint: 'Van stock and loading' };

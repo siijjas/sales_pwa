@@ -26,6 +26,7 @@ const routes: RouteRecordRaw[] = [
 
   // ── Counter: fast keyboard order entry on a PC ──────────────────────────
   { path: '/counter', name: 'counter', component: () => import('../views/CounterView.vue'), meta: { capability: 'can_counter_sell' } },
+  { path: '/counter/purchase', name: 'counter-purchase', component: () => import('../views/CounterPurchaseView.vue'), meta: { capability: 'can_counter_purchase' } },
 
   // ── Customers ───────────────────────────────────────────────────────────
   { path: '/customers', name: 'customers', component: () => import('../views/CustomersView.vue') },

@@ -95,7 +95,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import * as api from '../../api/frappe';
-import type { CounterItem } from '../../types';
+import type { CounterItem, CounterSearchResult } from '../../types';
 import { money, qty as qtyFmt } from '../../utils/format';
 import { AppButton, AppIcon, StatusBadge } from '../ui';
 
@@ -107,8 +107,10 @@ const props = withDefaults(
     /** Profile: out-of-stock items can still be keyed in (the invoice then delivers what there is). */
     allowWithoutStock?: boolean;
     placeholder?: string;
+    /** Another catalog to search (the Purchase screen's buying rates); same result shape. */
+    search?: (q: string, signal: AbortSignal) => Promise<CounterSearchResult>;
   }>(),
-  { placeholder: 'Item: type a code, name or barcode' },
+  { placeholder: 'Item: type a code, name or barcode', search: undefined },
 );
 const emit = defineEmits<{
   (e: 'add', item: CounterItem, qty: number, rate: number): void;
@@ -171,7 +173,7 @@ function search(q: string) {
     timer = window.setTimeout(async () => {
       controller = new AbortController();
       try {
-        const res = await api.searchCounterItems(query, props.customer, 15, controller.signal);
+        const res = await (props.search ? props.search(query, controller.signal) : api.searchCounterItems(query, props.customer, 15, controller.signal));
         if (seq !== requestSeq) return;
         results.value = res.items;
         highlighted.value = 0;

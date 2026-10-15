@@ -202,6 +202,16 @@ def _shift_payment_entries(user: str, start, end) -> list:
 	)
 
 
+def _shift_supplier_payments(user: str, start, end) -> list:
+	"""What the user paid suppliers inside the window (the Counter's Purchase screen,
+	or any Pay Payment Entry they made): money that left their drawer or account."""
+	return frappe.get_all(
+		"Payment Entry",
+		filters=_in_window(user, start, end, docstatus=1, payment_type="Pay", party_type="Supplier"),
+		fields=["name", "mode_of_payment", "paid_amount", "posting_date"],
+	)
+
+
 def _collections_by_mode(entries: list) -> dict[str, float]:
 	"""Collections summed per mode."""
 	totals: dict[str, float] = {}
@@ -306,6 +316,186 @@ def _outside_window(user: str, shift_date, start) -> dict:
 	}
 
 
+def _linked_profiles(van_profile: str | None) -> list[dict]:
+	"""The Van and Field Sales profiles that hand over to this Counter Sales profile
+	(Sales Profile.linked_profiles): [] for any other profile."""
+	if not van_profile or frappe.db.get_value("Sales Profile", van_profile, "profile_type") != "Counter Sales":
+		return []
+	out = []
+	for row in frappe.get_all(
+		"Sales Profile Linked Profile",
+		filters={"parent": van_profile, "parenttype": "Sales Profile"},
+		fields=["linked_profile", "linked_on"],
+		order_by="idx asc",
+	):
+		uses_shifts = frappe.db.get_value("Sales Profile", row.linked_profile, "use_shifts")
+		if uses_shifts is None:
+			continue
+		out.append(
+			{
+				"profile": row.linked_profile,
+				"linked_on": get_datetime(row.linked_on) if row.linked_on else None,
+				"uses_shifts": bool(frappe.utils.cint(uses_shifts)),
+				"drivers": frappe.get_all(
+					"Sales Profile Driver", filters={"parent": row.linked_profile, "parenttype": "Sales Profile"}, pluck="driver_user"
+				),
+			}
+		)
+	return out
+
+
+def counter_for_profile(van_profile: str | None) -> str | None:
+	"""The active Counter Sales profile this profile hands over to, if any."""
+	if not van_profile:
+		return None
+	row = frappe.db.sql(
+		"""select p.name from `tabSales Profile Linked Profile` l
+		join `tabSales Profile` p on p.name = l.parent
+		where l.parenttype = 'Sales Profile' and l.linked_profile = %s and p.is_active = 1
+		order by p.creation asc limit 1""",
+		van_profile,
+	)
+	return row[0][0] if row else None
+
+
+def _linked_activity(opening: dict, end, cash_modes: set[str], drawer_mode: str) -> dict:
+	"""The overall shift of a counter: what its linked staff hand over to it.
+
+	- Staff on shifts hand over when they close theirs: each of their submitted
+	  closings not yet claimed by another closing adds what they counted, per mode,
+	  to this shift's expected amounts (cash-type modes into this counter's drawer,
+	  the rest into the mode of the same name). Their own closing keeps their orders
+	  and payments, so nothing is counted twice.
+	- Staff without shifts have no closing to hand over: their submitted orders,
+	  invoices and receive payments not yet claimed roll in directly.
+
+	Both only from the moment the profile was linked (linked_on) up to the end of
+	this shift, so anything handed over while the counter was closed lands on its
+	next shift. Every record is kept in the transactions list with its linked
+	profile, which is also what stops another closing from claiming it again.
+	"""
+	result = {
+		"handovers": [],
+		"open_shifts": [],
+		"by_mode": {},
+		"total_handover": 0.0,
+		"total_linked_sales": 0.0,
+		"total_linked_collections": 0.0,
+		"transactions": [],
+	}
+	links = _linked_profiles(opening.get("van_profile"))
+	if not links:
+		return result
+
+	def fold(mode: str | None) -> str:
+		return drawer_mode if not mode or mode in cash_modes else mode
+
+	def add(mode: str | None, amount: float):
+		key = fold(mode)
+		result["by_mode"][key] = result["by_mode"].get(key, 0.0) + flt(amount)
+
+	for link in links:
+		since = link["linked_on"] or get_datetime(opening.get("period_start") or nowdate())
+		window = ["between", [since, end]]
+		profile = link["profile"]
+
+		closings = _unclaimed(
+			"Sales Shift Closing",
+			frappe.get_all(
+				"Sales Shift Closing",
+				filters={"van_profile": profile, "docstatus": 1, "creation": window},
+				fields=["name", "opening_shift", "driver", "shift_date", "total_sales", "total_collections", "net_difference", "creation"],
+				order_by="creation asc",
+			),
+		)
+		for closing in closings:
+			counted = frappe.get_all(
+				"Sales Shift Payment Reconciliation",
+				filters={"parent": closing.name, "parenttype": "Sales Shift Closing"},
+				fields=["mode_of_payment", "closing_amount"],
+				order_by="idx asc",
+			)
+			handed = flt(sum(flt(r.closing_amount) for r in counted))
+			for r in counted:
+				add(r.mode_of_payment, r.closing_amount)
+			result["total_handover"] += handed
+			result["total_linked_sales"] += flt(closing.total_sales)
+			result["handovers"].append(
+				{
+					"closing": closing.name,
+					"opening_shift": closing.opening_shift,
+					"driver": closing.driver,
+					"driver_name": frappe.utils.get_fullname(closing.driver),
+					"profile": profile,
+					"shift_date": str(closing.shift_date),
+					"total_sales": flt(closing.total_sales),
+					"total_collections": flt(closing.total_collections),
+					"handed_over": handed,
+					"net_difference": flt(closing.net_difference),
+					"by_mode": [{"mode_of_payment": r.mode_of_payment, "amount": flt(r.closing_amount)} for r in counted if flt(r.closing_amount)],
+				}
+			)
+			result["transactions"].append(
+				{
+					"reference_doctype": "Sales Shift Closing",
+					"reference_name": closing.name,
+					"posting_date": closing.shift_date,
+					"amount": handed,
+					"linked_profile": profile,
+				}
+			)
+
+		result["open_shifts"] += [
+			{
+				"opening_shift": row.name,
+				"driver": row.driver,
+				"driver_name": frappe.utils.get_fullname(row.driver),
+				"profile": profile,
+				"shift_date": str(row.shift_date),
+				"period_start": str(row.period_start) if row.period_start else None,
+			}
+			for row in frappe.get_all(
+				"Sales Shift Opening",
+				filters={"van_profile": profile, "docstatus": 1, "status": "Open"},
+				fields=["name", "driver", "shift_date", "period_start"],
+				order_by="period_start asc",
+			)
+		]
+
+		drivers = [d for d in link["drivers"] if d and d != opening.get("driver")]
+		if link["uses_shifts"] or not drivers:
+			continue
+		base = {"owner": ["in", drivers], "docstatus": 1, "creation": window}
+		orders = _unclaimed("Sales Order", frappe.get_all("Sales Order", filters=base, fields=["name", "grand_total", "transaction_date"]))
+		invoices = _unclaimed("Sales Invoice", frappe.get_all("Sales Invoice", filters=base, fields=["name", "grand_total", "posting_date"]))
+		payments = _unclaimed(
+			"Payment Entry",
+			frappe.get_all(
+				"Payment Entry", filters={**base, "payment_type": "Receive"}, fields=["name", "mode_of_payment", "paid_amount", "posting_date"]
+			),
+		)
+		result["total_linked_sales"] += flt(sum(flt(o.grand_total) for o in orders))
+		for pe in payments:
+			add(pe.mode_of_payment, pe.paid_amount)
+			result["total_linked_collections"] += flt(pe.paid_amount)
+		for doctype, rows, date_field, amount_field in (
+			("Sales Order", orders, "transaction_date", "grand_total"),
+			("Sales Invoice", invoices, "posting_date", "grand_total"),
+			("Payment Entry", payments, "posting_date", "paid_amount"),
+		):
+			result["transactions"] += [
+				{
+					"reference_doctype": doctype,
+					"reference_name": row.name,
+					"posting_date": row.get(date_field),
+					"amount": flt(row.get(amount_field)),
+					"linked_profile": profile,
+				}
+				for row in rows
+			]
+	return result
+
+
 def _compute_closing(opening: dict) -> dict:
 	"""Build the per-mode reconciliation rows and headline totals for a closing.
 
@@ -327,6 +517,9 @@ def _compute_closing(opening: dict) -> dict:
 	}
 	payment_entries = _unclaimed("Payment Entry", _shift_payment_entries(user, start, end))
 	collections = _collections_by_mode(payment_entries)
+	# Suppliers paid during the shift come off the mode they were paid from.
+	supplier_payments = _unclaimed("Payment Entry", _shift_supplier_payments(user, start, end))
+	paid_out = _collections_by_mode(supplier_payments)
 
 	# Sales = submitted Sales Orders created inside the window (single source of truth).
 	# Fetched itemized (not a raw sum()) so the exact records can be recorded on the
@@ -380,6 +573,27 @@ def _compute_closing(opening: dict) -> dict:
 	)
 	total_returns = flt(abs(sum(flt(si.grand_total) for si in sales_invoices if si.is_return)))
 
+	# Purchases raised on the Counter: not in the drawer by themselves (only what was
+	# paid for them is), but the closing reports them and keeps the references.
+	purchase_orders = _unclaimed(
+		"Purchase Order",
+		frappe.get_all(
+			"Purchase Order",
+			filters=_in_window(user, start, end, docstatus=1),
+			fields=["name", "grand_total", "transaction_date"],
+		),
+	)
+	purchase_invoices = _unclaimed(
+		"Purchase Invoice",
+		frappe.get_all(
+			"Purchase Invoice",
+			filters=_in_window(user, start, end, docstatus=1),
+			fields=["name", "grand_total", "posting_date"],
+		),
+	)
+	total_purchases = flt(sum(flt(po.grand_total) for po in purchase_orders))
+	total_supplier_payments = flt(sum(paid_out.values()))
+
 	transactions = (
 		[
 			{
@@ -406,7 +620,25 @@ def _compute_closing(opening: dict) -> dict:
 				"posting_date": pe.posting_date,
 				"amount": flt(pe.paid_amount),
 			}
-			for pe in payment_entries
+			for pe in payment_entries + supplier_payments
+		]
+		+ [
+			{
+				"reference_doctype": "Purchase Order",
+				"reference_name": po.name,
+				"posting_date": po.transaction_date,
+				"amount": flt(po.grand_total),
+			}
+			for po in purchase_orders
+		]
+		+ [
+			{
+				"reference_doctype": "Purchase Invoice",
+				"reference_name": pi.name,
+				"posting_date": pi.posting_date,
+				"amount": flt(pi.grand_total),
+			}
+			for pi in purchase_invoices
 		]
 		+ [
 			{
@@ -429,7 +661,7 @@ def _compute_closing(opening: dict) -> dict:
 	)
 
 	cash_modes = _cash_modes()
-	modes = list(dict.fromkeys(list(opening_floats) + list(collections)))
+	modes = list(dict.fromkeys(list(opening_floats) + list(collections) + list(paid_out)))
 	cash_row_mode = _drawer_mode(modes, cash_modes, user)
 	if cash_row_mode not in modes:
 		# Ensure the drawer row exists so expenses have somewhere to land even when
@@ -440,12 +672,17 @@ def _compute_closing(opening: dict) -> dict:
 		# doc-level permission checks on submit.
 		modes.insert(0, cash_row_mode)
 
+	# An overall shift on a counter: what its linked staff handed over.
+	linked = _linked_activity(opening, end, cash_modes, cash_row_mode)
+	modes += [m for m in linked["by_mode"] if m not in modes]
+
 	rows = []
 	for mode in modes:
 		opening_amount = opening_floats.get(mode, 0.0)
-		expected = opening_amount + collections.get(mode, 0.0)
+		expected = opening_amount + collections.get(mode, 0.0) - paid_out.get(mode, 0.0)
 		if mode == cash_row_mode:
 			expected -= total_expenses + total_deposits
+		expected += linked["by_mode"].get(mode, 0.0)
 		rows.append(
 			{
 				"mode_of_payment": mode,
@@ -473,9 +710,15 @@ def _compute_closing(opening: dict) -> dict:
 		"total_collections": sum(collections.values()),
 		"total_expenses": total_expenses,
 		"total_deposits": total_deposits,
+		"total_purchases": total_purchases,
+		"total_supplier_payments": total_supplier_payments,
 		"total_opening_float": sum(opening_floats.values()),
 		"expected_cash": expected_cash,
-		"transactions": transactions,
+		"transactions": transactions + linked["transactions"],
+		"total_handover": flt(linked["total_handover"]),
+		"total_linked_sales": flt(linked["total_linked_sales"]),
+		"total_linked_collections": flt(linked["total_linked_collections"]),
+		"linked": {key: linked[key] for key in ("handovers", "open_shifts")},
 		"draft_orders": _draft_orders(user, start, end),
 		"outside_window": _outside_window(user, shift_date, start),
 	}
@@ -623,6 +866,14 @@ def get_shift_closing_summary(opening_shift: str | None = None):
 		"total_collections": computed["total_collections"],
 		"total_expenses": computed["total_expenses"],
 		"total_deposits": computed["total_deposits"],
+		"total_purchases": computed["total_purchases"],
+		"total_supplier_payments": computed["total_supplier_payments"],
+		"total_handover": computed["total_handover"],
+		"total_linked_sales": computed["total_linked_sales"],
+		"total_linked_collections": computed["total_linked_collections"],
+		"linked": computed["linked"],
+		# A linked van or field rep: the counter their counted cash goes to.
+		"handover_to": counter_for_profile(opening_doc.van_profile),
 		"total_opening_float": computed["total_opening_float"],
 		"expected_cash": None if blind else computed["expected_cash"],
 		"variance_tolerance": _variance_tolerance(opening_doc.van_profile),
@@ -676,6 +927,11 @@ def close_shift(opening_shift: str, reconciliation, notes: str = None):
 	doc.total_collections = computed["total_collections"]
 	doc.total_expenses = computed["total_expenses"]
 	doc.total_deposits = computed["total_deposits"]
+	doc.total_purchases = computed["total_purchases"]
+	doc.total_supplier_payments = computed["total_supplier_payments"]
+	doc.total_handover = computed["total_handover"]
+	doc.total_linked_sales = computed["total_linked_sales"]
+	doc.total_linked_collections = computed["total_linked_collections"]
 	doc.total_opening_float = computed["total_opening_float"]
 	doc.expected_cash = computed["expected_cash"]
 	doc.variance_tolerance = _variance_tolerance(opening_doc.van_profile)
@@ -735,6 +991,19 @@ def reopen_shift(closing_shift: str):
 	closing = frappe.get_doc("Sales Shift Closing", closing_shift)
 	if closing.docstatus != 1:
 		frappe.throw("Only a submitted shift closing can be reopened.")
+	# Handed over to a counter whose shift already closed on it: reopening this one
+	# would let its cash be counted again on the counter's next shift.
+	claimed_by = frappe.db.sql(
+		"""select c.name from `tabSales Shift Transaction` t
+		join `tabSales Shift Closing` c on c.name = t.parent and c.docstatus = 1
+		where t.parenttype = 'Sales Shift Closing' and t.reference_doctype = 'Sales Shift Closing'
+			and t.reference_name = %s""",
+		closing_shift,
+	)
+	if claimed_by:
+		frappe.throw(
+			f"This shift was handed over to the counter shift {claimed_by[0][0]}. Reopen that one first."
+		)
 	other = frappe.db.get_value(
 		"Sales Shift Opening",
 		{"driver": closing.driver, "status": "Open", "docstatus": 1, "name": ["!=", closing.opening_shift]},

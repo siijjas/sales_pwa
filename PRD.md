@@ -6,7 +6,7 @@
 
 - **Van Sales** — drivers who carry stock: take orders, invoice and deliver on the spot, take returns, load the van, collect payments, and run a cash shift with an opening float, expenses and deposits out of the drawer, and a counted-cash closing.
 - **Field Sales** — order takers with no van: take orders and collect payments, see read-only stock from a chosen warehouse, and leave invoicing, delivery and returns to the back office. Shifts are optional for them.
-- **Counter Sales** — a cashier or data entry operator at a PC: keys orders in on the keyboard-first Counter screen, sells and invoices straight from one warehouse, collects payment on the spot, and can start every sale on a default (walk-in) customer. Shifts work as for a van.
+- **Counter Sales** — a cashier or data entry operator at a PC: keys orders in on the keyboard-first Counter screen, sells and invoices straight from one warehouse, collects payment on the spot, and can start every sale on a default (walk-in) customer. The same screen raises Purchase Orders (billed to receive the stock, paid from the drawer or on credit) and records expenses from the drawer. Shifts work as for a van, and the closing also nets off what was paid to suppliers.
 
 Everything is backed by standard ERPNext documents (Sales Order, Sales Invoice, Payment Entry, Stock Entry, Journal Entry). The app adds its own documents only for configuration (Sales Profile), shifts (Sales Shift Opening / Closing) and drawer cash movements (Sales Cash Movement). ERPNext documents are never stamped with a shift: shift totals are attributed by driver and creation time inside the shift's window.
 
@@ -91,6 +91,23 @@ The draft (customer, lines, discount, the draft order being edited) is kept per 
 | **After the order** | Submit (F9) submits the order, then a sheet asks whether to invoice it as well: yes → how it is paid (paid now with a mode of payment, or credit; print-at-once toggle when a printer is set) → the invoice option when the profile has any → the invoice is raised. Esc at any step leaves the order in the To invoice list. |
 | **Actions** | F7 hold (draft Sales Order), F8 print setup (the cashier's own print format and printer, or the PDF, kept on that PC), F9 submit order, F10 print last invoice, Esc clear. |
 | **Queue** | Held (Resume), To invoice (opens the invoice sheet), Today's invoices (Print). |
+| **Shift bar** | Above the lines on both Counter screens: no shift (Open shift), a shift left open from an earlier day (Close shift), or the open shift with its start time and what the drawer should hold now (hidden on a blind-count profile), plus Expense (F6), Summary and Close shift. Opening a shift from here returns to the Counter. |
+| **Expense (F6)** | A sheet over either screen: amount, expense account (the profile's allowed ones, its default preselected), paid to, remarks, Enter records it as a Sales Cash Movement on the open shift (the same rules as Shift → Cash out), with the shift's expenses so far underneath. |
+
+**Purchases** (`/counter/purchase`, the Counter's second tab; Counter Sales profiles with **Allow Purchase Orders**, and managers)
+
+| Area | Detail |
+|------|--------|
+| **Supplier** | Typeahead by name, ID or mobile (F2). Cleared after each purchase. |
+| **Lines** | The same entry row and grid as a sale; the rate starts on the supplier's own buying price, then the profile's Buying Price List (else Buying Settings'), then the item's last purchase rate, and is always editable. The grid shows what the warehouse holds now. |
+| **Totals** | ERPNext's own figures for the Purchase Order, with the profile's Purchase Taxes and Charges Template when it names one. |
+| **After the order** | Submit (F9) submits the Purchase Order (receiving into the profile's Main Warehouse), then a sheet asks whether to bill it now: yes → supplier invoice no. (required when the site makes it mandatory) → paid now from a mode of payment, or on credit → the Purchase Invoice is raised with Update Stock on (the stock is received) and, when paid, a Pay Payment Entry for it. One request, one transaction. Esc leaves the order in the To bill list. |
+| **Actions** | F6 expense, F7 hold (draft Purchase Order), F9 submit, Esc clear. |
+| **Queue** | Held (Resume), To bill (Bill: the same sheet), Today's bills (paid or unpaid). |
+
+**Overall shift (linked staff).** A Counter Sales profile's *Linked Profiles* (Van and Field Sales profiles, one counter each, `Sales Profile Linked Profile` with the `linked_on` time) hand over to it. Staff on shifts: each of their closings submitted after `linked_on` and not yet claimed adds its counted amounts per mode to the counter's expected (cash-type modes into the counter's drawer). Staff without shifts: their submitted orders, invoices and receive payments roll in directly. The closing stores `total_handover`, `total_linked_sales` and `total_linked_collections`, and keeps every record in its transactions with `linked_profile`, which keeps it apart in the report and stops any other closing from counting it again. Reopening a handed-over van closing is refused while the counter shift that counted it is closed.
+
+**Shift reconciliation.** Supplier payments the cashier made during the shift (Pay Payment Entries) come off the expected amount of the mode they were paid from, like expenses come off the drawer. The closing records them (`total_supplier_payments`) and the shift's Purchase Orders (`total_purchases`, information only), keeps every Purchase Order, Purchase Invoice and supplier Payment Entry in its transactions list, and the closing report lists purchases (with the bill each became) and supplier payments apart from collections.
 
 ### 5.4 Invoice sheet (shared)
 Opened from Review ("Submit & invoice") and from an order. Step 1: credit or paid now, mode of payment, and the invoice options that fit that payment rule (one option is pre-selected). Step 2: the proposed invoice number, lines, taxes and totals as ERPNext computes them, a note when the order is re-taxed to the option, and the stock shortage rule. Confirm creates the Sales Invoice (and the payment when paid now).
@@ -209,6 +226,7 @@ graph TD
 |--------|---------------|
 | `sales.py` | Sales Order CRUD, invoicing, delivery of pending items, returns, daily summary and log |
 | `counter.py` | The Counter: ranked item search with price and stock, cart totals preview, order+invoice+payment in one request, the cashier's queue |
+| `counter_purchase.py` | The Counter's Purchase screen: supplier and item search with buying rates, Purchase Order preview and submit (or hold), bill (Purchase Invoice receiving the stock, plus the supplier payment), the cashier's purchase queue |
 | `finance.py` | Payment Entry creation, outstanding invoices, customer summary / ledger, payment modes |
 | `inventory.py` | Stock dashboard, stock transfer, transfer item search / detail |
 | `shift.py` | Open / close / reopen shifts, closing summary, window aggregation (`_compute_closing`), `require_open_shift` |

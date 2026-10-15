@@ -14,6 +14,11 @@
   "column_break_identity",
   "delivery_route",
   "default_customer",
+  "allow_counter_purchase",
+  "buying_price_list",
+  "purchase_taxes_and_charges",
+  "section_linked_profiles",
+  "linked_profiles",
   "selling_price_list",
   "currency",
   "section_warehouses",
@@ -144,6 +149,45 @@
    "fieldtype": "Link",
    "label": "Default Customer",
    "options": "Customer"
+  },
+  {
+   "fieldname": "allow_counter_purchase",
+   "fieldtype": "Check",
+   "label": "Allow Purchase Orders",
+   "default": "1",
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\"",
+   "description": "Counter Sales only. The Counter's Purchase screen lets the cashier raise Purchase Orders for suppliers and turn them into Purchase Invoices that receive the stock into the Main Warehouse, paid from the drawer or on credit."
+  },
+  {
+   "fieldname": "buying_price_list",
+   "fieldtype": "Link",
+   "label": "Buying Price List",
+   "options": "Price List",
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\" && doc.allow_counter_purchase",
+   "description": "Rates the Purchase screen starts from. Blank: the Buying Settings default. The cashier can always change a purchase rate."
+  },
+  {
+   "fieldname": "purchase_taxes_and_charges",
+   "fieldtype": "Link",
+   "label": "Purchase Taxes and Charges Template",
+   "options": "Purchase Taxes and Charges Template",
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\" && doc.allow_counter_purchase",
+   "description": "Applied to the Counter's Purchase Orders and their invoices. Blank: no purchase tax."
+  },
+  {
+   "fieldname": "section_linked_profiles",
+   "fieldtype": "Section Break",
+   "label": "Overall Shift (Linked Staff)",
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\"",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "linked_profiles",
+   "fieldtype": "Table MultiSelect",
+   "label": "Linked Profiles",
+   "options": "Sales Profile Linked Profile",
+   "depends_on": "eval:doc.profile_type == \"Counter Sales\"",
+   "description": "Van Sales and Field Sales profiles whose staff hand their orders and payments over to this counter, so its shift becomes the overall shift. Staff on shifts hand over when they close theirs: the cash they counted is added to this counter's expected amounts. Staff without shifts roll in directly: their orders and payments count on this counter's shift. A profile can be linked to one counter only."
   },
   {
    "fieldname": "selling_price_list",
@@ -630,7 +674,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-14 00:00:00.000000",
+ "modified": "2026-10-15 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "Sales Profile",

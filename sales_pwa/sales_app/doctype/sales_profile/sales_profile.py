@@ -25,6 +25,7 @@ class SalesProfile(Document):
 				frappe.throw("Allowed payment modes cannot contain duplicates")
 			seen_modes.add(row.mode_of_payment)
 
+		self._validate_linked_profiles()
 		self._validate_invoice_options()
 		self._validate_print_formats()
 		self._validate_printers()
@@ -88,6 +89,42 @@ class SalesProfile(Document):
 			self.van_warehouse = None
 		if not self.use_shifts:
 			self.require_open_shift = 0
+
+	def _validate_linked_profiles(self):
+		"""Counter Sales only: the Van and Field Sales profiles whose staff hand over to
+		this counter (the overall shift, see shift._linked_activity). Each one can hand
+		over to one counter only, or the same cash would be expected in two drawers.
+		`linked_on` is kept from the first time a profile was linked: only what its
+		staff do from then on rolls in."""
+		if not self.is_counter_sales():
+			self.set("linked_profiles", [])
+			return
+		before = self.get_doc_before_save()
+		linked_since = {row.linked_profile: row.linked_on for row in (before.get("linked_profiles") or [])} if before else {}
+		seen = set()
+		for row in self.linked_profiles or []:
+			name = row.linked_profile
+			if name in seen:
+				frappe.throw(f"Linked Profiles: {name} is listed twice")
+			seen.add(name)
+			if name == self.name:
+				frappe.throw("Linked Profiles: a counter cannot be linked to itself")
+			linked = frappe.db.get_value("Sales Profile", name, ["profile_type", "company"], as_dict=True)
+			if not linked:
+				frappe.throw(f"Linked Profiles: Sales Profile {name} does not exist")
+			if (linked.profile_type or "Van Sales") not in ("Van Sales", "Field Sales"):
+				frappe.throw(f"Linked Profiles: {name} is a {linked.profile_type} profile; only Van Sales and Field Sales profiles hand over to a counter")
+			if self.company and linked.company and linked.company != self.company:
+				frappe.throw(f"Linked Profiles: {name} belongs to {linked.company}, not {self.company}")
+			other = frappe.db.sql(
+				"""select p.name from `tabSales Profile Linked Profile` l
+				join `tabSales Profile` p on p.name = l.parent
+				where l.parenttype = 'Sales Profile' and l.linked_profile = %s and p.name != %s and p.is_active = 1""",
+				(name, self.name or ""),
+			)
+			if other and self.is_active:
+				frappe.throw(f"Linked Profiles: {name} already hands over to the counter {other[0][0]}")
+			row.linked_on = row.linked_on or linked_since.get(name) or frappe.utils.now_datetime()
 
 	def _validate_print_formats(self):
 		"""Each print-format field must name an enabled format of the doctype it prints."""

@@ -1,5 +1,5 @@
 <template>
-  <WorkspacePage :back="{ name: 'shift' }" title="Open shift" subtitle="Declare the cash you start with">
+  <WorkspacePage :back="backRoute() || { name: 'shift' }" title="Open shift" subtitle="Declare the cash you start with">
     <SkeletonList v-if="loading" :rows="3" height="4rem" />
 
     <div v-else class="space-y-4 pb-28">
@@ -41,7 +41,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
 import { useSessionStore } from '../stores/session';
 import { useShiftStore } from '../stores/shift';
@@ -54,6 +54,10 @@ import { AppCard, AppButton, AppAlert, FormField, BaseInput, BaseTextarea, Skele
 const store = useSessionStore();
 const shift = useShiftStore();
 const router = useRouter();
+const route = useRoute();
+// Opened from the Counter: go back there, not to Home.
+const BACK_TO = new Set(['counter', 'counter-purchase']);
+const backRoute = () => (BACK_TO.has(route.query.back as string) ? { name: route.query.back as string } : null);
 const toast = useToast();
 const currency = computed(() => store.currencyDisplay);
 
@@ -71,7 +75,8 @@ const load = async () => {
     // A shift is already open (or stale): the hub says what to do next.
     const active = await shift.refresh(true);
     if (active) {
-      router.replace({ name: 'shift' });
+      // Only while still here: the person may have moved on before the check came back.
+      if (route.name === 'shift-open') router.replace(backRoute() || { name: 'shift' });
       return;
     }
     modes.value = await api.getPaymentModes();
@@ -95,7 +100,7 @@ const submit = async () => {
     const opened = await api.openShift(balanceDetails, notes.value);
     shift.set(opened);
     toast.success('Shift started', { message: `Opening float ${currency.value} ${money(totalFloat.value)}` });
-    router.replace({ name: 'home' });
+    router.replace(backRoute() || { name: 'home' });
   } catch (e: any) {
     error.value = e?.message || 'Failed to start shift';
   } finally {

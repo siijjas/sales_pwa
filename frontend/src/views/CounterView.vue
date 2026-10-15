@@ -3,7 +3,10 @@
     <!-- Header -->
     <div class="flex flex-wrap items-end justify-between gap-3 pb-3 pt-4 md:pt-5">
       <div class="min-w-0">
-        <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">Counter</p>
+        <div class="flex items-center gap-3">
+          <p class="text-[11px] font-bold uppercase tracking-[0.12em] text-primary">Counter</p>
+          <CounterModeTabs />
+        </div>
         <h1 class="truncate text-[22px] font-bold leading-tight tracking-tight text-foreground md:text-[26px]">
           {{ counter.orderName ? `Editing ${counter.orderName}` : 'New sale' }}
         </h1>
@@ -19,8 +22,10 @@
       </div>
     </div>
 
+    <CounterShiftBar ref="shiftBar" class="mb-3" :currency="currency" @expense="expenseOpen = true" />
+    <!-- A manager's own profile-less shift gate never applies; this covers staff whose profile needs a shift and has none. -->
     <AppAlert
-      v-if="shift.needsShift"
+      v-if="shift.needsShift && !store.driverConfig"
       tone="warning"
       icon="clock"
       :title="shift.isStale ? 'Close yesterday’s shift first' : 'Open your shift first'"
@@ -173,6 +178,8 @@
       </div>
     </div>
 
+    <ExpenseSheet v-model="expenseOpen" :currency="currency" @recorded="shiftBar?.refresh()" />
+
     <InvoiceSheet v-if="sheetOrder" v-model="sheetOpen" :order="sheetOrder" @created="onSheetInvoiced" />
 
     <!-- After the order: invoice it as well? Then the payment, then the invoice option. -->
@@ -254,6 +261,9 @@ import InvoiceSheet from '../components/InvoiceSheet.vue';
 import CustomerBox from '../components/counter/CustomerBox.vue';
 import ItemEntryRow from '../components/counter/ItemEntryRow.vue';
 import CounterQueue from '../components/counter/CounterQueue.vue';
+import CounterShiftBar from '../components/counter/CounterShiftBar.vue';
+import CounterModeTabs from '../components/counter/CounterModeTabs.vue';
+import ExpenseSheet from '../components/counter/ExpenseSheet.vue';
 import { AppAlert, AppButton, AppCard, AppIcon, BottomSheet, ChoiceCard, DataRow, FormField, SegmentedControl, StatusBadge, ToggleSwitch } from '../components/ui';
 
 const store = useSessionStore();
@@ -275,6 +285,9 @@ const { confirm, state: confirmState } = useConfirm();
 const customerBox = ref<InstanceType<typeof CustomerBox> | null>(null);
 const entryRow = ref<InstanceType<typeof ItemEntryRow> | null>(null);
 const queuePanel = ref<InstanceType<typeof CounterQueue> | null>(null);
+const shiftBar = ref<InstanceType<typeof CounterShiftBar> | null>(null);
+const expenseOpen = ref(false);
+watch(expenseOpen, (open) => !open && focusStart());
 const discountInput = ref<HTMLInputElement | null>(null);
 const qtyRefs = new Map<string, HTMLInputElement>();
 const setQtyRef = (uid: string, el: HTMLInputElement | null) => (el ? qtyRefs.set(uid, el) : qtyRefs.delete(uid));
@@ -629,6 +642,7 @@ async function createInvoice(w: Wizard) {
     });
     if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', invoiceName);
     loadQueue();
+    shiftBar.value?.refresh();
   } catch (e: any) {
     wizardError.value = e?.message || 'Could not create the invoice';
   } finally {
@@ -709,6 +723,7 @@ function onSheetInvoiced(invoiceName: string, deferredNote: string) {
   toast.success(`Invoice ${invoiceName} created`, { message: deferredNote || undefined, action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) }, duration: 8000 });
   if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', invoiceName);
   loadQueue();
+  shiftBar.value?.refresh();
   focusEntry();
 }
 
@@ -739,6 +754,10 @@ function onKeydown(e: KeyboardEvent) {
       e.preventDefault();
       discountInput.value?.focus();
       break;
+    case 'F6':
+      e.preventDefault();
+      if (store.capabilities.can_record_expense && store.driverConfig) expenseOpen.value = true;
+      break;
     case 'F7':
       e.preventDefault();
       hold();
@@ -764,7 +783,6 @@ function onKeydown(e: KeyboardEvent) {
 
 onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
-  shift.refresh();
   if (!counter.customer && defaultCustomer.value) counter.setCustomer(defaultCustomer.value);
   await loadChoices();
   loadQueue();

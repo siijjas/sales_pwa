@@ -21,6 +21,10 @@ export interface Capabilities {
   is_counter_sales: boolean;
   /** The Counter screen (fast keyboard entry). Managers pass without a profile. */
   can_counter_sell: boolean;
+  /** The Counter's Purchase screen (Sales Profile.allow_counter_purchase). Managers pass. */
+  can_counter_purchase: boolean;
+  /** Expenses paid from the shift's drawer (shifts on and Sales Profile.allow_expense). */
+  can_record_expense: boolean;
   /** Van Sales with its own warehouse (loaded from the main one). Off: sells from the main warehouse. */
   has_van_warehouse: boolean;
   can_invoice: boolean;
@@ -59,6 +63,9 @@ export interface DriverConfig {
   /** Counter Sales: every new sale on the Counter starts on this customer. */
   default_customer?: string | null;
   default_customer_name?: string | null;
+  allow_counter_purchase?: boolean;
+  buying_price_list?: string | null;
+  purchase_taxes_and_charges?: string | null;
   /** The Mode of Payment treated as the cash drawer; the Counter starts on it. */
   default_cash_mode?: string | null;
   /** Resolved invoice options (numbering + tax) this staff member may pick when invoicing. */
@@ -200,6 +207,19 @@ export interface ShiftClosingSummary {
   total_expenses: number;
   /** Cash handed to the office mid-shift (Sales Cash Movement, type Deposit). */
   total_deposits: number;
+  /** Purchase Orders submitted on the Counter during the shift (reported, not in the drawer). */
+  total_purchases: number;
+  /** Paid to suppliers during the shift; each mode's expected amount is already net of it. */
+  total_supplier_payments: number;
+  /** Overall shift on a counter: counted cash its linked staff handed over at their closings. */
+  total_handover: number;
+  /** Linked staff's orders (from their closings, or directly for staff without shifts). */
+  total_linked_sales: number;
+  /** Payments collected by linked staff without shifts, counted on this shift. */
+  total_linked_collections: number;
+  linked: { handovers: LinkedHandover[]; open_shifts: LinkedOpenShift[] };
+  /** A linked van or field rep: the counter profile their counted cash goes to. */
+  handover_to: string | null;
   total_opening_float: number;
   expected_cash: number | null;
   /** From the Sales Profile; a net difference beyond it is flagged, never blocked. */
@@ -259,6 +279,12 @@ export interface SalesProfile {
   /** Counter Sales: the customer every new sale on the Counter starts on. */
   default_customer?: string | null;
   default_customer_name?: string | null;
+  /** Counter Sales: the Purchase screen, and where its rates and taxes come from. */
+  allow_counter_purchase?: boolean;
+  buying_price_list?: string | null;
+  purchase_taxes_and_charges?: string | null;
+  /** Counter Sales: Van and Field Sales profiles that hand over to this counter (the overall shift). */
+  linked_profiles?: string[];
   assigned_drivers: SalesProfileDriver[];
   allowed_payment_modes: string[];
   allowed_customer_groups: string[];
@@ -328,6 +354,9 @@ export interface SalesProfileOptions {
   companies: Array<{ name: string; default_currency?: string }>;
   price_lists: Array<{ name: string }>;
   tax_templates: Array<{ name: string; company: string }>;
+  /** Counter Sales purchases: buying price lists and purchase tax templates. */
+  buying_price_lists?: Array<{ name: string }>;
+  purchase_tax_templates?: Array<{ name: string; company: string }>;
   invoice_options: InvoiceOption[];
   currencies: Array<{ name: string }>;
   print_formats: Array<{ name: string; doc_type: string }>;
@@ -688,6 +717,13 @@ export interface ShiftReport {
     total_collections: number;
     total_expenses: number;
     total_deposits: number;
+    total_purchases?: number;
+    total_supplier_payments?: number;
+    total_handover?: number;
+    total_linked_sales?: number;
+    total_linked_collections?: number;
+    purchases_count?: number;
+    supplier_payments_count?: number;
     total_opening_float: number;
     expected_cash: number;
     net_difference?: number;
@@ -708,6 +744,8 @@ export interface ShiftReport {
     orders: ShiftReportOrder[];
     invoices: ShiftReportInvoice[];
     payments: ShiftReportPayment[];
+    /** Purchase Orders raised on the Counter, with the bill each turned into. */
+    purchases?: ShiftReportPurchase[];
   };
   payment_reconciliation: ShiftReportReconciliationRow[];
   collections: Array<{ mode_of_payment: string; count: number; amount: number }>;
@@ -715,6 +753,10 @@ export interface ShiftReport {
   /** Legacy expense logs and cash movements of type Expense; expense_type is the account name for the latter. */
   expenses: ShiftReportCashRow[];
   deposits: ShiftReportCashRow[];
+  /** Pay Payment Entries to suppliers: already deducted from their mode's expected amount. */
+  supplier_payments?: ShiftReportPayment[];
+  /** Overall shift on a counter: what its linked staff handed over or rolled in. */
+  linked?: ShiftReportLinked;
   items: ShiftReportItem[];
   /** Only on a summary: drafts can still be submitted while the shift is open. */
   draft_orders: ShiftDraftOrder[];
@@ -747,6 +789,64 @@ export interface ShiftReportPayment {
   party_name: string | null;
   mode_of_payment: string;
   amount: number;
+  creation: string;
+}
+
+export interface LinkedHandover {
+  closing: string;
+  opening_shift: string;
+  driver: string;
+  driver_name: string;
+  profile: string;
+  shift_date: string;
+  period_end?: string | null;
+  total_sales: number;
+  total_collections: number;
+  /** What they counted at their closing, all modes. */
+  handed_over: number;
+  net_difference: number;
+  by_mode: Array<{ mode_of_payment: string; amount: number }>;
+}
+
+export interface LinkedOpenShift {
+  opening_shift: string;
+  driver: string;
+  driver_name: string;
+  profile: string;
+  shift_date: string;
+  period_start: string | null;
+}
+
+export interface LinkedDirect {
+  driver: string;
+  driver_name: string;
+  profile: string | null;
+  orders_count: number;
+  sales_total: number;
+  payments_count: number;
+  collections_total: number;
+  by_mode: Array<{ mode_of_payment: string; amount: number }>;
+}
+
+export interface ShiftReportLinked {
+  handovers: LinkedHandover[];
+  direct: LinkedDirect[];
+  open_shifts: LinkedOpenShift[];
+  /** The part of it that went into the counter's drawer (cash-type modes). */
+  drawer_amount: number;
+  cash_mode: string | null;
+  total_handover: number;
+  total_linked_sales: number;
+  total_linked_collections: number;
+}
+
+export interface ShiftReportPurchase {
+  name: string;
+  supplier: string;
+  supplier_name: string | null;
+  amount: number;
+  invoice: string | null;
+  status: string;
   creation: string;
 }
 
@@ -1065,4 +1165,92 @@ export interface CounterQueue {
   held: CounterQueueOrder[];
   to_invoice: CounterQueueOrder[];
   invoices_today: CounterQueueInvoice[];
+}
+
+// ─── Counter purchases (counter_purchase.py) ─────────────────────────────────
+
+export interface Supplier {
+  name: string;
+  supplier_name: string;
+  supplier_group: string | null;
+  mobile_no: string | null;
+}
+
+export interface PurchaseContext {
+  warehouse: string | null;
+  price_list: string | null;
+  taxes_and_charges: string | null;
+  /** The site makes Supplier Invoice No mandatory on a Purchase Invoice. */
+  bill_no_required: boolean;
+}
+
+export interface PurchasePreview {
+  error: string | null;
+  lines: Array<{ item_code: string; item_name: string; qty: number; uom: string; rate: number; amount: number }>;
+  total_qty: number;
+  total: number;
+  net_total?: number;
+  taxes: Array<{ description: string; rate: number; tax_amount: number; included_in_print_rate: boolean }>;
+  total_taxes_and_charges?: number;
+  grand_total: number;
+  rounding_adjustment?: number;
+  rounded_total: number;
+  disable_rounded_total?: boolean;
+  taxes_and_charges?: string | null;
+  warehouse: string | null;
+  price_list: string | null;
+}
+
+export interface PurchaseOrderResult {
+  order: string;
+  docstatus: number;
+  supplier: string;
+  supplier_name: string | null;
+  grand_total: number;
+  rounded_total: number;
+}
+
+export interface PurchaseOrderDetail extends PurchaseOrderResult {
+  per_billed: number;
+  items: Array<{ item_code: string; item_name: string; qty: number; rate: number; stock_uom: string; uom: string }>;
+}
+
+export interface PurchaseBillResult {
+  order: string;
+  invoice: string;
+  supplier: string;
+  supplier_name: string | null;
+  grand_total: number;
+  rounded_total: number;
+  outstanding_amount: number;
+  payment: string | null;
+}
+
+export interface PurchaseQueueOrder {
+  name: string;
+  supplier: string;
+  supplier_name: string | null;
+  transaction_date: string;
+  grand_total: number;
+  total_qty: number;
+  status: string;
+  creation: string;
+  modified: string;
+}
+
+export interface PurchaseQueueBill {
+  name: string;
+  supplier: string;
+  supplier_name: string | null;
+  grand_total: number;
+  rounded_total: number;
+  outstanding_amount: number;
+  status: string;
+  creation: string;
+}
+
+export interface PurchaseQueue {
+  held: PurchaseQueueOrder[];
+  to_bill: PurchaseQueueOrder[];
+  bills_today: PurchaseQueueBill[];
 }

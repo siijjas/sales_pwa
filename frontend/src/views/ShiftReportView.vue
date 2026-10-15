@@ -279,6 +279,63 @@
         </div>
       </AppCard>
 
+      <!-- Purchases and supplier payments (the Counter's Purchase screen) -->
+      <AppCard v-if="docs.purchases?.length || report.supplier_payments?.length" padding="lg" class="space-y-2">
+        <p class="mb-1 text-sm font-semibold text-foreground">Purchases</p>
+        <div v-for="p in docs.purchases || []" :key="p.name" class="flex items-start justify-between gap-3 text-sm">
+          <div class="min-w-0">
+            <p class="truncate text-foreground">{{ p.supplier_name || p.supplier }}</p>
+            <p class="text-[11px] text-subtle">{{ p.name }}<template v-if="p.invoice"> · billed {{ p.invoice }}</template><template v-else> · not billed yet</template></p>
+          </div>
+          <span class="tnum font-semibold text-foreground">{{ currency }} {{ fmt(p.amount) }}</span>
+        </div>
+        <div v-if="docs.purchases?.length" class="flex items-center justify-between border-t border-line pt-2 text-sm font-bold text-foreground">
+          <span>Total purchase orders</span><span class="tnum">{{ currency }} {{ fmt(t.total_purchases || 0) }}</span>
+        </div>
+        <template v-if="report.supplier_payments?.length">
+          <p class="pt-2 text-xs font-bold uppercase tracking-wider text-muted">Paid to suppliers</p>
+          <div v-for="p in report.supplier_payments" :key="p.name" class="flex items-start justify-between gap-3 text-sm">
+            <div class="min-w-0">
+              <p class="truncate text-foreground">{{ p.party_name || p.party }}</p>
+              <p class="text-[11px] text-subtle">{{ p.name }} · {{ p.mode_of_payment }}</p>
+            </div>
+            <span class="tnum font-semibold text-foreground">− {{ currency }} {{ fmt(p.amount) }}</span>
+          </div>
+          <div class="flex items-center justify-between border-t border-line pt-2 text-sm font-bold text-foreground">
+            <span>Total paid to suppliers</span><span class="tnum">{{ currency }} {{ fmt(t.total_supplier_payments || 0) }}</span>
+          </div>
+        </template>
+      </AppCard>
+
+      <!-- Overall shift: linked staff -->
+      <AppCard v-if="linked && (linked.handovers.length || linked.direct.length || linked.open_shifts.length)" padding="lg" class="space-y-2">
+        <div class="flex items-center justify-between">
+          <p class="text-sm font-semibold text-foreground">Linked staff</p>
+          <p class="tnum text-xs text-muted">Sales {{ currency }} {{ fmt(linked.total_linked_sales) }}</p>
+        </div>
+        <div v-for="h in linked.handovers" :key="h.closing" class="flex items-start justify-between gap-3 text-sm">
+          <div class="min-w-0">
+            <p class="truncate text-foreground">{{ h.driver_name }}</p>
+            <p class="text-[11px] text-subtle">
+              {{ h.profile }} · {{ h.closing }} · sales {{ fmt(h.total_sales) }} · collected {{ fmt(h.total_collections) }}<template v-if="h.net_difference"> · variance {{ fmt(h.net_difference) }}</template>
+            </p>
+            <p v-if="h.by_mode.length > 1" class="text-[11px] text-subtle">{{ h.by_mode.map((m) => `${m.mode_of_payment} ${fmt(m.amount)}`).join(' · ') }}</p>
+          </div>
+          <span class="tnum shrink-0 font-semibold text-foreground">+ {{ currency }} {{ fmt(h.handed_over) }}</span>
+        </div>
+        <div v-for="d in linked.direct" :key="d.driver" class="flex items-start justify-between gap-3 text-sm">
+          <div class="min-w-0">
+            <p class="truncate text-foreground">{{ d.driver_name }}</p>
+            <p class="text-[11px] text-subtle">{{ d.profile }} · no shifts · {{ plural(d.orders_count, 'order') }} {{ fmt(d.sales_total) }} · {{ plural(d.payments_count, 'payment') }}</p>
+          </div>
+          <span class="tnum shrink-0 font-semibold text-foreground">+ {{ currency }} {{ fmt(d.collections_total) }}</span>
+        </div>
+        <p v-for="o in linked.open_shifts" :key="o.opening_shift" class="text-xs text-warning">{{ o.driver_name }} ({{ o.profile }}) is still on shift: handed over when they close.</p>
+        <div v-if="linked.handovers.length || linked.direct.length" class="flex items-center justify-between border-t border-line pt-2 text-sm font-bold text-foreground">
+          <span>Total handed over</span><span class="tnum">{{ currency }} {{ fmt(linked.total_handover + linked.total_linked_collections) }}</span>
+        </div>
+      </AppCard>
+
       <!-- Items -->
       <AppCard padding="lg" class="space-y-3">
         <div>
@@ -323,7 +380,7 @@ import { useSessionStore } from '../stores/session';
 import { useConfirm } from '../composables/useConfirm';
 import { useToast } from '../composables/useToast';
 import { usePrint } from '../composables/usePrint';
-import { money as fmt, qty, shortDate, dateTime, time } from '../utils/format';
+import { money as fmt, plural, qty, shortDate, dateTime, time } from '../utils/format';
 import type { ShiftReport } from '../types';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, BottomSheet, KpiTile, SkeletonList } from '../components/ui';
@@ -391,7 +448,8 @@ const goTo = (to: Parameters<typeof router.push>[0]) => { detail.value = null; r
 const detailTitle = computed(
   () => ({ sales: 'Sales on this shift', collections: 'Collections on this shift', expenses: 'Expenses & deposits', cash: 'Expected cash' })[detail.value || 'sales'],
 );
-const docs = computed(() => report.value?.documents || { orders: [], invoices: [], payments: [] });
+const linked = computed(() => report.value?.linked || null);
+const docs = computed(() => report.value?.documents || { orders: [], invoices: [], payments: [], purchases: [] });
 const paymentsByMode = computed(() => {
   const groups: Record<string, { mode: string; rows: typeof docs.value.payments; amount: number }> = {};
   for (const p of docs.value.payments) {
@@ -412,6 +470,10 @@ const cashLines = computed(() => {
     { label: `${r.cash_mode} collections`, amount: cashCollections, sign: 1 },
     { label: 'Expenses', amount: r.totals.total_expenses, sign: -1 },
     { label: 'Deposited to office', amount: r.totals.total_deposits, sign: -1 },
+    ...(r.linked?.drawer_amount ? [{ label: 'Handed over by linked staff', amount: r.linked.drawer_amount, sign: 1 }] : []),
+    ...((r.supplier_payments || []).some((p) => p.mode_of_payment === r.cash_mode)
+      ? [{ label: 'Paid to suppliers', amount: (r.supplier_payments || []).filter((p) => p.mode_of_payment === r.cash_mode).reduce((sum, p) => sum + p.amount, 0), sign: -1 }]
+      : []),
   ];
 });
 const formatTime = (ts: string | null) => time(ts);

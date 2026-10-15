@@ -117,6 +117,7 @@ def _capabilities(config: dict | None) -> dict:
 			"has_van_warehouse": False,
 			# Managers see every screen, the Counter included.
 			"can_counter_sell": True,
+			"can_counter_purchase": True,
 			"can_invoice": True,
 			"can_deliver": True,
 			"can_return": True,
@@ -128,6 +129,7 @@ def _capabilities(config: dict | None) -> dict:
 			"can_create_customer": True,
 			"can_close_shift": True,
 			"can_cancel_cash_movement": True,
+			"can_record_expense": True,
 			"shows_customer_balance": True,
 			"blind_shift_close": False,
 		}
@@ -143,6 +145,8 @@ def _capabilities(config: dict | None) -> dict:
 		# The Counter screen (fast keyboard entry on a PC) is for Counter Sales staff;
 		# managers pass _require_capability() without a profile.
 		"can_counter_sell": is_counter,
+		# Its Purchase screen: Purchase Orders, bills that receive the stock, supplier payments.
+		"can_counter_purchase": is_counter and _coerce_check(config.get("allow_counter_purchase", True)),
 		# Field Sales takes orders and collects payments only; invoicing, delivery and
 		# returns are back-office work, and there is no van to load or count.
 		"can_invoice": not is_field,
@@ -160,6 +164,8 @@ def _capabilities(config: dict | None) -> dict:
 		"can_create_customer": _coerce_check(config.get("allow_create_customer", True)),
 		"can_close_shift": uses_shifts and _coerce_check(config.get("allow_driver_close_shift", True)),
 		"can_cancel_cash_movement": uses_shifts and _coerce_check(config.get("allow_cancel_cash_movement")),
+		# Expenses come out of the shift's drawer, so they need shifts.
+		"can_record_expense": uses_shifts and _coerce_check(config.get("allow_expense", True)),
 		"shows_customer_balance": _coerce_check(config.get("show_customer_balance", True)),
 		"blind_shift_close": uses_shifts and _coerce_check(config.get("hide_expected_amount")),
 	}

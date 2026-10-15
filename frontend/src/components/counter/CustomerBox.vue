@@ -2,7 +2,7 @@
   <div class="relative">
     <div class="flex items-center gap-2">
       <div class="relative min-w-0 flex-1">
-        <AppIcon name="user" :size="18" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle" />
+        <AppIcon :name="icon" :size="18" class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-subtle" />
         <input
           ref="input"
           v-model="text"
@@ -25,7 +25,7 @@
           type="button"
           tabindex="-1"
           class="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-subtle transition hover:bg-card-muted hover:text-foreground"
-          aria-label="Change customer"
+          :aria-label="`Change ${noun}`"
           @mousedown.prevent
           @click="clear"
         >
@@ -43,7 +43,7 @@
     >
       <p v-if="loading && !results.length" class="px-3 py-2 text-[13px] text-muted">Searching…</p>
       <p v-else-if="!results.length" class="px-3 py-2 text-[13px] text-muted">
-        No customer matches “{{ text }}”.
+        No {{ noun }} matches “{{ text }}”.
         <button v-if="canCreate" type="button" class="font-semibold text-primary" @mousedown.prevent @click="openNew">Add them</button>
       </p>
       <button
@@ -87,9 +87,23 @@ import * as api from '../../api/frappe';
 import type { Customer } from '../../types';
 import { AppAlert, AppButton, AppIcon, Avatar, BaseInput, BottomSheet, FormField } from '../ui';
 
-const props = withDefaults(defineProps<{ modelValue: Customer | null; canCreate?: boolean; placeholder?: string }>(), {
-  placeholder: 'Customer: type a name, ID or mobile',
-});
+const props = withDefaults(
+  defineProps<{
+    modelValue: Customer | null;
+    canCreate?: boolean;
+    placeholder?: string;
+    /** Another party to look up (the Purchase screen's suppliers), in the Customer shape. */
+    search?: (q: string, limit: number) => Promise<Customer[]>;
+    icon?: string;
+    noun?: string;
+  }>(),
+  {
+    placeholder: 'Customer: type a name, ID or mobile',
+    search: undefined,
+    icon: 'user',
+    noun: 'customer',
+  },
+);
 const emit = defineEmits<{
   (e: 'update:modelValue', value: Customer | null): void;
   /** A customer was chosen (typed and confirmed, or created): the next field may take focus. */
@@ -137,7 +151,7 @@ function search(q: string) {
   loading.value = true;
   timer = window.setTimeout(async () => {
     try {
-      const rows = await api.searchCustomers(q, 12);
+      const rows = await (props.search ? props.search(q, 12) : api.searchCustomers(q, 12));
       if (seq !== requestSeq) return;
       results.value = rows;
       highlighted.value = 0;

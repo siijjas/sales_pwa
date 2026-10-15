@@ -39,6 +39,8 @@ PROFILE_CONTROL_CHECKS = {
 	"use_customer_price_list": False,
 	"allow_zero_rated_items": False,
 	"allow_cancel_cash_movement": False,
+	# Counter Sales: the Purchase screen (Purchase Orders, bills, supplier payments).
+	"allow_counter_purchase": True,
 }
 
 
@@ -108,6 +110,21 @@ def get_van_profile_options():
 		),
 		"tax_templates": frappe.get_all(
 			"Sales Taxes and Charges Template",
+			fields=["name", "company"],
+			limit_page_length=100,
+			order_by="name asc",
+		),
+		# Counter Sales purchases.
+		"buying_price_lists": frappe.get_all(
+			"Price List",
+			filters={"buying": 1, "enabled": 1},
+			fields=["name"],
+			limit_page_length=100,
+			order_by="name asc",
+		),
+		"purchase_tax_templates": frappe.get_all(
+			"Purchase Taxes and Charges Template",
+			filters={"disabled": 0},
 			fields=["name", "company"],
 			limit_page_length=100,
 			order_by="name asc",
@@ -196,6 +213,8 @@ def list_van_profiles():
 			"stock_warehouse",
 			"delivery_route",
 			"default_customer",
+			"buying_price_list",
+			"purchase_taxes_and_charges",
 			"default_cash_mode",
 			"selling_price_list",
 			"currency",
@@ -241,6 +260,7 @@ def list_van_profiles():
 			"use_customer_price_list",
 			"allow_zero_rated_items",
 			"allow_cancel_cash_movement",
+			"allow_counter_purchase",
 		],
 		order_by="profile_name asc",
 	)
@@ -297,6 +317,13 @@ def list_van_profiles():
 		row.default_customer_name = (
 			frappe.db.get_value("Customer", row.default_customer, "customer_name") if row.get("default_customer") else None
 		)
+		# Counter Sales: the Van and Field Sales profiles that hand over to it.
+		row.linked_profiles = frappe.get_all(
+			"Sales Profile Linked Profile",
+			filters={"parent": row.name, "parenttype": "Sales Profile"},
+			pluck="linked_profile",
+			order_by="idx asc",
+		)
 		# Coerce booleans
 		row.profile_type = row.profile_type or "Van Sales"
 		for check_field in (
@@ -334,6 +361,8 @@ def save_van_profile(payload):
 	doc.stock_warehouse = data.get("stock_warehouse") or None
 	doc.delivery_route = data.get("delivery_route") or None
 	doc.default_customer = data.get("default_customer") or None
+	doc.buying_price_list = data.get("buying_price_list") or None
+	doc.purchase_taxes_and_charges = data.get("purchase_taxes_and_charges") or None
 	doc.default_cash_mode = data.get("default_cash_mode") or None
 	doc.selling_price_list = data.get("selling_price_list") or None
 	doc.currency = data.get("currency") or None
@@ -407,6 +436,12 @@ def save_van_profile(payload):
 			option, is_default = entry, False
 		if option:
 			doc.append("invoice_options", {"invoice_option": option, "is_default": 1 if is_default else 0})
+
+	# Linked profiles (Counter Sales): validate() keeps each one's original linked_on.
+	doc.set("linked_profiles", [])
+	for profile in _coerce_list(data.get("linked_profiles")):
+		if isinstance(profile, str) and profile.strip():
+			doc.append("linked_profiles", {"linked_profile": profile.strip()})
 
 	doc.set("allowed_expense_accounts", [])
 	for account in _coerce_list(data.get("allowed_expense_accounts")):
@@ -547,6 +582,9 @@ def _build_van_profile_payload(doc) -> dict:
 		"default_customer_name": (
 			frappe.db.get_value("Customer", doc.default_customer, "customer_name") if doc.get("default_customer") else None
 		),
+		# Counter Sales purchases: where the Purchase screen's rates and taxes come from.
+		"buying_price_list": doc.get("buying_price_list") or None,
+		"purchase_taxes_and_charges": doc.get("purchase_taxes_and_charges") or None,
 		"default_cash_mode": doc.default_cash_mode,
 		"selling_price_list": doc.selling_price_list,
 		"currency": doc.currency,
@@ -596,6 +634,7 @@ def _build_van_profile_payload(doc) -> dict:
 			if row.customer_group
 		],
 		"invoice_options": profile_invoice_options(doc),
+		"linked_profiles": [row.linked_profile for row in (doc.get("linked_profiles") or []) if row.linked_profile],
 		"allowed_expense_accounts": [
 			row.account for row in (doc.allowed_expense_accounts or []) if row.account
 		],

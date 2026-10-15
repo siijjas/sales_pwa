@@ -25,6 +25,11 @@
   "total_collections",
   "total_expenses",
   "total_deposits",
+  "total_purchases",
+  "total_supplier_payments",
+  "total_handover",
+  "total_linked_sales",
+  "total_linked_collections",
   "total_opening_float",
   "expected_cash",
   "net_difference",
@@ -152,12 +157,42 @@
    "label": "Total Cash Deposits"
   },
   {
+   "fieldname": "total_purchases",
+   "fieldtype": "Currency",
+   "label": "Total Purchases",
+   "description": "Purchase Orders submitted on the Counter during the shift."
+  },
+  {
+   "fieldname": "total_supplier_payments",
+   "fieldtype": "Currency",
+   "label": "Total Supplier Payments",
+   "description": "Paid to suppliers during the shift; each mode's expected amount is reduced by what was paid from it."
+  },
+  {
+   "fieldname": "total_handover",
+   "fieldtype": "Currency",
+   "label": "Handed Over by Linked Staff",
+   "description": "Overall shift on a counter: what linked staff counted at their own shift closing, added to this shift's expected amounts."
+  },
+  {
+   "fieldname": "total_linked_sales",
+   "fieldtype": "Currency",
+   "label": "Linked Staff Sales",
+   "description": "Orders of the linked staff rolled into this shift (from their closings, or directly for staff without shifts). Not part of Total Sales."
+  },
+  {
+   "fieldname": "total_linked_collections",
+   "fieldtype": "Currency",
+   "label": "Linked Staff Collections",
+   "description": "Payments collected by linked staff without shifts, counted on this shift's expected amounts."
+  },
+  {
    "fieldname": "total_opening_float",
    "fieldtype": "Currency",
    "label": "Total Opening Float"
   },
   {
-   "description": "Opening cash float + cash collections - expenses - deposits",
+   "description": "Opening cash float + cash collections - expenses - deposits - cash paid to suppliers",
    "fieldname": "expected_cash",
    "fieldtype": "Currency",
    "label": "Expected Cash"
@@ -235,7 +270,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-10-12 00:00:00.000000",
+ "modified": "2026-10-15 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "Sales Shift Closing",

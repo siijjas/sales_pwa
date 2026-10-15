@@ -9,7 +9,8 @@
   "reference_doctype",
   "reference_name",
   "posting_date",
-  "amount"
+  "amount",
+  "linked_profile"
  ],
  "fields": [
   {
@@ -39,13 +40,21 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Amount"
+  },
+  {
+   "fieldname": "linked_profile",
+   "fieldtype": "Link",
+   "label": "Linked Profile",
+   "options": "Sales Profile",
+   "in_list_view": 0,
+   "description": "Set when the record came from a linked staff member (an overall shift on a counter), not from the shift's own driver."
   }
  ],
  "grid_page_length": 10,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-18 00:00:00.000000",
+ "modified": "2026-10-15 09:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "Sales Shift Transaction",

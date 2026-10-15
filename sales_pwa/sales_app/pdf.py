@@ -98,6 +98,38 @@ def _usable_print_format(name: str | None, doctype: str) -> str | None:
 	return name
 
 
+# The profile's own print format fields for each doctype, credit note first.
+PROFILE_FORMAT_FIELDS = {
+	"Sales Order": ("order_print_format",),
+	"Sales Invoice": ("return_print_format", "invoice_print_format"),
+	"Payment Entry": ("payment_print_format",),
+}
+
+
+def allowed_print_formats(doctype: str) -> list[str] | None:
+	"""The formats the caller's own Sales Profile lets them print `doctype` with, or
+	None when any enabled format will do.
+
+	A profile restricts a doctype by listing at least one of its formats under
+	Allowed Print Formats; the profile's own formats for the doctype (Printing
+	section) stay allowed, and Standard is not. No profile (a manager), or nothing
+	listed for this doctype, leaves it open.
+	"""
+	profile = _get_driver_config(required=False)
+	listed = (profile or {}).get("allowed_print_formats") or []
+	if not listed:
+		return None
+	rows = frappe.get_all("Print Format", filters={"name": ["in", listed], "doc_type": doctype}, fields=["name", "disabled"])
+	if not rows:
+		return None
+	allowed = {row.name for row in rows if not row.disabled}
+	for field in PROFILE_FORMAT_FIELDS.get(doctype, ()):
+		own = _usable_print_format(profile.get(field), doctype)
+		if own:
+			allowed.add(own)
+	return sorted(allowed)
+
+
 def resolve_print_settings(doc) -> tuple[str | None, str | None]:
 	"""(print format, letter head) the Sales Profile asks for on this document.
 
@@ -151,18 +183,28 @@ def authorize_print(doctype: str, name: str, format: str | None = None):
 	# The render below runs unrestricted, so a format must be an enabled one of this doctype.
 	if format and format != "Standard" and not _usable_print_format(format, doctype):
 		frappe.throw(frappe._("{0} is not an enabled {1} print format.").format(format, doctype))
+	allowed = allowed_print_formats(doctype)
+	if allowed is not None:
+		if format and format not in allowed:
+			frappe.throw(frappe._("Your Sales Profile does not allow the {0} print format.").format(format), frappe.PermissionError)
+		if not allowed:
+			frappe.throw(frappe._("Your Sales Profile allows no enabled {0} print format.").format(doctype), frappe.PermissionError)
 	return doc
 
 
 def render_html(doc, format: str | None = None, no_letterhead: int = 0) -> tuple[str, str | None]:
 	"""(HTML with the print stylesheet inlined, the format it was rendered with).
 
-	With no `format` the Sales Profile decides (resolve_print_settings); the shift
-	reports name their own formats explicitly.
+	With no `format` the Sales Profile decides (resolve_print_settings), within the
+	formats the caller's profile allows; the shift reports name their own formats
+	explicitly.
 	"""
 	letterhead = None
 	if not format:
 		format, letterhead = resolve_print_settings(doc)
+		allowed = allowed_print_formats(doc.doctype)
+		if allowed and format not in allowed:
+			format = allowed[0]
 	with _render_with_full_read():
 		html = frappe.get_print(
 			doc.doctype, doc.name, format, doc=doc, no_letterhead=cint(no_letterhead), letterhead=letterhead

@@ -17,7 +17,6 @@
       <div class="flex flex-wrap items-center gap-1.5">
         <AppButton size="sm" variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
         <AppButton size="sm" variant="subtle" icon="printer" :disabled="!lastInvoice" @click="printLast">Print last <kbd class="ml-1 text-[11px] opacity-70">F10</kbd></AppButton>
-        <AppButton size="sm" variant="subtle" icon="settings" :title="`Invoices print as ${printTargetLabel}. Choose the format and printer.`" @click="choose('Sales Invoice')">{{ printTargetLabel }} <kbd class="ml-1 text-[11px] opacity-70">F8</kbd></AppButton>
         <AppButton size="sm" variant="ghost" icon="trash" :disabled="!counter.hasLines && !counter.customer" @click="clear">Clear <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
       </div>
     </div>
@@ -212,7 +211,7 @@
               <ChoiceCard v-for="m in paymentModes" :key="m.name" :selected="counter.modeOfPayment === m.name" :title="m.name" :subtitle="m.type" @click="setPayment(true, m.name, counter.invoiceOption)" />
             </div>
           </FormField>
-          <ToggleSwitch v-if="printsDirectly('Sales Invoice')" :model-value="counter.autoPrint" label="Print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
+          <ToggleSwitch :model-value="counter.autoPrint" label="Ask to print the invoice as soon as it is raised" @update:model-value="counter.setAutoPrint" />
           <AppAlert v-if="wizardError" tone="danger" :message="wizardError" />
           <AppButton data-wizard-primary size="lg" block :loading="busy === 'invoice'" :disabled="(counter.markAsPaid && !counter.modeOfPayment) || !!busy" :trailing-icon="invoiceOptions.length ? 'arrow-right' : undefined" :icon="invoiceOptions.length ? undefined : 'file-text'" @click="wizardNext">
             {{ invoiceOptions.length ? 'Continue' : 'Create invoice' }} <kbd class="ml-1 text-[11px] opacity-70">Enter</kbd>
@@ -251,7 +250,6 @@ import type { CounterItem, CounterPreview, CounterQueue as CounterQueueData, Cou
 import { invoiceOptionApplies } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useCounterStore } from '../stores/counter';
-import { PDF, usePrintSetupStore } from '../stores/printSetup';
 import { useShiftStore } from '../stores/shift';
 import { useToast } from '../composables/useToast';
 import { usePrint } from '../composables/usePrint';
@@ -271,15 +269,7 @@ const counter = useCounterStore();
 const shift = useShiftStore();
 const router = useRouter();
 const toast = useToast();
-const { print, printsDirectly, printerFor, choose } = usePrint();
-const printSetup = usePrintSetupStore();
-// The header button says where the invoice goes: the printer, the PDF, or whatever the profile says.
-const printTargetLabel = computed(() => {
-  const pref = printSetup.prefFor('Sales Invoice');
-  const target = printerFor('Sales Invoice');
-  const where = target === PDF ? 'PDF' : target || 'Profile printer';
-  return pref.format ? `${where} · ${pref.format}` : where;
-});
+const { print } = usePrint();
 const { confirm, state: confirmState } = useConfirm();
 
 const customerBox = ref<InstanceType<typeof CustomerBox> | null>(null);
@@ -640,7 +630,7 @@ async function createInvoice(w: Wizard) {
       action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) },
       duration: 8000,
     });
-    if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', invoiceName);
+    if (counter.autoPrint) print('Sales Invoice', invoiceName);
     loadQueue();
     shiftBar.value?.refresh();
   } catch (e: any) {
@@ -721,7 +711,7 @@ function onSheetInvoiced(invoiceName: string, deferredNote: string) {
   sheetOpen.value = false;
   lastInvoice.value = invoiceName;
   toast.success(`Invoice ${invoiceName} created`, { message: deferredNote || undefined, action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) }, duration: 8000 });
-  if (counter.autoPrint && printsDirectly('Sales Invoice')) void print('Sales Invoice', invoiceName);
+  if (counter.autoPrint) print('Sales Invoice', invoiceName);
   loadQueue();
   shiftBar.value?.refresh();
   focusEntry();
@@ -761,10 +751,6 @@ function onKeydown(e: KeyboardEvent) {
     case 'F7':
       e.preventDefault();
       hold();
-      break;
-    case 'F8':
-      e.preventDefault();
-      choose('Sales Invoice');
       break;
     case 'F9':
       e.preventDefault();

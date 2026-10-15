@@ -65,6 +65,7 @@ PRINTER_FIELDS = ("order_printer", "invoice_printer", "return_printer", "payment
 def get_van_profile_options():
 	"""Return all option lists needed to build/edit a Sales Profile form."""
 	_manager_only()
+	from sales_pwa.sales_app.pdf import PRINTABLE_DOCTYPES
 
 	company_filter = {"is_group": 0}
 
@@ -140,7 +141,7 @@ def get_van_profile_options():
 		# Formats the app can print with (see pdf.py); the editor filters by doc_type.
 		"print_formats": frappe.get_all(
 			"Print Format",
-			filters={"disabled": 0, "doc_type": ["in", list(PRINT_FORMAT_DOCTYPES.values())]},
+			filters={"disabled": 0, "doc_type": ["in", list(PRINTABLE_DOCTYPES)]},
 			fields=["name", "doc_type"],
 			limit_page_length=500,
 			order_by="name asc",
@@ -317,6 +318,12 @@ def list_van_profiles():
 		row.default_customer_name = (
 			frappe.db.get_value("Customer", row.default_customer, "customer_name") if row.get("default_customer") else None
 		)
+		row.allowed_print_formats = frappe.get_all(
+			"Sales Profile Print Format",
+			filters={"parent": row.name, "parenttype": "Sales Profile"},
+			pluck="print_format",
+			order_by="idx asc",
+		)
 		# Counter Sales: the Van and Field Sales profiles that hand over to it.
 		row.linked_profiles = frappe.get_all(
 			"Sales Profile Linked Profile",
@@ -442,6 +449,12 @@ def save_van_profile(payload):
 	for profile in _coerce_list(data.get("linked_profiles")):
 		if isinstance(profile, str) and profile.strip():
 			doc.append("linked_profiles", {"linked_profile": profile.strip()})
+
+	# Allowed print formats (Table MultiSelect); see pdf.allowed_print_formats.
+	doc.set("allowed_print_formats", [])
+	for print_format in _coerce_list(data.get("allowed_print_formats")):
+		if isinstance(print_format, str) and print_format.strip():
+			doc.append("allowed_print_formats", {"print_format": print_format.strip()})
 
 	doc.set("allowed_expense_accounts", [])
 	for account in _coerce_list(data.get("allowed_expense_accounts")):
@@ -605,6 +618,7 @@ def _build_van_profile_payload(doc) -> dict:
 		**{field: doc.get(field) for field in PRINT_FORMAT_DOCTYPES},
 		**{field: doc.get(field) for field in PRINTER_FIELDS},
 		"letter_head": doc.letter_head,
+		"allowed_print_formats": [row.print_format for row in (doc.get("allowed_print_formats") or []) if row.print_format],
 		"income_account": doc.income_account,
 		"expense_account": doc.expense_account,
 		"cost_center": doc.cost_center,

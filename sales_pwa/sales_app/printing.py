@@ -43,6 +43,7 @@ from sales_pwa.sales_app.pdf import (
 	PRINTABLE_DOCTYPES,
 	SHIFT_DOCTYPES,
 	_print_profile,
+	allowed_print_formats,
 	authorize_print,
 	render_html,
 	render_pdf,
@@ -371,8 +372,8 @@ def _chosen_printer(name: str):
 
 @frappe.whitelist()
 def print_choices(doctype: str):
-	"""What the app's print setup offers for a doctype: the enabled formats and the
-	printers that can print now, plus what the profile would pick for this person
+	"""What the print sheet offers for a doctype: the enabled formats the caller's
+	profile allows (pdf.allowed_print_formats) and the printers that can print now, plus what the profile would pick for this person
 	when they choose nothing (the "profile default" the sheet marks).
 	"""
 	if doctype not in PRINTABLE_DOCTYPES:
@@ -380,9 +381,17 @@ def print_choices(doctype: str):
 	probe = frappe._dict(doctype=doctype, is_return=0, owner=None)
 	default_format, _letter_head = resolve_print_settings(probe)
 	default_printer = resolve_printer(probe)
-	formats = [{"name": "Standard"}] + frappe.get_all(
-		"Print Format", filters={"doc_type": doctype, "disabled": 0}, fields=["name"], order_by="name asc", limit_page_length=200
-	)
+	allowed = allowed_print_formats(doctype)
+	if allowed is None:
+		formats = [{"name": "Standard"}] + frappe.get_all(
+			"Print Format", filters={"doc_type": doctype, "disabled": 0}, fields=["name"], order_by="name asc", limit_page_length=200
+		)
+		default_format = default_format or "Standard"
+	else:
+		# The profile limits this doctype to the formats it lists (pdf.allowed_print_formats).
+		formats = [{"name": name} for name in allowed]
+		if default_format not in allowed:
+			default_format = allowed[0] if allowed else None
 	now = now_datetime()
 	agents = {a.name: a for a in frappe.get_all("Sales Print Agent", filters={"is_active": 1}, fields=["name", "last_contact_at"])}
 	printers = []
@@ -394,7 +403,7 @@ def print_choices(doctype: str):
 	return {
 		"doctype": doctype,
 		"formats": formats,
-		"default_format": default_format or "Standard",
+		"default_format": default_format,
 		"printers": printers,
 		"default_printer": default_printer.name if default_printer else None,
 	}

@@ -103,6 +103,8 @@ export interface DriverConfig {
   payment_printer?: string | null;
   shift_report_printer?: string | null;
   letter_head?: string;
+  /** Formats staff may pick when printing; a doctype with none listed allows every format. */
+  allowed_print_formats?: string[];
   income_account?: string;
   expense_account?: string;
   cost_center?: string;
@@ -315,6 +317,8 @@ export interface SalesProfile {
   payment_printer?: string | null;
   shift_report_printer?: string | null;
   letter_head?: string;
+  /** Formats staff may pick when printing; a doctype with none listed allows every format. */
+  allowed_print_formats?: string[];
   income_account?: string;
   expense_account?: string;
   cost_center?: string;
@@ -1029,8 +1033,8 @@ export interface PrintChoices {
   doctype: string;
   /** "Standard" first, then the enabled formats of the doctype. */
   formats: Array<{ name: string }>;
-  /** What the profile picks when nothing is chosen. */
-  default_format: string;
+  /** What the profile picks when nothing is chosen; null when the profile allows no enabled format. */
+  default_format: string | null;
   /** Active printers whose agent is switched on; `online` = the agent polled in the last few minutes. */
   printers: Array<{ name: string; printer_type: PrinterType; online: boolean }>;
   default_printer: string | null;

@@ -14,6 +14,7 @@ from frappe.tests.utils import FrappeTestCase
 from frappe.utils import now_datetime
 
 from sales_pwa.sales_app import printing
+from sales_pwa.sales_app.pdf import allowed_print_formats, authorize_print
 from sales_pwa.sales_app.utils import _driver_cache_key
 
 PREFIX = "_Test Print"
@@ -227,6 +228,45 @@ class TestPrintingFlow(FrappeTestCase):
 		frappe.db.set_value("Sales Print Agent", self.agent.name, "is_active", 0)
 		self.assertEqual(printing.print_choices("Sales Invoice")["printers"], [])
 		self.assertRaises(frappe.PermissionError, printing.print_choices, "Purchase Order")
+
+	def _print_format(self, name, doctype):
+		frappe.set_user("Administrator")
+		doc = frappe.get_doc(
+			{"doctype": "Print Format", "name": name, "doc_type": doctype, "standard": "No", "custom_format": 1, "print_format_type": "Jinja", "html": "<p>{{ doc.name }}</p>"}
+		).insert()
+		self.addCleanup(frappe.delete_doc, "Print Format", doc.name, force=True)
+		return doc.name
+
+	def _allow_formats(self, *names):
+		frappe.set_user("Administrator")
+		for name in names:
+			frappe.get_doc(
+				{"doctype": "Sales Profile Print Format", "parent": self.van_profile, "parenttype": "Sales Profile", "parentfield": "allowed_print_formats", "print_format": name}
+			).db_insert()
+		self.addCleanup(frappe.db.delete, "Sales Profile Print Format", {"parent": self.van_profile})
+		frappe.cache.delete_value(_driver_cache_key(self.driver_user))
+
+	def test_profile_limits_the_formats_staff_may_print_with(self):
+		listed = self._print_format(f"{PREFIX} SO Slip", "Sales Order")
+		own = self._print_format(f"{PREFIX} SO Full", "Sales Order")
+		self._print_format(f"{PREFIX} SO Other", "Sales Order")
+		self._route(order_print_format=own)
+		self._allow_formats(listed)
+		order = self._order()
+		frappe.set_user(self.driver_user)
+		choices = printing.print_choices("Sales Order")
+		# The listed format and the profile's own one; no Standard, nothing else.
+		self.assertEqual([f["name"] for f in choices["formats"]], sorted([listed, own]))
+		self.assertEqual(choices["default_format"], own)
+		# Nothing listed for invoices: every enabled format, Standard first.
+		self.assertEqual(printing.print_choices("Sales Invoice")["formats"][0]["name"], "Standard")
+		self.assertEqual(authorize_print("Sales Order", order, listed).name, order)
+		for refused in ("Standard", f"{PREFIX} SO Other"):
+			self.assertRaises(frappe.PermissionError, authorize_print, "Sales Order", order, refused)
+		self.assertRaises(frappe.PermissionError, printing.print_document, "Sales Order", order, "Standard", self.office.name)
+		# Managers without a profile are not limited.
+		frappe.set_user("Administrator")
+		self.assertIsNone(allowed_print_formats("Sales Order"))
 
 	def test_a_chosen_printer_wins_over_the_profile(self):
 		self._route(order_printer=self.receipt.name)

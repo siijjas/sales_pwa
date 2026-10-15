@@ -359,6 +359,27 @@
             </FormField>
           </div>
 
+          <!-- Formats staff may pick in the print sheet; enforced by pdf.allowed_print_formats. -->
+          <FormField label="Formats staff may choose" hint="Tick none for a document to allow every format. Ticking some limits staff to those, plus the format set above; Standard is then not offered.">
+            <div class="space-y-3">
+              <div v-for="group in printFormatGroups" :key="group.doctype">
+                <p class="mb-1.5 text-xs font-semibold text-muted">{{ group.label }}</p>
+                <p v-if="!group.formats.length" class="text-xs text-subtle">No enabled format for {{ group.doctype }} yet.</p>
+                <div v-else class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  <label
+                    v-for="f in group.formats"
+                    :key="f.name"
+                    class="flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition"
+                    :class="(form.allowed_print_formats || []).includes(f.name) ? 'border-success/40 bg-success/[0.06]' : 'border-line hover:bg-card-muted'"
+                  >
+                    <input type="checkbox" :value="f.name" v-model="form.allowed_print_formats" class="h-4 w-4 shrink-0 accent-primary" />
+                    <span class="min-w-0 truncate text-sm font-semibold text-foreground" :title="f.name">{{ f.name }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </FormField>
+
           <!-- Printers: set up in the desk (Sales Print Agent, Sales Printer); watched and tested from here. -->
           <div class="rounded-2xl bg-card-muted p-3.5">
             <div class="flex items-center justify-between gap-2">
@@ -573,6 +594,7 @@ const defaultForm = (): Partial<SalesProfile> => ({
   payment_printer: '',
   shift_report_printer: '',
   letter_head: '',
+  allowed_print_formats: [],
   income_account: '',
   expense_account: '',
   cost_center: '',
@@ -614,6 +636,17 @@ const filteredWarehouses = computed(() =>
   form.value.company ? options.value.warehouses.filter((w) => w.company === form.value.company) : options.value.warehouses,
 );
 const formatsFor = (doctype: string) => options.value.print_formats.filter((f) => f.doc_type === doctype);
+const printFormatGroups = computed(() =>
+  [
+    { doctype: 'Sales Order', label: 'Orders', show: true },
+    { doctype: 'Sales Invoice', label: 'Invoices and credit notes', show: !isFieldSales.value },
+    { doctype: 'Payment Entry', label: 'Payment receipts', show: true },
+    { doctype: 'Sales Shift Opening', label: 'Shift summaries', show: form.value.use_shifts },
+    { doctype: 'Sales Shift Closing', label: 'Shift closing reports', show: form.value.use_shifts },
+  ]
+    .filter((g) => g.show)
+    .map((g) => ({ ...g, formats: formatsFor(g.doctype) })),
+);
 const printerLabel = (p: { name: string; printer_type: string }) => `${p.name} (${p.printer_type === 'Receipt (ESC/POS)' ? 'receipt' : 'PDF'})`;
 
 // The printer strip: who is reachable, and a test page.

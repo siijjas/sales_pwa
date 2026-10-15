@@ -81,6 +81,7 @@
   "return_print_format",
   "payment_print_format",
   "letter_head",
+  "allowed_print_formats",
   "section_printers",
   "order_printer",
   "invoice_printer",
@@ -597,6 +598,13 @@
    "options": "Letter Head"
   },
   {
+   "fieldname": "allowed_print_formats",
+   "fieldtype": "Table MultiSelect",
+   "label": "Allowed Print Formats",
+   "options": "Sales Profile Print Format",
+   "description": "The formats staff may pick when they print. For a document type with none listed, every enabled format is allowed. For one with some listed, only those (plus the profile's own format for it above) are offered, and Standard is not."
+  },
+  {
    "fieldname": "section_printers",
    "fieldtype": "Section Break",
    "label": "Direct Printing",
@@ -674,7 +682,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-15 09:00:00.000000",
+ "modified": "2026-10-15 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Sales App",
  "name": "Sales Profile",

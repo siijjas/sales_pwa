@@ -1,34 +1,42 @@
 import { defineStore } from 'pinia';
 
-/** Where a document goes: '' = what the profile says, 'pdf' = open the PDF, else a Sales Printer name. */
+/** Where a document goes: 'pdf' = open the PDF, else a Sales Printer name. */
 export const PDF = 'pdf';
 
 export interface PrintPreference {
-  /** A print format name; '' = the profile's (or the doctype's default). */
+  /** A print format name; '' = none picked yet. */
   format: string;
+  /** A Sales Printer name, 'pdf', or '' = none picked yet. */
   printer: string;
+}
+
+/** A Print tap waiting in the sheet: the document, and the format its screen suggests (the shift reports). */
+export interface PrintRequest {
+  doctype: string;
+  name: string;
+  isReturn?: boolean;
+  format?: string;
 }
 
 interface PrintSetupState {
   user: string | null;
   prefs: Record<string, PrintPreference>;
-  /** The setup sheet, when open: which doctype, and a document to print once chosen. */
-  sheet: { doctype: string; name?: string; isReturn?: boolean } | null;
+  sheet: PrintRequest | null;
 }
 
 const KEY = (user: string) => `sales-app:print:${user}`;
 const BLANK: PrintPreference = { format: '', printer: '' };
 
 /**
- * Each person's own print choices, per document type: which format, and whether it
- * goes to a printer or opens as a PDF. The Sales Profile sets the defaults for
- * everyone on it; this is the cashier's own override, kept in this browser, so a
- * counter PC stays on its receipt printer and a manager's laptop stays on PDF.
+ * Every Print tap opens the print sheet (PrintSetupSheet), where the person picks the
+ * format and the printer (or the PDF) for that one print. What they picked last, per
+ * document type, is kept in this browser only so the sheet opens on it: a counter PC
+ * comes back to its receipt printer, a laptop to the PDF, and Enter prints.
  */
 export const usePrintSetupStore = defineStore('printSetup', {
   state: (): PrintSetupState => ({ user: null, prefs: {}, sheet: null }),
   getters: {
-    prefFor: (s) => (doctype: string): PrintPreference => s.prefs[doctype] || BLANK,
+    lastFor: (s) => (doctype: string): PrintPreference => s.prefs[doctype] || BLANK,
   },
   actions: {
     hydrate(user: string | null) {
@@ -40,11 +48,11 @@ export const usePrintSetupStore = defineStore('printSetup', {
         const raw = localStorage.getItem(KEY(user));
         if (raw) this.prefs = JSON.parse(raw) as Record<string, PrintPreference>;
       } catch (_e) {
-        /* corrupt or unavailable storage: the profile's defaults apply */
+        /* corrupt or unavailable storage: the sheet opens on the profile's defaults */
       }
     },
-    set(doctype: string, pref: Partial<PrintPreference>) {
-      this.prefs = { ...this.prefs, [doctype]: { ...this.prefFor(doctype), ...pref } };
+    remember(doctype: string, pref: PrintPreference) {
+      this.prefs = { ...this.prefs, [doctype]: { ...pref } };
       if (!this.user) return;
       try {
         localStorage.setItem(KEY(this.user), JSON.stringify(this.prefs));
@@ -52,9 +60,8 @@ export const usePrintSetupStore = defineStore('printSetup', {
         /* storage blocked: the choice still holds for this visit */
       }
     },
-    /** Open the setup sheet for a doctype; with `name`, the sheet offers to print that document at once. */
-    open(doctype: string, opts: { name?: string; isReturn?: boolean } = {}) {
-      this.sheet = { doctype, ...opts };
+    open(request: PrintRequest) {
+      this.sheet = { ...request };
     },
     close() {
       this.sheet = null;

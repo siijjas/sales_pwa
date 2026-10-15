@@ -1,5 +1,4 @@
 import os
-import re
 
 import frappe
 
@@ -14,15 +13,11 @@ def get_context(context):
     
     if os.path.exists(file_path):
         with open(file_path, "r") as f:
+            # No ?v= cache-buster: Vite already hashes every file name, and a query on
+            # the entry script makes lazy chunks (which import it without one) load a
+            # second copy of the app that re-mounts over the first.
             content = f.read()
-            asset_version = str(int(os.path.getmtime(file_path)))
 
-            content = re.sub(
-                r'(/assets/sales_pwa/frontend/assets/[^"?]+\.(?:js|css))(?!\?v=)',
-                rf'\1?v={asset_version}',
-                content,
-            )
-            
             # 3. INJECT THE TOKEN into the HTML
             # We add a small script that sets window.csrf_token
             csrf_script = f'<script>window.csrf_token = "{csrf_token}";</script>'

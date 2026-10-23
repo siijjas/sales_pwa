@@ -1,5 +1,5 @@
 <template>
-  <WorkspacePage :back="{ name: 'sell-items' }" title="Review" :subtitle="sale.orderName ? `Editing draft ${sale.orderName}` : 'Check items and totals before confirming'">
+  <WorkspacePage :back="{ name: 'sell-items' }" title="Review" :subtitle="subtitle">
     <template #actions>
       <AppButton v-if="sale.lines.length" variant="ghost" size="sm" icon="trash" @click="clear">Clear</AppButton>
     </template>
@@ -91,16 +91,21 @@
         </div>
       </AppCard>
 
+      <AppAlert
+        v-if="sale.orderSubmitted"
+        tone="info"
+        :message="`${sale.orderName} is already submitted. Saving updates it in place; it keeps its number.`"
+      />
       <AppAlert v-if="submitError" tone="danger" :message="submitError" />
     </div>
 
     <StickyBar>
       <div class="grid gap-2" :class="caps.can_invoice ? 'grid-cols-2' : ''">
         <AppButton :variant="caps.can_invoice ? 'secondary' : 'primary'" size="lg" block :loading="submitting === 'order'" :disabled="!!submitting || !customer" icon="check" @click="submit(false)">
-          Submit order
+          {{ sale.orderSubmitted ? 'Save changes' : 'Submit order' }}
         </AppButton>
         <AppButton v-if="caps.can_invoice" size="lg" block :loading="submitting === 'invoice'" :disabled="!!submitting || !customer" icon="file-text" @click="submit(true)">
-          Submit & invoice
+          {{ sale.orderSubmitted ? 'Save & invoice' : 'Submit & invoice' }}
         </AppButton>
       </div>
     </StickyBar>
@@ -148,6 +153,10 @@ const { confirm } = useConfirm();
 
 const caps = computed(() => store.capabilities);
 const customer = computed(() => sale.customer);
+const subtitle = computed(() => {
+  if (!sale.orderName) return 'Check items and totals before confirming';
+  return sale.orderSubmitted ? `Changing order ${sale.orderName}` : `Editing draft ${sale.orderName}`;
+});
 const currency = computed(() => store.currencyDisplay);
 const net = computed(() => sale.subtotal);
 const orderDetail = ref<SalesOrder | null>(null);
@@ -222,6 +231,10 @@ async function submitOrder(): Promise<SalesOrder> {
       // against a 100 subtotal must not send 500 to the server.
       : { discountAmount: discountAmount.value || 0 }
     : {};
+  // A submitted order is changed in place; there is nothing left to submit.
+  if (sale.orderName && sale.orderSubmitted) {
+    return api.updateSubmittedSalesOrder(sale.orderName, { items: itemsPayload, ...discountArgs });
+  }
   let orderName: string;
   if (sale.orderName) {
     await api.updateSalesOrder(sale.orderName, { customer: customer.value!.name, items: itemsPayload, ...discountArgs });
@@ -243,16 +256,17 @@ async function submit(withInvoice: boolean) {
   submitting.value = withInvoice ? 'invoice' : 'order';
   submitError.value = '';
   try {
+    const wasSubmitted = sale.orderSubmitted;
     const order = await submitOrder();
     if (!withInvoice) {
-      toast.success(`Order ${order.name} submitted`);
+      toast.success(wasSubmitted ? `Order ${order.name} updated` : `Order ${order.name} submitted`);
       finish(order.name);
       return;
     }
     submittedOrder.value = order;
     invoiceOpen.value = true;
   } catch (e: any) {
-    submitError.value = e?.message || 'Failed to submit order';
+    submitError.value = e?.message || (sale.orderSubmitted ? 'Failed to save the order' : 'Failed to submit order');
   } finally {
     submitting.value = '';
   }
@@ -268,7 +282,7 @@ function onInvoiceCreated(invoiceName: string) {
 watch(invoiceOpen, (open) => {
   if (!open && submittedOrder.value && sale.hasDraft) {
     const name = submittedOrder.value.name;
-    toast.info('Order submitted. You can invoice it from the order.');
+    toast.info(`Order ${sale.orderSubmitted ? 'saved' : 'submitted'}. You can invoice it from the order.`);
     finish(name);
   }
 });

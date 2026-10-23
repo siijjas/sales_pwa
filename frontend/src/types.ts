@@ -469,6 +469,7 @@ export interface InvoicePreviewLine {
   uom: string;
   rate: number;
   amount: number;
+  sales_order: string;
 }
 
 export interface InvoicePreviewTax {
@@ -481,6 +482,8 @@ export interface InvoicePreviewTax {
 /** preview_sales_invoice(): what create_sales_invoice() would raise, nothing saved. */
 export interface InvoicePreview {
   sales_order: string;
+  /** Every order billed on this invoice, the first being `sales_order`. */
+  sales_orders: string[];
   customer: string;
   customer_name: string;
   posting_date: string;
@@ -503,7 +506,7 @@ export interface InvoicePreview {
   disable_rounded_total: boolean;
   short_items: InvoiceStockShortage[];
   allow_sale_without_stock: boolean;
-  /** The order is re-taxed to the option on confirm, so its total matches the invoice. */
+  /** The orders are re-taxed to the option on confirm, so their total matches the invoice. */
   order_grand_total: number;
   order_taxes_will_update: boolean;
 }
@@ -547,7 +550,22 @@ export interface SalesOrder {
   additional_discount_percentage?: number;
   discount_amount?: number;
   apply_discount_on?: string;
+  currency?: string;
+  taxes_and_charges?: string | null;
 }
+/** A submitted order not invoiced yet (sales.get_invoiceable_orders), offered for one shared invoice. */
+export interface InvoiceableOrder {
+  name: string;
+  transaction_date: string;
+  grand_total: number;
+  rounded_total: number;
+  total_qty: number;
+  currency: string;
+  company: string;
+  taxes_and_charges: string | null;
+  owner: string;
+}
+
 /** A submitted Sales Invoice raised from an order (sales.get_order_invoices). */
 export interface OrderInvoice {
   name: string;
@@ -1180,6 +1198,8 @@ export interface CounterQueueOrder {
   grand_total: number;
   total_qty: number;
   status: string;
+  per_billed: number;
+  per_delivered: number;
   creation: string;
   modified: string;
 }
@@ -1193,6 +1213,22 @@ export interface CounterQueueInvoice {
   outstanding_amount: number;
   status: string;
   creation: string;
+  /** Collections allocated to this invoice (amount = the part allocated to it). */
+  payments: PaymentSummary[];
+}
+
+/** One submitted payment, enough to show and correct its mode. */
+export interface PaymentSummary {
+  name: string;
+  mode_of_payment: string;
+  paid_amount: number;
+}
+
+/** finance.change_payment_mode(): the amended copy that replaced the payment. */
+export interface PaymentModeChange {
+  name: string;
+  amended_from: string;
+  mode_of_payment: string;
 }
 
 /** get_counter_queue(): the cashier's own worklist for the side panel. */

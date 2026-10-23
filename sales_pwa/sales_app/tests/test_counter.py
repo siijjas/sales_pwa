@@ -298,6 +298,25 @@ class TestCounter(base.TestShiftAndAccessRegressions):
 		self.assertEqual(so.docstatus, 1)
 		self.assertEqual(so.items[0].qty, 5)
 
+	def test_create_counter_sale_changes_a_submitted_order_in_place(self):
+		self._make_counter()
+		pending = create_counter_sale(self.customer_allowed, self._lines(qty=1))["order"]
+		queued = next(r for r in get_counter_queue()["to_invoice"] if r["name"] == pending)
+		self.assertEqual((queued["per_billed"], queued["per_delivered"]), (0, 0))
+
+		result = create_counter_sale(
+			self.customer_allowed, self._lines(qty=4), order_name=pending, invoice=1, mark_as_paid=1, mode_of_payment=self.cash_mode
+		)
+		self.assertEqual(result["order"], pending)
+		so = frappe.get_doc("Sales Order", pending)
+		self.assertEqual((so.docstatus, so.items[0].qty, so.per_billed), (1, 4, 100))
+		self.assertEqual(frappe.get_doc("Sales Invoice", result["invoice"]).items[0].qty, 4)
+
+		# Another customer's cart cannot take over the submitted order.
+		other = create_counter_sale(self.customer_allowed, self._lines(qty=1))["order"]
+		with self.assertRaisesRegex(frappe.ValidationError, "another customer"):
+			create_counter_sale(f"{self.customer_allowed} X", self._lines(qty=1), order_name=other)
+
 	def test_refused_invoice_leaves_no_submitted_order_behind(self):
 		self._make_counter(allow_credit_sale=0)
 		before = frappe.db.count("Sales Order", {"owner": self.driver_user, "customer": self.customer_allowed})

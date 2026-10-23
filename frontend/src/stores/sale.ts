@@ -8,8 +8,10 @@ interface SaleState {
   user: string | null;
   customer: Customer | null;
   lines: CartLine[];
-  /** Set when editing an existing draft Sales Order instead of creating a new one. */
+  /** Set when editing an existing Sales Order instead of creating a new one. */
   orderName: string | null;
+  /** The order being edited is already submitted (not yet invoiced): saving updates it in place. */
+  orderSubmitted: boolean;
   discountMode: DiscountMode;
   discountPercent: number;
   discountAmount: number;
@@ -18,7 +20,7 @@ interface SaleState {
 const KEY = (user: string) => `sales-app:sale:${user}`;
 
 function blank(): Omit<SaleState, 'user'> {
-  return { customer: null, lines: [], orderName: null, discountMode: 'percent', discountPercent: 0, discountAmount: 0 };
+  return { customer: null, lines: [], orderName: null, orderSubmitted: false, discountMode: 'percent', discountPercent: 0, discountAmount: 0 };
 }
 
 export const lineRate = (line: CartLine) => line.rate ?? line.item.price_list_rate ?? line.item.standard_rate ?? 0;
@@ -71,14 +73,22 @@ export const useSaleStore = defineStore('sale', {
         // A different customer means different prices: the lines no longer apply.
         this.lines = [];
         this.orderName = null;
+        this.orderSubmitted = false;
       }
       this.customer = customer;
       this.persist();
     },
-    /** Load an existing draft order into the sale for editing. */
-    loadOrder(orderName: string, customer: Customer, items: SalesOrderItem[], discount?: { percent?: number; amount?: number }) {
+    /** Load an existing order (a draft, or a submitted one not yet invoiced) into the sale for editing. */
+    loadOrder(
+      orderName: string,
+      customer: Customer,
+      items: SalesOrderItem[],
+      discount?: { percent?: number; amount?: number },
+      submitted = false,
+    ) {
       this.customer = customer;
       this.orderName = orderName;
+      this.orderSubmitted = submitted;
       this.lines = items.map((line) => ({
         item: {
           item_code: line.item_code,

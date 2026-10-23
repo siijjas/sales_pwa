@@ -32,6 +32,7 @@ from sales_pwa.sales_app.sales import (
 	create_sales_order,
 	submit_sales_order,
 	update_sales_order,
+	update_submitted_sales_order,
 )
 from sales_pwa.sales_app.utils import (
 	_coerce_check,
@@ -347,11 +348,19 @@ def create_counter_sale(
 			_ensure_driver_mode_allowed(mode_of_payment)
 		resolve_invoice_option(config, invoice_option or None, mark_as_paid, mode_of_payment or None)
 
-	if order_name:
-		order = update_sales_order(order_name, customer, items, discount_percent, discount_amount)
+	# A submitted order loaded from the To invoice list is changed in place (it keeps its
+	# number); a held draft is updated and submitted; otherwise a new order is taken.
+	order_docstatus = frappe.db.get_value("Sales Order", order_name, "docstatus") if order_name else None
+	if order_docstatus == 1:
+		if frappe.db.get_value("Sales Order", order_name, "customer") != customer:
+			frappe.throw(f"{order_name} is for another customer. Clear the sale to start a new order for this one.")
+		submitted = update_submitted_sales_order(order_name, items, discount_percent, discount_amount)
 	else:
-		order = create_sales_order(customer, items, discount_percent, discount_amount)
-	submitted = submit_sales_order(order["name"])
+		if order_name:
+			order = update_sales_order(order_name, customer, items, discount_percent, discount_amount)
+		else:
+			order = create_sales_order(customer, items, discount_percent, discount_amount)
+		submitted = submit_sales_order(order["name"])
 
 	result = {
 		"order": submitted["name"],
@@ -409,7 +418,10 @@ def get_counter_queue():
 	manager too: the panel is a worklist, not a report."""
 	_require_counter()
 	user = frappe.session.user
-	order_fields = ["name", "customer", "customer_name", "transaction_date", "grand_total", "total_qty", "status", "creation", "modified"]
+	order_fields = [
+		"name", "customer", "customer_name", "transaction_date", "grand_total", "total_qty", "status",
+		"per_billed", "per_delivered", "creation", "modified",
+	]
 	held = frappe.get_all(
 		"Sales Order",
 		filters={"owner": user, "docstatus": 0},
@@ -438,9 +450,27 @@ def get_counter_queue():
 	)
 	for rows in (held, to_invoice):
 		for row in rows:
-			row["grand_total"] = flt(row.get("grand_total"))
-			row["total_qty"] = flt(row.get("total_qty"))
+			for field in ("grand_total", "total_qty", "per_billed", "per_delivered"):
+				row[field] = flt(row.get(field))
+	# The collections against each invoice, so a mode keyed in wrong can be corrected
+	# from the list (finance.change_payment_mode).
+	payments: dict[str, list] = {}
+	if invoices:
+		for row in frappe.db.sql(
+			"""select ref.reference_name as invoice, pe.name, pe.mode_of_payment, ref.allocated_amount as paid_amount
+			from `tabPayment Entry Reference` ref
+			join `tabPayment Entry` pe on pe.name = ref.parent
+			where pe.docstatus = 1 and pe.payment_type = 'Receive'
+				and ref.reference_doctype = 'Sales Invoice' and ref.reference_name in %(names)s
+			order by pe.creation asc""",
+			{"names": tuple(row.name for row in invoices)},
+			as_dict=True,
+		):
+			payments.setdefault(row.invoice, []).append(
+				{"name": row.name, "mode_of_payment": row.mode_of_payment, "paid_amount": flt(row.paid_amount)}
+			)
 	for row in invoices:
 		for field in ("grand_total", "rounded_total", "outstanding_amount"):
 			row[field] = flt(row.get(field))
+		row["payments"] = payments.get(row.name, [])
 	return {"held": held, "to_invoice": to_invoice, "invoices_today": invoices}

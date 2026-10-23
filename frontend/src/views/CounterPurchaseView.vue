@@ -119,7 +119,7 @@
           </div>
         </AppCard>
 
-        <AppButton size="lg" block icon="send" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submitOrder">Submit purchase order <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
+        <AppButton size="lg" block icon="send" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submitOrder">Submit purchase order <kbd class="ml-1 text-[11px] opacity-70">F12</kbd></AppButton>
 
         <PurchaseQueue ref="queuePanel" class="min-h-[14rem] flex-1" :queue="queue" :loading="queueLoading" :busy="!!busy" :currency="currency" @refresh="loadQueue" @resume="resume" @bill="billFromQueue" />
       </div>
@@ -500,7 +500,7 @@ function onKeydown(e: KeyboardEvent) {
       e.preventDefault();
       hold();
       break;
-    case 'F9':
+    case 'F12':
       e.preventDefault();
       submitOrder();
       break;

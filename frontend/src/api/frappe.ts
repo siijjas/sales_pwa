@@ -610,6 +610,39 @@ export async function updateSalesOrder(
   return data.message as SalesOrder;
 }
 
+/** Change a submitted order that has not been invoiced or delivered: same order, new lines and discount. */
+export async function updateSubmittedSalesOrder(
+  name: string,
+  payload: { items: SalesOrderItem[]; discountPercent?: number; discountAmount?: number },
+): Promise<SalesOrder> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.sales.update_submitted_sales_order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify({
+      name,
+      items: payload.items.map((i) => ({ item_code: i.item_code, qty: i.qty, rate: i.rate ?? 0 })),
+      discount_percent: payload.discountPercent || 0,
+      discount_amount: payload.discountAmount || 0,
+    }),
+  });
+  const data = await handleResponse(res);
+  return data.message as SalesOrder;
+}
+
+/** The customer's submitted orders not invoiced yet, which can be billed together on one invoice. */
+export async function getInvoiceableOrders(customer: string): Promise<import('../types').InvoiceableOrder[]> {
+  const params = new URLSearchParams({ customer });
+  const res = await fetch(`/api/method/sales_pwa.sales_app.sales.get_invoiceable_orders?${params.toString()}`, {
+    method: 'GET',
+    headers: { ...defaultHeaders() },
+    credentials: 'include',
+  });
+  const data = await handleResponse(res);
+  return (data.message || []) as import('../types').InvoiceableOrder[];
+}
+
 export async function submitSalesOrder(name: string): Promise<SalesOrder> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.sales.submit_sales_order', {
@@ -662,7 +695,7 @@ export async function deliverPendingItems(salesOrder: string): Promise<string[]>
 
 export async function createSalesInvoice(
   salesOrder: string,
-  options?: { markAsPaid?: boolean; modeOfPayment?: string; allowWithoutStock?: boolean; invoiceOption?: string | null },
+  options?: { markAsPaid?: boolean; modeOfPayment?: string; allowWithoutStock?: boolean; invoiceOption?: string | null; otherOrders?: string[] },
 ): Promise<string> {
   await refreshCsrfToken();
   const res = await fetch('/api/method/sales_pwa.sales_app.sales.create_sales_invoice', {
@@ -676,6 +709,7 @@ export async function createSalesInvoice(
         : {}),
       ...(options?.allowWithoutStock ? { allow_without_stock: 1 } : {}),
       ...(options?.invoiceOption ? { invoice_option: options.invoiceOption } : {}),
+      ...(options?.otherOrders?.length ? { other_orders: options.otherOrders } : {}),
     }),
   });
   const data = await handleResponse(res);
@@ -687,9 +721,11 @@ export async function previewSalesInvoice(
   salesOrder: string,
   invoiceOption?: string | null,
   payment?: { markAsPaid?: boolean; modeOfPayment?: string | null },
+  otherOrders?: string[],
 ): Promise<import('../types').InvoicePreview> {
   const params = new URLSearchParams({ sales_order: salesOrder });
   if (invoiceOption) params.set('invoice_option', invoiceOption);
+  if (otherOrders?.length) params.set('other_orders', JSON.stringify(otherOrders));
   if (payment?.markAsPaid) {
     params.set('mark_as_paid', '1');
     if (payment.modeOfPayment) params.set('mode_of_payment', payment.modeOfPayment);
@@ -957,6 +993,19 @@ export async function getDailyLog(doctype: 'Sales Order' | 'Payment Entry') {
   });
   const data = await handleResponse(res);
   return data.message || [];
+}
+
+/** Correct a submitted payment's mode: it is cancelled and an amended copy (name-1) takes its place. */
+export async function changePaymentMode(paymentEntry: string, modeOfPayment: string): Promise<import('../types').PaymentModeChange> {
+  await refreshCsrfToken();
+  const res = await fetch('/api/method/sales_pwa.sales_app.finance.change_payment_mode', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...defaultHeaders() },
+    credentials: 'include',
+    body: JSON.stringify({ payment_entry: paymentEntry, mode_of_payment: modeOfPayment }),
+  });
+  const data = await handleResponse(res);
+  return data.message as import('../types').PaymentModeChange;
 }
 
 export async function getPaymentEntry(name: string) {

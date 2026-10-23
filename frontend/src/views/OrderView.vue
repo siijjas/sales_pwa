@@ -90,8 +90,11 @@
         <AppButton size="lg" block icon="check" :loading="submitting" @click="submitOrder">Submit order</AppButton>
       </div>
     </StickyBar>
-    <StickyBar v-else-if="order && canInvoice && order.docstatus === 1 && !fullyBilled">
-      <AppButton size="lg" block icon="file-text" @click="invoiceOpen = true">Create invoice</AppButton>
+    <StickyBar v-else-if="order && ((canInvoice && order.docstatus === 1 && !fullyBilled) || canChange)">
+      <div class="grid gap-2" :class="canChange && canInvoice && !fullyBilled ? 'grid-cols-2' : ''">
+        <AppButton v-if="canChange" :variant="canInvoice ? 'secondary' : 'primary'" size="lg" block icon="edit" @click="editOrder">Edit order</AppButton>
+        <AppButton v-if="canInvoice && !fullyBilled" size="lg" block icon="file-text" @click="invoiceOpen = true">Create invoice</AppButton>
+      </div>
     </StickyBar>
     <StickyBar v-else-if="order && canDeliver && hasPendingDelivery">
       <AppButton size="lg" block icon="truck" :loading="delivering" @click="deliverPending">Deliver pending items</AppButton>
@@ -110,6 +113,7 @@ import { useSessionStore } from '../stores/session';
 import { useSaleStore } from '../stores/sale';
 import { useToast } from '../composables/useToast';
 import { usePrint } from '../composables/usePrint';
+import { useConfirm } from '../composables/useConfirm';
 import { money, qty, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import InvoiceSheet from '../components/InvoiceSheet.vue';
@@ -121,6 +125,7 @@ const store = useSessionStore();
 const sale = useSaleStore();
 const toast = useToast();
 const { print } = usePrint();
+const { confirm } = useConfirm();
 
 const orderId = route.params.name as string;
 const currency = computed(() => store.currencyDisplay);
@@ -145,6 +150,15 @@ const billedLabel = computed(() => {
 const billedTone = computed<'success' | 'warning' | 'neutral'>(() => {
   const p = order.value?.per_billed ?? 0;
   return p >= 100 ? 'success' : p > 0 ? 'warning' : 'neutral';
+});
+// A submitted order can still be changed until anything is invoiced or delivered against it
+// (sales.update_submitted_sales_order checks the same, and that it is the user's own order).
+const canChange = computed(() => {
+  const o = order.value;
+  if (!o || o.docstatus !== 1) return false;
+  if ((o.per_billed ?? 0) > 0 || (o.per_delivered ?? 0) > 0) return false;
+  if (['Closed', 'On Hold', 'Completed'].includes(o.status)) return false;
+  return store.isManager || o.owner === store.session?.user;
 });
 // Billed in full but not yet delivered in full: sold while short of van stock.
 const hasPendingDelivery = computed(
@@ -187,13 +201,25 @@ async function submitOrder() {
   }
 }
 
-function editOrder() {
+async function editOrder() {
   if (!order.value) return;
+  const submitted = order.value.docstatus === 1;
+  // Loading this order replaces whatever sale is in progress on the phone.
+  if (sale.hasDraft && sale.orderName !== order.value.name) {
+    const ok = await confirm({
+      title: 'Replace the sale in progress?',
+      message: `The cart${sale.customer ? ` for ${sale.customer.customer_name}` : ''} is cleared to edit ${order.value.name}.`,
+      confirmLabel: 'Edit order',
+      icon: 'edit',
+    });
+    if (!ok) return;
+  }
   sale.loadOrder(
     order.value.name,
     { name: order.value.customer, customer_name: order.value.customer_name, customer_group: '', territory: '' },
     order.value.items || [],
     { percent: order.value.additional_discount_percentage || 0, amount: order.value.discount_amount || 0 },
+    submitted,
   );
   router.push({ name: 'sell-review' });
 }

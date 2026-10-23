@@ -11,7 +11,7 @@
     </template>
 
     <div class="space-y-4 pb-28">
-      <AppAlert v-if="sale.orderName" tone="info" :message="`Editing draft ${sale.orderName}`" />
+      <AppAlert v-if="sale.orderName" tone="info" :message="sale.orderSubmitted ? `Changing submitted order ${sale.orderName}` : `Editing draft ${sale.orderName}`" />
       <AppAlert v-if="error" tone="danger" :message="error" />
       <SkeletonList v-if="loading" :rows="6" height="5rem" />
       <EmptyState v-else-if="!items.length" icon="package" title="No items found" description="Adjust your search to find products." />

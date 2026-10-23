@@ -293,21 +293,10 @@ def _reject_fractional_whole_units(lines: list[dict]) -> None:
 			)
 
 
-def _apply_order_payload(doc, customer, items, discount_percent, discount_amount):
-	"""Build a Sales Order server-side from a driver's cart.
-
-	The frontend used to assemble the whole document — company, price list, currency,
-	payment schedule and every total — and POST it to frappe.client.insert. That meant
-	the Sales App User role needed create/write on Sales Order through plain
-	/api/resource, so anything holding that role could write orders without passing a
-	single van_sale check, and the totals were whatever the client said they were.
-
-	Here the client sends only customer, items and an optional discount; everything
-	else comes from the driver's Sales Profile and ERPNext computes the totals.
-	"""
-	config = _get_driver_config(required=False) or {}
-	lines = _coerce_order_lines(items)
-
+def _apply_order_header(doc, config: dict, customer: str):
+	"""Customer, dates, company, warehouse, price list, currency and tax template of a
+	new or draft order, all taken from the staff member's Sales Profile, plus where its
+	discount applies."""
 	doc.customer = customer
 	doc.transaction_date = doc.transaction_date or nowdate()
 	doc.delivery_date = doc.delivery_date or doc.transaction_date
@@ -336,11 +325,33 @@ def _apply_order_payload(doc, customer, items, discount_percent, discount_amount
 	doc.taxes_and_charges = config.get("taxes_and_charges") or None
 	if not doc.taxes_and_charges:
 		doc.set("taxes", [])
+	doc.apply_discount_on = config.get("apply_discount_on") or "Grand Total"
+
+
+def _apply_order_payload(doc, customer, items, discount_percent, discount_amount):
+	"""Build a Sales Order server-side from a driver's cart.
+
+	The frontend used to assemble the whole document — company, price list, currency,
+	payment schedule and every total — and POST it to frappe.client.insert. That meant
+	the Sales App User role needed create/write on Sales Order through plain
+	/api/resource, so anything holding that role could write orders without passing a
+	single van_sale check, and the totals were whatever the client said they were.
+
+	Here the client sends only customer, items and an optional discount; everything
+	else comes from the driver's Sales Profile and ERPNext computes the totals.
+	"""
+	config = _get_driver_config(required=False) or {}
+	lines = _coerce_order_lines(items)
+
+	# A submitted order (update_submitted_sales_order) keeps its customer, company,
+	# warehouse, price list, currency and taxes: only its lines and discount change.
+	submitted = doc.docstatus == 1
+	if not submitted:
+		_apply_order_header(doc, config, customer)
 
 	# Percentage takes priority over a flat amount, matching ERPNext's own
 	# set_discount_amount() precedence. Both are handed to ERPNext rather than
 	# pre-multiplied here, so calculate_taxes_and_totals() owns the arithmetic.
-	doc.apply_discount_on = config.get("apply_discount_on") or "Grand Total"
 	percent = flt(discount_percent)
 	if percent > 0:
 		doc.additional_discount_percentage = percent
@@ -349,8 +360,26 @@ def _apply_order_payload(doc, customer, items, discount_percent, discount_amount
 		doc.additional_discount_percentage = 0
 		doc.discount_amount = flt(discount_amount)
 
+	# A submitted order keeps the rows it already has (one per item), so their names,
+	# warehouses and reserved stock carry over; rows for items no longer in the cart are
+	# left in doc.flags.removed_order_rows for the caller to release. A draft is simply
+	# rebuilt.
+	kept, removed = {}, []
+	if submitted:
+		for line in doc.items:
+			if line.item_code in kept:
+				removed.append(line)
+			else:
+				kept[line.item_code] = line
 	doc.set("items", [])
 	for row in lines:
+		line = kept.pop(row["item_code"], None)
+		if line is not None:
+			line.qty = row["qty"]
+			# None, not 0, so set_missing_values() prices it again like a new line.
+			line.rate = row["rate"] if row["rate"] > 0 else None
+			doc.append("items", line)
+			continue
 		line = {
 			"item_code": row["item_code"],
 			"qty": row["qty"],
@@ -359,6 +388,9 @@ def _apply_order_payload(doc, customer, items, discount_percent, discount_amount
 		if row["rate"] > 0:
 			line["rate"] = row["rate"]
 		doc.append("items", line)
+	for idx, line in enumerate(doc.items, start=1):
+		line.idx = idx
+	doc.flags.removed_order_rows = removed + list(kept.values())
 
 	doc.run_method("set_missing_values")
 	# Same fallback as create_sales_return(): with no Item Price row set_missing_values()
@@ -417,6 +449,89 @@ def update_sales_order(name: str, customer: str, items, discount_percent: float 
 
 	_apply_order_payload(doc, customer, items, discount_percent, discount_amount)
 	doc.save()
+	return doc.as_dict()
+
+
+def _check_order_editable(doc):
+	"""A submitted order can still change while nothing has been raised against it: no
+	invoice, no delivery and no pick list. After that the change belongs on a credit
+	note or a manual adjustment by the back office."""
+	if doc.docstatus != 1:
+		frappe.throw("Only a submitted sales order can be updated here.")
+	if flt(doc.per_billed) > 0:
+		frappe.throw(f"Sales Order {doc.name} has already been invoiced and can no longer be changed.")
+	if doc.status in ("Closed", "On Hold", "Completed"):
+		frappe.throw(f"Sales Order {doc.name} is {doc.status} and can no longer be changed.")
+	if flt(doc.per_delivered) > 0 or flt(doc.get("per_picked")) > 0:
+		frappe.throw(f"Items on Sales Order {doc.name} have already been picked or delivered, so it can no longer be changed.")
+
+
+@frappe.whitelist()
+def update_submitted_sales_order(name: str, items, discount_percent: float = 0, discount_amount: float = 0):
+	"""Change the lines (quantities, rates, items added or removed) and discount of a
+	submitted order that has not been invoiced or delivered yet.
+
+	The order is updated in place, as ERPNext's own "Update Items" does
+	(update_child_qty_rate): same name, same customer, prices and taxes from the order
+	itself, and every profile check that applies when an order is taken. That function
+	cannot be called directly because it checks the session user's write permission on
+	Sales Order, which the driver role does not hold, and it cannot change the order's
+	discount; the steps below are the ones it runs for a Sales Order.
+	"""
+	from erpnext.controllers.accounts_controller import update_bin_on_delete
+	from erpnext.stock.doctype.packed_item.packed_item import make_packing_list
+
+	_require_van_user()
+	require_open_shift("change an order")
+	doc = frappe.get_doc("Sales Order", name)
+	if not _is_manager() and doc.owner != frappe.session.user:
+		frappe.throw("You can only change your own sales orders.", frappe.PermissionError)
+	_validate_customer_access(doc.customer)
+	_check_order_editable(doc)
+
+	_apply_order_payload(doc, doc.customer, items, discount_percent, discount_amount)
+	removed = doc.flags.removed_order_rows or []
+	for row in removed:
+		if flt(row.get("ordered_qty")) or flt(row.get("work_order_qty")):
+			frappe.throw(f"{row.item_name or row.item_code} has been ordered from a supplier or production, so it cannot be removed.")
+	_check_daily_credit_limit(doc.grand_total or 0, exclude=doc.name)
+	if flt(doc.advance_paid) - flt(doc.rounded_total or doc.grand_total) > 0.005:
+		frappe.throw(
+			f"{doc.name} has {flt(doc.advance_paid):g} paid in advance, more than the new total of "
+			f"{flt(doc.rounded_total or doc.grand_total):g}. Refund or reallocate the advance first."
+		)
+
+	doc.set_qty_as_per_stock_uom()
+	doc.run_method("calculate_taxes_and_totals")
+	doc.set_total_in_words()
+	make_packing_list(doc)
+	doc.set_gross_profit()
+	doc.set_payment_schedule()
+	doc.validate_selling_price()
+	doc.validate_uom_is_integer("uom", "qty")
+	doc.validate_uom_is_integer("stock_uom", "stock_qty")
+
+	doc.flags.ignore_validate_update_after_submit = True
+	doc.save()
+
+	# The rows that went are gone from the database now, so the Bin's reserved qty can be
+	# recomputed without them; the remaining rows are recomputed by update_reserved_qty().
+	for row in removed:
+		update_bin_on_delete(row, "Sales Order")
+	doc.update_reserved_qty()
+	doc.update_prevdoc_status("submit")
+	doc.set_status(update=True)
+
+	from erpnext.stock.doctype.stock_reservation_entry.stock_reservation_entry import (
+		cancel_stock_reservation_entries,
+		has_reserved_stock,
+	)
+
+	if has_reserved_stock(doc.doctype, doc.name):
+		cancel_stock_reservation_entries(doc.doctype, doc.name)
+		doc.create_stock_reservation_entries()
+
+	doc.notify_update()
 	return doc.as_dict()
 
 
@@ -758,6 +873,78 @@ def _get_invoiceable_order(sales_order: str):
 	return so
 
 
+def _parse_order_names(other_orders) -> list[str]:
+	if not other_orders:
+		return []
+	names = other_orders if isinstance(other_orders, list) else json.loads(other_orders)
+	return [str(n) for n in names if n]
+
+
+def _get_invoiceable_orders(sales_order: str, other_orders=None) -> list:
+	"""The order being invoiced plus any others billed on the same invoice.
+
+	Every order passes _get_invoiceable_order(). The others must also be untouched by
+	invoicing and delivery (per_billed and per_delivered 0), not closed or on hold, and match the first order's
+	customer, company and currency, since one invoice carries one of each.
+	"""
+	first = _get_invoiceable_order(sales_order)
+	orders = [first]
+	for name in dict.fromkeys(_parse_order_names(other_orders)):
+		if name == first.name:
+			continue
+		so = _get_invoiceable_order(name)
+		if flt(so.per_billed) > 0:
+			frappe.throw(f"{so.name} is already partly invoiced. Invoice it on its own.")
+		# The grouped invoice takes stock out of the van; a delivered order would go twice.
+		if flt(so.per_delivered) > 0:
+			frappe.throw(f"{so.name} has already been delivered. Invoice it on its own.")
+		if so.status in ("Closed", "On Hold"):
+			frappe.throw(f"{so.name} is {so.status} and cannot be invoiced.")
+		if so.customer != first.customer:
+			frappe.throw(f"{so.name} is for {so.customer_name}, not {first.customer_name}. Only one customer's orders go on an invoice.")
+		if so.company != first.company or so.currency != first.currency:
+			frappe.throw(f"{so.name} is in a different company or currency from {first.name}, so they need separate invoices.")
+		orders.append(so)
+	return orders
+
+
+def _check_orders_taxed_alike(orders, option: dict | None):
+	"""Without an invoice option the invoice copies the orders' tax template, so the
+	orders on one invoice have to share it. With an option every order is re-taxed to
+	the option's template first (_align_order_taxes), so they always agree."""
+	if option or len(orders) < 2:
+		return
+	templates = {so.taxes_and_charges or None for so in orders}
+	if len(templates) > 1:
+		frappe.throw("These orders are taxed differently, so they cannot go on one invoice. Invoice them separately.")
+
+
+@frappe.whitelist()
+def get_invoiceable_orders(customer: str):
+	"""Submitted orders of this customer not invoiced or delivered at all yet, which the invoice
+	sheet offers to bill together on one invoice. Staff see their own orders only,
+	the same rule _get_invoiceable_order() applies when they are billed."""
+	_require_van_user()
+	_require_capability("can_invoice", "invoice orders")
+	_validate_customer_access(customer)
+	filters = {
+		"customer": customer,
+		"docstatus": 1,
+		"per_billed": 0,
+		"per_delivered": 0,
+		"status": ["not in", ["Closed", "On Hold", "Completed"]],
+	}
+	if not _is_manager():
+		filters["owner"] = frappe.session.user
+	return frappe.get_all(
+		"Sales Order",
+		filters=filters,
+		fields=["name", "transaction_date", "grand_total", "rounded_total", "total_qty", "currency", "company", "taxes_and_charges", "owner"],
+		order_by="transaction_date asc, creation asc",
+		limit_page_length=50,
+	)
+
+
 def _is_stock_item(item_code: str) -> bool:
 	return bool(frappe.get_cached_value("Item", item_code, "is_stock_item"))
 
@@ -767,16 +954,18 @@ def _van_qty(item_code: str, warehouse: str) -> float:
 
 
 def _van_stock_shortages(so, warehouse: str | None) -> list[dict]:
-	"""Stock items on the order the van can't fully cover, compared in stock UOM.
+	"""Stock items on the order (or orders, for a grouped invoice) the van can't fully
+	cover, compared in stock UOM.
 
-	Quantities are summed per item first, so an item split over several lines is
-	checked against the van once rather than each line seeing the whole stock.
+	Quantities are summed per item first, so an item split over several lines or
+	orders is checked against the van once rather than each line seeing the whole stock.
 	"""
 	if not warehouse:
 		return []
+	orders = so if isinstance(so, list | tuple) else [so]
 	required: dict[str, float] = {}
 	names: dict[str, str] = {}
-	for so_item in so.items:
+	for so_item in (row for order in orders for row in order.items):
 		qty = flt(so_item.qty) - flt(so_item.returned_qty or 0)
 		if qty <= 0 or not _is_stock_item(so_item.item_code):
 			continue
@@ -957,11 +1146,17 @@ def _build_sales_invoice(so, config: dict | None, option: dict | None, defer_del
 	not yet inserted. preview_sales_invoice() shows it, create_sales_invoice() saves
 	it, so what staff confirm is exactly what gets raised.
 
+	`so` may also be a list of the same customer's orders (see _get_invoiceable_orders()):
+	one invoice then bills all of them, each line still linked to its own order, and
+	the header comes from the first.
+
 	`option` is a Sales Invoice Option payload (see invoice_option.py): it sets the
 	naming series and replaces the order's tax template with its own (blank meaning
 	no taxes). Without one the invoice copies the order's taxes and takes the default
 	series, as it always did.
 	"""
+	orders = list(so) if isinstance(so, list | tuple) else [so]
+	so = orders[0]
 	van_warehouse = _selling_warehouse(config)
 
 	sinv = frappe.new_doc("Sales Invoice")
@@ -980,22 +1175,23 @@ def _build_sales_invoice(so, config: dict | None, option: dict | None, defer_del
 		sinv.naming_series = option["naming_series"]
 		sinv.taxes_and_charges = option.get("taxes_and_charges") or None
 
-	for so_item in so.items:
-		remaining_qty = flt(so_item.qty) - flt(so_item.returned_qty or 0)
-		if remaining_qty <= 0:
-			continue
-		sinv.append("items", {
-			"item_code": so_item.item_code,
-			"item_name": so_item.item_name,
-			"qty": remaining_qty,
-			"uom": so_item.uom or so_item.stock_uom,
-			"stock_uom": so_item.stock_uom,
-			"rate": so_item.rate,
-			"sales_order": so.name,
-			"so_detail": so_item.name,
-			"cost_center": getattr(so_item, "cost_center", None),
-			"warehouse": van_warehouse,
-		})
+	for order in orders:
+		for so_item in order.items:
+			remaining_qty = flt(so_item.qty) - flt(so_item.returned_qty or 0)
+			if remaining_qty <= 0:
+				continue
+			sinv.append("items", {
+				"item_code": so_item.item_code,
+				"item_name": so_item.item_name,
+				"qty": remaining_qty,
+				"uom": so_item.uom or so_item.stock_uom,
+				"stock_uom": so_item.stock_uom,
+				"rate": so_item.rate,
+				"sales_order": order.name,
+				"so_detail": so_item.name,
+				"cost_center": getattr(so_item, "cost_center", None),
+				"warehouse": van_warehouse,
+			})
 
 	# Carry the order-level discount across. Without this the invoice is raised at the
 	# UNDISCOUNTED total — a 100.00 order with 10% off bills 100.00, and with mark_as_paid
@@ -1007,6 +1203,17 @@ def _build_sales_invoice(so, config: dict | None, option: dict | None, defer_del
 	sinv.apply_discount_on = so.apply_discount_on or "Grand Total"
 	sinv.additional_discount_percentage = flt(so.additional_discount_percentage)
 	sinv.discount_amount = flt(so.discount_amount)
+	if len(orders) > 1:
+		# Several orders: one shared percentage carries over as it is; anything else
+		# becomes the sum of each order's own discount, so the invoice takes off exactly
+		# what the orders did.
+		percents = {flt(order.additional_discount_percentage) for order in orders}
+		total_discount = sum(flt(order.discount_amount) for order in orders)
+		if len(percents) == 1 and (percents.pop() > 0 or not total_discount):
+			sinv.discount_amount = total_discount
+		else:
+			sinv.additional_discount_percentage = 0
+			sinv.discount_amount = total_discount
 
 	sinv.run_method("set_missing_values")
 	if option:
@@ -1044,23 +1251,32 @@ def _align_order_taxes(so, option: dict) -> bool:
 	ledger postings, so there is nothing else to reverse. Runs in the same
 	transaction as the invoice, so a failure in either rolls back both.
 	"""
-	if not _order_taxes_differ(so, option):
+	if not _retax_order(so, option):
 		return False
-	from erpnext.controllers.accounts_controller import get_taxes_and_charges
-
-	template = option.get("taxes_and_charges") or None
 	so.flags.ignore_validate_update_after_submit = True
 	so.flags.ignore_permissions = True
-	so.taxes_and_charges = template
-	so.set("taxes", [])
-	if template:
-		so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", template))
-	so.run_method("calculate_taxes_and_totals")
 	so.run_method("set_total_in_words")
 	so.run_method("set_gross_profit")
 	so.run_method("set_payment_schedule")
 	so.save()
 	so.notify_update()
+	return True
+
+
+def _retax_order(so, option: dict | None) -> bool:
+	"""In memory only: put the option's tax template on the order and recompute its
+	totals. preview_sales_invoice() uses it as is, so a grouped preview sums the same
+	per-order discounts that _align_order_taxes() then saves."""
+	if not _order_taxes_differ(so, option):
+		return False
+	from erpnext.controllers.accounts_controller import get_taxes_and_charges
+
+	template = option.get("taxes_and_charges") or None
+	so.taxes_and_charges = template
+	so.set("taxes", [])
+	if template:
+		so.extend("taxes", get_taxes_and_charges("Sales Taxes and Charges Template", template))
+	so.run_method("calculate_taxes_and_totals")
 	return True
 
 
@@ -1088,23 +1304,36 @@ def _proposed_invoice_name(sinv) -> str | None:
 
 @frappe.whitelist()
 def preview_sales_invoice(
-	sales_order: str, invoice_option: str | None = None, mark_as_paid: int = 0, mode_of_payment: str | None = None
+	sales_order: str,
+	invoice_option: str | None = None,
+	mark_as_paid: int = 0,
+	mode_of_payment: str | None = None,
+	other_orders=None,
 ):
 	"""What create_sales_invoice() would raise for this order with this option: the
 	proposed number, lines, subtotal, each tax line and the grand total — plus the
 	stock shortages, so the app can show everything on one confirmation sheet.
 	Read-only: nothing is inserted and no series counter moves. The payment choice
-	is needed because each option carries a payment rule (see invoice_option.py)."""
+	is needed because each option carries a payment rule (see invoice_option.py).
+	`other_orders` (a list of names) bills more of the customer's orders on the same
+	invoice, as create_sales_invoice() does."""
 	_require_van_user()
 	_require_capability("can_invoice", "invoice orders")
-	so = _get_invoiceable_order(sales_order)
+	orders = _get_invoiceable_orders(sales_order, other_orders)
+	so = orders[0]
 	config = _get_driver_config(required=False)
 	option = resolve_invoice_option(config, invoice_option, _coerce_check(mark_as_paid), mode_of_payment or None)
-	short_items = _van_stock_shortages(so, _selling_warehouse(config))
+	_check_orders_taxed_alike(orders, option)
+	order_grand_total = sum(flt(order.grand_total) for order in orders)
+	order_taxes_will_update = any(_order_taxes_differ(order, option) for order in orders)
+	for order in orders:
+		_retax_order(order, option)
+	short_items = _van_stock_shortages(orders, _selling_warehouse(config))
 	allow_without_stock = bool(config and config.get("allow_sale_without_stock"))
-	sinv = _build_sales_invoice(so, config, option, defer_delivery=bool(short_items) and allow_without_stock)
+	sinv = _build_sales_invoice(orders, config, option, defer_delivery=bool(short_items) and allow_without_stock)
 	return {
 		"sales_order": so.name,
+		"sales_orders": [order.name for order in orders],
 		"customer": sinv.customer,
 		"customer_name": sinv.customer_name,
 		"posting_date": sinv.posting_date,
@@ -1121,6 +1350,7 @@ def preview_sales_invoice(
 				"uom": row.uom,
 				"rate": flt(row.rate),
 				"amount": flt(row.amount),
+				"sales_order": row.sales_order,
 			}
 			for row in sinv.items
 		],
@@ -1144,9 +1374,9 @@ def preview_sales_invoice(
 		"disable_rounded_total": _coerce_check(sinv.disable_rounded_total),
 		"short_items": short_items,
 		"allow_sale_without_stock": allow_without_stock,
-		# The order is re-taxed to the option on confirm so its total matches the invoice.
-		"order_grand_total": flt(so.grand_total),
-		"order_taxes_will_update": _order_taxes_differ(so, option),
+		# The orders are re-taxed to the option on confirm so their total matches the invoice.
+		"order_grand_total": order_grand_total,
+		"order_taxes_will_update": order_taxes_will_update,
 	}
 
 
@@ -1157,8 +1387,13 @@ def create_sales_invoice(
 	mode_of_payment: str = None,
 	allow_without_stock: int = 0,
 	invoice_option: str | None = None,
+	other_orders=None,
 ):
 	"""Create (and submit) a Sales Invoice from a submitted Sales Order.
+
+	`other_orders` lists more submitted, not yet invoiced orders of the same customer
+	to bill on this one invoice (see _get_invoiceable_orders()); each invoice line keeps
+	its own order link, so every order shows as invoiced.
 
 	`invoice_option` names a Sales Invoice Option (numbering series + tax template)
 	from the staff member's profile; see preview_sales_invoice() for what it yields.
@@ -1191,11 +1426,12 @@ def create_sales_invoice(
 			frappe.throw("Select a mode of payment to mark this invoice as paid.")
 		_ensure_driver_mode_allowed(mode_of_payment)
 
-	so = _get_invoiceable_order(sales_order)
+	orders = _get_invoiceable_orders(sales_order, other_orders)
 
 	config = _get_driver_config(required=False)
 	van_warehouse = _selling_warehouse(config)
 	option = resolve_invoice_option(config, invoice_option, mark_as_paid, mode_of_payment or None)
+	_check_orders_taxed_alike(orders, option)
 
 	# Re-checked here rather than trusted from the client: the flag only means "the
 	# driver saw the warning", the Sales Profile decides whether it is allowed at all.
@@ -1204,12 +1440,13 @@ def create_sales_invoice(
 	if allow_without_stock:
 		if not (config and config.get("allow_sale_without_stock")):
 			frappe.throw("Selling without van stock is not enabled on your Sales Profile.", frappe.PermissionError)
-		defer_delivery = bool(_van_stock_shortages(so, van_warehouse))
+		defer_delivery = bool(_van_stock_shortages(orders, van_warehouse))
 
 	if option:
-		_align_order_taxes(so, option)
+		for order in orders:
+			_align_order_taxes(order, option)
 
-	sinv = _build_sales_invoice(so, config, option, defer_delivery)
+	sinv = _build_sales_invoice(orders, config, option, defer_delivery)
 
 	# Sales Invoice is a standard ERPNext financial doctype. Sales App User does not hold
 	# broad ERPNext accounting permissions, so we use flags.ignore_permissions after

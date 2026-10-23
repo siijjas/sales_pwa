@@ -7,7 +7,7 @@
     :model-value="modelValue"
     size="lg"
     :title="step === 'setup' ? 'Create invoice' : 'Confirm invoice'"
-    :subtitle="order.name"
+    :subtitle="selectedOthers.length ? `${order.name} + ${plural(selectedOthers.length, 'more order')}` : order.name"
     :back="step === 'preview'"
     @update:model-value="(v: boolean) => $emit('update:modelValue', v)"
     @back="step = 'setup'"
@@ -48,6 +48,28 @@
         </ChoiceCard>
       </div>
 
+      <!-- More of this customer's orders on the same invoice -->
+      <div v-if="otherOrders.length" class="space-y-3">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-wider text-muted">Bill together</p>
+          <p class="mt-0.5 text-[12px] text-subtle">{{ order.customer_name }} has {{ plural(otherOrders.length, 'other order') }} not invoiced yet. Tick any to put them on this invoice too.</p>
+        </div>
+        <ChoiceCard
+          v-for="o in otherOrders"
+          :key="o.name"
+          :selected="selectedOthers.includes(o.name)"
+          :disabled="taxedDifferently(o)"
+          :title="o.name"
+          :subtitle="taxedDifferently(o) ? 'Taxed differently: invoice it on its own' : `${shortDate(o.transaction_date)} · ${plural(o.total_qty, 'unit')}`"
+          @click="toggleOther(o.name)"
+        >
+          <template #trailing>
+            <span class="tnum shrink-0 text-sm font-bold text-foreground">{{ currency }} {{ money(o.rounded_total || o.grand_total) }}</span>
+          </template>
+        </ChoiceCard>
+        <DataRow v-if="selectedOthers.length" :label="`${plural(selectedOthers.length + 1, 'order')} together`" :value="`${currency} ${money(groupTotal)}`" emphasis />
+      </div>
+
       <AppAlert v-if="error" tone="danger" :message="error" />
     </div>
 
@@ -60,14 +82,15 @@
         <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span v-if="preview.invoice_option" class="rounded-full bg-background/15 px-2.5 py-1 font-semibold">{{ preview.invoice_option.option_name }}</span>
           <span class="rounded-full bg-background/15 px-2.5 py-1">{{ preview.taxes_and_charges || 'No tax' }}</span>
+          <span v-if="grouped" class="rounded-full bg-background/15 px-2.5 py-1">{{ plural(preview.sales_orders.length, 'order') }}: {{ preview.sales_orders.join(', ') }}</span>
         </div>
       </div>
 
       <div class="divide-y divide-line rounded-2xl ring-1 ring-inset ring-line">
-        <div v-for="line in preview.items" :key="line.item_code" class="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+        <div v-for="(line, i) in preview.items" :key="i" class="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
           <div class="min-w-0">
             <p class="truncate font-semibold text-foreground">{{ line.item_name }}</p>
-            <p class="tnum text-xs text-muted">{{ qty(line.qty) }} {{ line.uom }} × {{ currency }} {{ money(line.rate) }}</p>
+            <p class="tnum text-xs text-muted">{{ qty(line.qty) }} {{ line.uom }} × {{ currency }} {{ money(line.rate) }}<span v-if="grouped" class="text-subtle"> · {{ line.sales_order }}</span></p>
           </div>
           <p class="tnum shrink-0 font-semibold text-foreground">{{ currency }} {{ money(line.amount) }}</p>
         </div>
@@ -93,7 +116,9 @@
       <AppAlert
         v-if="preview.order_taxes_will_update"
         tone="info"
-        :message="`The order's taxes will be updated to match this option, so its total changes from ${currency} ${money(preview.order_grand_total)} to ${currency} ${money(preview.grand_total)}.`"
+        :message="grouped
+          ? `The orders' taxes will be updated to match this option, so together they change from ${currency} ${money(preview.order_grand_total)} to ${currency} ${money(preview.grand_total)}.`
+          : `The order's taxes will be updated to match this option, so its total changes from ${currency} ${money(preview.order_grand_total)} to ${currency} ${money(preview.grand_total)}.`"
       />
       <AppAlert
         v-if="preview.short_items.length"
@@ -145,10 +170,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import * as api from '../api/frappe';
-import type { SalesOrder, PaymentMode, InvoiceOption, InvoicePreview } from '../types';
+import type { SalesOrder, PaymentMode, InvoiceOption, InvoicePreview, InvoiceableOrder } from '../types';
 import { invoiceOptionApplies } from '../types';
 import { useSessionStore } from '../stores/session';
-import { money, qty } from '../utils/format';
+import { money, plural, qty, shortDate } from '../utils/format';
 import { AppAlert, AppButton, BaseSelect, BottomSheet, ChoiceCard, DataRow, FormField, SegmentedControl, StatusBadge } from './ui';
 
 const props = defineProps<{ modelValue: boolean; order: SalesOrder }>();
@@ -172,7 +197,35 @@ const preview = ref<InvoicePreview | null>(null);
 const previewLoading = ref(false);
 const creating = ref(false);
 const error = ref('');
+/** The customer's other submitted orders not invoiced yet, and the ones ticked to bill along. */
+const otherOrders = ref<InvoiceableOrder[]>([]);
+const selectedOthers = ref<string[]>([]);
 let loaded = false;
+
+const grouped = computed(() => (preview.value?.sales_orders.length ?? 0) > 1);
+const groupTotal = computed(
+  () => (props.order.grand_total || 0)
+    + otherOrders.value.filter((o) => selectedOthers.value.includes(o.name)).reduce((sum, o) => sum + (o.grand_total || 0), 0),
+);
+// Without invoice options the invoice copies the orders' tax template, so the server only
+// groups orders that share it. With options every order is re-taxed to the chosen one.
+function taxedDifferently(o: InvoiceableOrder) {
+  return !invoiceOptions.value.length && (o.taxes_and_charges || null) !== (props.order.taxes_and_charges || null);
+}
+function toggleOther(name: string) {
+  selectedOthers.value = selectedOthers.value.includes(name)
+    ? selectedOthers.value.filter((n) => n !== name)
+    : [...selectedOthers.value, name];
+  preview.value = null;
+}
+
+async function loadOtherOrders() {
+  otherOrders.value = [];
+  selectedOthers.value = [];
+  if (!store.capabilities.can_invoice || !props.order.customer) return;
+  const rows = await api.getInvoiceableOrders(props.order.customer).catch(() => [] as InvoiceableOrder[]);
+  otherOrders.value = rows.filter((o) => o.name !== props.order.name && o.currency === (props.order.currency || o.currency));
+}
 
 // Each option carries a payment rule (credit yes/no, paid-now modes), so the list on
 // offer follows the payment choice. The server applies the same rule.
@@ -217,6 +270,7 @@ watch(
       error.value = '';
       preview.value = null;
       loadChoices();
+      loadOtherOrders();
     }
   },
   { immediate: true },
@@ -228,10 +282,12 @@ async function loadPreview() {
   error.value = '';
   try {
     // With one option (or none) the server applies the profile default itself.
-    preview.value = await api.previewSalesInvoice(props.order.name, selectedOption.value, {
-      markAsPaid: markAsPaid.value,
-      modeOfPayment: modeOfPayment.value,
-    });
+    preview.value = await api.previewSalesInvoice(
+      props.order.name,
+      selectedOption.value,
+      { markAsPaid: markAsPaid.value, modeOfPayment: modeOfPayment.value },
+      selectedOthers.value,
+    );
     step.value = 'preview';
   } catch (e: any) {
     error.value = e?.message || 'Failed to prepare the invoice preview';
@@ -251,6 +307,7 @@ async function create() {
       modeOfPayment: modeOfPayment.value,
       allowWithoutStock: withoutStock,
       invoiceOption: selectedOption.value,
+      otherOrders: selectedOthers.value,
     });
     const deferredNote = withoutStock
       ? `Invoice ${invoiceName} created. Available stock was delivered; `

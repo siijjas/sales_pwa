@@ -232,6 +232,97 @@ def create_payment_entry(
 	return pe.name
 
 
+def _closing_that_counted(payment_entry: str) -> str | None:
+	"""The submitted shift closing whose reconciliation summed this payment, if any."""
+	rows = frappe.db.sql(
+		"""select c.name from `tabSales Shift Transaction` t
+		join `tabSales Shift Closing` c on c.name = t.parent and c.docstatus = 1
+		where t.parenttype = 'Sales Shift Closing' and t.reference_doctype = 'Payment Entry'
+			and t.reference_name = %s
+		limit 1""",
+		(payment_entry,),
+	)
+	return rows[0][0] if rows else None
+
+
+@frappe.whitelist()
+def change_payment_mode(payment_entry: str, mode_of_payment: str):
+	"""Correct the mode of payment of a submitted collection (or supplier payment) that
+	was recorded under the wrong one, e.g. card keyed in as cash.
+
+	A submitted Payment Entry's mode and account cannot change in place, so this does
+	what ERPNext's Cancel and Amend does: the entry is cancelled and an amended copy
+	(name-1, amended_from set) is submitted with the new mode and that mode's account,
+	the same amount, date and allocations. Both happen in one transaction.
+
+	Shifts attribute a payment to whoever created it, by its creation time (see
+	shift.py), so the copy is given the original's owner and creation back. Otherwise a
+	manager's correction would move the money onto the manager's shift, or a payment
+	from earlier in the day onto a later window. The cancelled original and the
+	Version log keep the record of who changed it.
+
+	Refused once a submitted shift closing has counted the payment: that closing's cash
+	count would no longer add up. A manager reopens the shift first.
+	"""
+	_require_van_user()
+	old = frappe.get_doc("Payment Entry", payment_entry)
+	if not _is_manager() and old.owner != frappe.session.user:
+		frappe.throw("You can only change your own payments.", frappe.PermissionError)
+	if old.docstatus != 1:
+		frappe.throw("Only a submitted payment can have its mode changed.")
+	if (old.payment_type, old.party_type) not in (("Receive", "Customer"), ("Pay", "Supplier")):
+		frappe.throw("Only customer collections and supplier payments can be changed here.")
+	if old.party_type == "Customer":
+		_validate_customer_access(old.party)
+	if not mode_of_payment or mode_of_payment == old.mode_of_payment:
+		frappe.throw(f"{old.name} is already recorded as {old.mode_of_payment}.")
+	if not frappe.db.get_value("Mode of Payment", mode_of_payment, "enabled"):
+		frappe.throw(f"Mode of payment {mode_of_payment} is not available.")
+	# The modes the payment's own drawer takes, also when a manager corrects it.
+	_ensure_driver_mode_allowed(mode_of_payment, user=old.owner)
+	closing = _closing_that_counted(old.name)
+	if closing:
+		frappe.throw(
+			f"{old.name} was counted in the closed shift {closing}. Ask a manager to reopen that shift, then change the mode.",
+			title="Shift already closed",
+		)
+	if old.get("clearance_date"):
+		frappe.throw(f"{old.name} has been reconciled with the bank and cannot be changed.")
+
+	account = frappe.db.get_value(
+		"Mode of Payment Account", {"parent": mode_of_payment, "company": old.company}, "default_account"
+	)
+	if not account:
+		frappe.throw(f"No default account found for mode of payment {mode_of_payment} in company {old.company}")
+	account_currency = frappe.db.get_value("Account", account, "account_currency")
+	side = "paid_to" if old.payment_type == "Receive" else "paid_from"
+	if account_currency != old.get(f"{side}_account_currency"):
+		frappe.throw(f"{mode_of_payment} is in {account_currency}, but this payment is in {old.get(f'{side}_account_currency')}.")
+
+	new = frappe.copy_doc(old)
+	new.amended_from = old.name
+	new.mode_of_payment = mode_of_payment
+	new.set(side, account)
+	new.set(f"{side}_account_currency", account_currency)
+	# ERPNext requires a reference on bank payments; reuse the original's, as
+	# counter_purchase._pay_supplier() does for a fresh one.
+	if frappe.db.get_value("Account", account, "account_type") == "Bank" and not new.reference_no:
+		new.reference_no = old.name
+		new.reference_date = old.posting_date
+
+	# Payment Entry is an ERPNext accounting doctype the Sales App User role holds no
+	# rights on; the caller was authorized above, as in make_receive_payment_entry().
+	old.flags.ignore_permissions = True
+	old.cancel()
+	new.flags.ignore_permissions = True
+	new.insert()
+	new.submit()
+	frappe.db.set_value(
+		"Payment Entry", new.name, {"owner": old.owner, "creation": old.creation}, update_modified=False
+	)
+	return {"name": new.name, "amended_from": old.name, "mode_of_payment": new.mode_of_payment}
+
+
 @frappe.whitelist()
 def get_customer_ledger(customer: str, from_date: str = None, to_date: str = None):
 	_require_van_user()

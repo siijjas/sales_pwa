@@ -9,6 +9,8 @@ interface CounterState {
   lines: CounterLine[];
   /** Set when a held (draft) Sales Order was resumed: the sale updates it instead of creating one. */
   orderName: string | null;
+  /** The loaded order is already submitted (not yet invoiced): F12 saves it in place. */
+  orderSubmitted: boolean;
   discountMode: DiscountMode;
   discountPercent: number;
   discountAmount: number;
@@ -25,8 +27,8 @@ const KEY = (user: string) => `sales-app:counter:${user}`;
 let seq = 0;
 const uid = () => `${Date.now().toString(36)}-${(++seq).toString(36)}`;
 
-function blankCart(): Pick<CounterState, 'customer' | 'lines' | 'orderName' | 'discountMode' | 'discountPercent' | 'discountAmount'> {
-  return { customer: null, lines: [], orderName: null, discountMode: 'percent', discountPercent: 0, discountAmount: 0 };
+function blankCart(): Pick<CounterState, 'customer' | 'lines' | 'orderName' | 'orderSubmitted' | 'discountMode' | 'discountPercent' | 'discountAmount'> {
+  return { customer: null, lines: [], orderName: null, orderSubmitted: false, discountMode: 'percent', discountPercent: 0, discountAmount: 0 };
 }
 
 /**
@@ -82,6 +84,7 @@ export const useCounterStore = defineStore('counter', {
       if (this.customer && customer && this.customer.name !== customer.name) {
         // A different customer may price differently: keep the lines, the preview re-prices them.
         this.orderName = null;
+        this.orderSubmitted = false;
       }
       this.customer = customer;
       this.persist();
@@ -135,10 +138,17 @@ export const useCounterStore = defineStore('counter', {
       this.autoPrint = value;
       this.persist();
     },
-    /** Resume a held (draft) order: its lines replace the cart and the sale updates it. */
-    loadOrder(orderName: string, customer: Customer, items: SalesOrderItem[], discount?: { percent?: number; amount?: number }) {
+    /** Resume a held (draft) order, or load a submitted one not yet invoiced: its lines replace the cart and the sale updates it. */
+    loadOrder(
+      orderName: string,
+      customer: Customer,
+      items: SalesOrderItem[],
+      discount?: { percent?: number; amount?: number },
+      submitted = false,
+    ) {
       this.customer = customer;
       this.orderName = orderName;
+      this.orderSubmitted = submitted;
       this.lines = items.map((row) => ({
         uid: uid(),
         item: {

@@ -19,6 +19,10 @@
         <p class="mt-3 text-[13px] text-muted">{{ relativeDate(payment.posting_date) }} · {{ payment.mode_of_payment }}</p>
       </AppCard>
 
+      <AppAlert v-if="payment.docstatus === 2" tone="warning" message="This payment was cancelled." />
+      <AppAlert v-if="payment.amended_from" tone="info" :message="`Corrected copy of ${payment.amended_from}.`" />
+      <AppButton v-if="canChangeMode" variant="secondary" size="sm" icon="edit" @click="modeSheetOpen = true">Change payment mode</AppButton>
+
       <AppCard padding="none">
         <ListRow interactive chevron :title="payment.party_name" :subtitle="payment.party" @click="router.push({ name: 'customer', params: { name: payment.party } })">
           <template #leading><Avatar :name="payment.party_name || payment.party" size="sm" /></template>
@@ -46,6 +50,13 @@
         </AppCard>
       </section>
     </div>
+
+    <PaymentModeSheet
+      v-if="payment"
+      v-model="modeSheetOpen"
+      :payments="[{ name: payment.name, mode_of_payment: payment.mode_of_payment, paid_amount: payment.paid_amount }]"
+      @changed="onModeChanged"
+    />
   </WorkspacePage>
 </template>
 
@@ -55,6 +66,9 @@ import { useRoute, useRouter } from 'vue-router';
 import { useSessionStore } from '../stores/session';
 import { getPaymentEntry } from '../api/frappe';
 import { usePrint } from '../composables/usePrint';
+import { useToast } from '../composables/useToast';
+import type { PaymentModeChange } from '../types';
+import PaymentModeSheet from '../components/PaymentModeSheet.vue';
 import { money, relativeDate, shortDate } from '../utils/format';
 import WorkspacePage from '../components/WorkspacePage.vue';
 import { AppCard, AppButton, AppAlert, Avatar, DataRow, ListRow, SectionHeader, StatusBadge, SkeletonList } from '../components/ui';
@@ -66,16 +80,37 @@ const currency = computed(() => store.currencyDisplay);
 const payment = ref<any>(null);
 const loading = ref(true);
 const error = ref('');
+const modeSheetOpen = ref(false);
+const toast = useToast();
 
-onMounted(async () => {
+// Same rule as finance.change_payment_mode: a submitted collection or supplier payment,
+// the user's own unless a manager. The server also refuses one a closed shift counted.
+const canChangeMode = computed(() => {
+  const p = payment.value;
+  if (!p || p.docstatus !== 1) return false;
+  const kind = `${p.payment_type}/${p.party_type}`;
+  if (kind !== 'Receive/Customer' && kind !== 'Pay/Supplier') return false;
+  return store.isManager || p.owner === store.session?.user;
+});
+
+async function load(name: string) {
+  loading.value = true;
   try {
-    payment.value = await getPaymentEntry(String(route.params.name));
+    payment.value = await getPaymentEntry(name);
   } catch (e: any) {
     error.value = e?.message || 'Payment not found';
   } finally {
     loading.value = false;
   }
-});
+}
+onMounted(() => load(String(route.params.name)));
+
+function onModeChanged(result: PaymentModeChange) {
+  modeSheetOpen.value = false;
+  toast.success(`Payment recorded as ${result.mode_of_payment}`, { message: `${result.name} replaces ${result.amended_from}.` });
+  router.replace({ name: 'payment', params: { name: result.name } });
+  load(result.name);
+}
 
 const { print } = usePrint();
 const printPdf = () => payment.value && print('Payment Entry', payment.value.name);

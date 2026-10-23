@@ -8,14 +8,14 @@
           <CounterModeTabs />
         </div>
         <h1 class="truncate text-[22px] font-bold leading-tight tracking-tight text-foreground md:text-[26px]">
-          {{ counter.orderName ? `Editing ${counter.orderName}` : 'New sale' }}
+          {{ counter.orderName ? `${counter.orderSubmitted ? 'Changing' : 'Editing'} ${counter.orderName}` : 'New sale' }}
         </h1>
         <p class="mt-0.5 truncate text-[12.5px] text-muted">
           {{ store.workspaceLabel }}<template v-if="warehouse"> · {{ warehouse }}</template><template v-if="priceList"> · {{ priceList }}</template>
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
-        <AppButton size="sm" variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
+        <AppButton size="sm" variant="subtle" icon="save" :loading="busy === 'hold'" :disabled="!canSubmit || !!busy || counter.orderSubmitted" @click="hold">Hold <kbd class="ml-1 text-[11px] opacity-70">F7</kbd></AppButton>
         <AppButton size="sm" variant="subtle" icon="printer" :disabled="!lastInvoice" @click="printLast">Print last <kbd class="ml-1 text-[11px] opacity-70">F10</kbd></AppButton>
         <AppButton size="sm" variant="ghost" icon="trash" :disabled="!counter.hasLines && !counter.customer" @click="clear">Clear <kbd class="ml-1 text-[11px] opacity-70">Esc</kbd></AppButton>
       </div>
@@ -171,20 +171,21 @@
           <p v-if="showRounded" class="text-right text-[11.5px] text-muted">Before rounding {{ currency }} {{ money(preview!.grand_total) }}</p>
         </AppCard>
 
-        <AppButton size="lg" block icon="send" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submitOrder">Submit order <kbd class="ml-1 text-[11px] opacity-70">F9</kbd></AppButton>
+        <AppButton size="lg" block icon="send" :loading="busy === 'order'" :disabled="!canSubmit || !!busy" @click="submitOrder">{{ counter.orderSubmitted ? 'Save changes' : 'Submit order' }} <kbd class="ml-1 text-[11px] opacity-70">F12</kbd></AppButton>
 
-        <CounterQueue ref="queuePanel" class="min-h-[14rem] flex-1" :queue="queue" :loading="queueLoading" :busy="!!busy" :currency="currency" @refresh="loadQueue" @resume="resume" @invoice="openInvoiceSheet" @print="(row) => print('Sales Invoice', row.name)" />
+        <CounterQueue ref="queuePanel" class="min-h-[14rem] flex-1" :queue="queue" :loading="queueLoading" :busy="!!busy" :currency="currency" @refresh="loadQueue" @resume="(row) => resume(row)" @edit="(row) => resume(row, true)" @invoice="openInvoiceSheet" @print="(row) => print('Sales Invoice', row.name)" @change-mode="openModeSheet" />
       </div>
     </div>
 
     <ExpenseSheet v-model="expenseOpen" :currency="currency" @recorded="shiftBar?.refresh()" />
 
     <InvoiceSheet v-if="sheetOrder" v-model="sheetOpen" :order="sheetOrder" @created="onSheetInvoiced" />
+    <PaymentModeSheet v-model="modeSheetOpen" :payments="modePayments" @changed="onModeChanged" />
 
     <!-- After the order: invoice it as well? Then the payment, then the invoice option. -->
     <BottomSheet
       v-model="wizardOpen"
-      :title="wizard?.step === 'ask' ? `Order ${wizard.order} submitted` : wizard?.step === 'payment' ? 'How is it paid?' : 'Invoice option'"
+      :title="wizard?.step === 'ask' ? `Order ${wizard.order} ${wizard.updated ? 'saved' : 'submitted'}` : wizard?.step === 'payment' ? 'How is it paid?' : 'Invoice option'"
       :subtitle="wizard ? `${wizard.customerName} · ${currency} ${money(wizard.total)}` : ''"
       :back="wizard?.step === 'option'"
       @back="wizard && (wizard.step = 'payment')"
@@ -246,7 +247,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 import * as api from '../api/frappe';
-import type { CounterItem, CounterPreview, CounterQueue as CounterQueueData, CounterQueueOrder, Customer, CustomerSummary, InvoiceOption, InvoiceStockShortage, PaymentMode, SalesOrder } from '../types';
+import type { CounterItem, CounterPreview, CounterQueue as CounterQueueData, CounterQueueInvoice, CounterQueueOrder, PaymentModeChange, PaymentSummary, Customer, CustomerSummary, InvoiceOption, InvoiceStockShortage, PaymentMode, SalesOrder } from '../types';
 import { invoiceOptionApplies } from '../types';
 import { useSessionStore } from '../stores/session';
 import { useCounterStore } from '../stores/counter';
@@ -256,6 +257,7 @@ import { usePrint } from '../composables/usePrint';
 import { useConfirm } from '../composables/useConfirm';
 import { money, qty as qtyFmt, isoToday } from '../utils/format';
 import InvoiceSheet from '../components/InvoiceSheet.vue';
+import PaymentModeSheet from '../components/PaymentModeSheet.vue';
 import CustomerBox from '../components/counter/CustomerBox.vue';
 import ItemEntryRow from '../components/counter/ItemEntryRow.vue';
 import CounterQueue from '../components/counter/CounterQueue.vue';
@@ -490,7 +492,8 @@ function focusStart() {
 }
 
 async function hold() {
-  if (!canSubmit.value || busy.value) return;
+  // A submitted order cannot go back on hold; F12 saves it.
+  if (!canSubmit.value || busy.value || counter.orderSubmitted) return;
   busy.value = 'hold';
   try {
     const today = isoToday();
@@ -528,6 +531,8 @@ interface Wizard {
   /** Shortages the preview showed for this cart, and whether the profile may invoice past them. */
   shortItems: InvoiceStockShortage[];
   allowSaleWithoutStock: boolean;
+  /** An already submitted order was changed rather than a new one submitted. */
+  updated: boolean;
   step: 'ask' | 'payment' | 'option';
 }
 const wizard = ref<Wizard | null>(null);
@@ -547,6 +552,7 @@ async function submitOrder() {
   try {
     const short = preview.value?.short_items || [];
     const allowSaleWithoutStock = !!preview.value?.allow_sale_without_stock;
+    const updated = counter.orderSubmitted;
     const result = await api.createCounterSale(cartPayload(), { orderName: counter.orderName, invoice: false });
     wizard.value = {
       order: result.order,
@@ -554,6 +560,7 @@ async function submitOrder() {
       total: result.rounded_total || result.grand_total,
       shortItems: short,
       allowSaleWithoutStock,
+      updated,
       step: 'ask',
     };
     wizardError.value = '';
@@ -563,7 +570,7 @@ async function submitOrder() {
     wizardOpen.value = true;
     focusWizard();
   } catch (e: any) {
-    toast.error('Could not submit the order', { message: e?.message, duration: 8000 });
+    toast.error(counter.orderSubmitted ? 'Could not save the order' : 'Could not submit the order', { message: e?.message, duration: 8000 });
   } finally {
     busy.value = '';
   }
@@ -656,7 +663,7 @@ async function clear() {
   if (counter.hasLines) {
     const ok = await confirm({
       title: counter.orderName ? `Stop editing ${counter.orderName}?` : 'Clear this sale?',
-      message: counter.orderName ? 'The held order is kept as it was saved.' : 'All lines will be removed.',
+      message: counter.orderName ? `${counter.orderName} is kept as it was saved.` : 'All lines will be removed.',
       confirmLabel: 'Clear',
       tone: 'danger',
       icon: 'trash',
@@ -680,7 +687,8 @@ async function loadQueue() {
   }
 }
 
-async function resume(row: CounterQueueOrder) {
+/** Load a held draft, or (`submitted`) an order from To invoice, into the cart. */
+async function resume(row: CounterQueueOrder, submitted = false) {
   if (busy.value) return;
   if (counter.hasLines && !(await confirm({ title: 'Replace the current lines?', message: `The sale being keyed in is dropped and ${row.name} is loaded instead.`, confirmLabel: 'Load', tone: 'warning' }))) return;
   try {
@@ -690,6 +698,7 @@ async function resume(row: CounterQueueOrder) {
       { name: order.customer, customer_name: order.customer_name, customer_group: '', territory: '' },
       order.items || [],
       { percent: order.additional_discount_percentage || 0, amount: order.discount_amount || 0 },
+      submitted && order.docstatus === 1,
     );
     focusEntry();
   } catch (e: any) {
@@ -712,6 +721,21 @@ function onSheetInvoiced(invoiceName: string, deferredNote: string) {
   lastInvoice.value = invoiceName;
   toast.success(`Invoice ${invoiceName} created`, { message: deferredNote || undefined, action: { label: 'Print', run: () => print('Sales Invoice', invoiceName) }, duration: 8000 });
   if (counter.autoPrint) print('Sales Invoice', invoiceName);
+  loadQueue();
+  shiftBar.value?.refresh();
+  focusEntry();
+}
+
+// A payment keyed in under the wrong mode, corrected from the Today list.
+const modeSheetOpen = ref(false);
+const modePayments = ref<PaymentSummary[]>([]);
+function openModeSheet(row: CounterQueueInvoice) {
+  modePayments.value = row.payments || [];
+  modeSheetOpen.value = modePayments.value.length > 0;
+}
+function onModeChanged(result: PaymentModeChange) {
+  modeSheetOpen.value = false;
+  toast.success(`Payment recorded as ${result.mode_of_payment}`, { message: `${result.name} replaces ${result.amended_from}.` });
   loadQueue();
   shiftBar.value?.refresh();
   focusEntry();
@@ -752,7 +776,7 @@ function onKeydown(e: KeyboardEvent) {
       e.preventDefault();
       hold();
       break;
-    case 'F9':
+    case 'F12':
       e.preventDefault();
       submitOrder();
       break;
